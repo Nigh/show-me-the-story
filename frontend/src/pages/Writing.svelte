@@ -75,10 +75,10 @@
     <p>请先完成大纲确认，再进入写作阶段。</p>
   </div>
 {:else}
-  <div class="space-y-4">
+  <div class="space-y-3">
     <!-- Progress -->
-    <div class="card bg-base-200">
-      <div class="card-body p-4">
+    <div class="card bg-base-200 shadow-sm">
+      <div class="card-body p-4 gap-2">
         <h2 class="card-title text-sm">写作进度</h2>
         <progress class="progress progress-primary w-full" value={pct} max="100"></progress>
         <div class="text-xs text-base-content/50">{pct}% ({accepted}/{total})</div>
@@ -88,7 +88,7 @@
     <!-- Chapter viewer -->
     <div class="grid grid-cols-[280px_1fr] gap-4" style="min-height:500px">
       <!-- Chapter list -->
-      <div class="card bg-base-200 overflow-y-auto max-h-[600px]">
+      <div class="card bg-base-200 shadow-sm overflow-y-auto max-h-[600px]">
         <ul class="menu menu-sm p-0">
           {#each chapters as c, i}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -107,7 +107,7 @@
       <!-- Content area -->
       <div class="space-y-3">
         {#if ch}
-          <div class="card bg-base-200">
+          <div class="card bg-base-200 shadow-sm">
             <div class="card-body p-4">
               <h2 class="card-title text-sm">第 {ch.num} 章: {ch.title}</h2>
 
@@ -142,7 +142,7 @@
 
               {#if showChFeedback}
                 <div class="flex gap-2 mt-2">
-                  <input type="text" class="input input-bordered input-sm flex-1" bind:value={chFeedbackText} placeholder="输入修改意见..." on:keydown={e => e.key === 'Enter' && doRevise()} />
+                  <input type="text" class="input input-sm flex-1" bind:value={chFeedbackText} placeholder="输入修改意见..." on:keydown={e => e.key === 'Enter' && doRevise()} />
                   <button class="btn btn-primary btn-sm" on:click={doRevise}>提交修改</button>
                 </div>
               {/if}

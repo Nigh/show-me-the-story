@@ -7,8 +7,6 @@
   let showWvForm = false;
   let charCollapse = false;
   let wvCollapse = false;
-  let styleCollapse = false;
-  let synopsisCollapse = false;
 
   let charName = '', charAge = '', charAppearance = '', charPersonality = '', charBackground = '', charMotivation = '', charAbilities = '', charNotes = '';
   let wvName = '', wvCategory = 'other', wvDescription = '', wvTags = '';
@@ -256,145 +254,119 @@
   }
 </script>
 
-<div class="space-y-4">
-  <!-- API Config -->
-  <div class="card bg-base-200 shadow-sm">
-    <div class="card-body p-5">
-      <h2 class="card-title text-base">API 配置</h2>
-      <div class="grid grid-cols-2 gap-3">
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">API Base URL</span></label>
-          <input type="text" class="input input-bordered input-sm" bind:value={localApiCfg.base_url} placeholder="https://api.example.com/v1/" />
-        </div>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">Model</span></label>
-          <input type="text" class="input input-bordered input-sm" bind:value={localApiCfg.model} placeholder="gpt-4" />
-        </div>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">API Key</span></label>
-          <input type="password" class="input input-bordered input-sm" bind:value={localApiCfg.api_key} placeholder="sk-..." />
-        </div>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">HTTP 超时（秒）</span></label>
-          <input type="number" class="input input-bordered input-sm" bind:value={localApiCfg.http_timeout_seconds} />
-        </div>
-      </div>
-      <div class="card-actions justify-end mt-2">
-        <button class="btn btn-primary btn-sm" on:click={saveAPIConfig}>保存 API 配置</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Story Config -->
-  <div class="card bg-base-200 shadow-sm">
-    <div class="card-body p-5">
-      <h2 class="card-title text-base">故事配置</h2>
-      {#if hasAccepted}
-        <div class="alert alert-warning text-xs py-2">
-          <span>已有已确认章节，保存配置后将自动由 AI 协调设定与已有内容的兼容性。</span>
-        </div>
-      {/if}
-      <div class="grid grid-cols-2 gap-3">
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">故事类型</span></label>
-          <input type="text" class="input input-bordered input-sm" bind:value={localStoryCfg.type} placeholder="奇幻/都市/科幻..." />
-        </div>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">小说标题（留空由 AI 生成）</span></label>
-          <input type="text" class="input input-bordered input-sm" bind:value={localStoryCfg.title} placeholder="留空则 AI 自动生成" />
-        </div>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">章节数量</span></label>
-          <input type="number" class="input input-bordered input-sm" bind:value={localStoryCfg.chapter_count} />
-        </div>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">每章目标字数</span></label>
-          <input type="number" class="input input-bordered input-sm" bind:value={localStoryCfg.target_words_per_chapter} />
-        </div>
-      </div>
-      <div class="card-actions justify-end mt-2">
-        <button class="btn btn-primary btn-sm" on:click={saveStoryConfig}>保存故事配置</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Writing Style Card -->
-  <div class="card bg-base-200 shadow-sm">
-    <div class="card-body p-5">
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="flex justify-between items-center cursor-pointer" on:click={() => styleCollapse = !styleCollapse}>
-        <h2 class="card-title text-base">写作风格</h2>
-        <span class="text-xs transition-transform" class:rotate-90={styleCollapse}>▼</span>
-      </div>
-      {#if !styleCollapse}
-        <div class="mt-3">
-          <div class="bg-base-300 rounded-lg p-4 space-y-2">
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">写作风格描述</span></label>
-              <textarea class="textarea textarea-bordered textarea-sm h-24" bind:value={localStoryCfg.writing_style} placeholder="描述你期望的写作风格..."></textarea>
-            </div>
-            <div class="flex gap-2 justify-end">
-              <button class="btn btn-accent btn-xs" class:loading={polishingField === 'writing_style'} disabled={polishingField !== ''} on:click={() => polishField('writing_style')}>
-                {polishingField === 'writing_style' ? '润色中...' : 'AI 润色'}
-              </button>
-            </div>
+<div class="space-y-3">
+  <!-- API + Story Config: side by side -->
+  <div class="grid grid-cols-2 gap-3">
+    <div class="card bg-base-200 shadow-sm">
+      <div class="card-body p-4 gap-2">
+        <h3 class="card-title text-sm">API 配置</h3>
+        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+          <div class="col-span-2">
+            <label class="text-[11px] text-base-content/50 mb-0.5 block">API Base URL</label>
+            <input type="text" class="input input-sm w-full" bind:value={localApiCfg.base_url} placeholder="https://api.example.com/v1/" />
+          </div>
+          <div>
+            <label class="text-[11px] text-base-content/50 mb-0.5 block">Model</label>
+            <input type="text" class="input input-sm w-full" bind:value={localApiCfg.model} placeholder="gpt-4" />
+          </div>
+          <div>
+            <label class="text-[11px] text-base-content/50 mb-0.5 block">HTTP 超时（秒）</label>
+            <input type="number" class="input input-sm w-full" bind:value={localApiCfg.http_timeout_seconds} />
+          </div>
+          <div class="col-span-2">
+            <label class="text-[11px] text-base-content/50 mb-0.5 block">API Key</label>
+            <input type="password" class="input input-sm w-full" bind:value={localApiCfg.api_key} placeholder="sk-..." />
           </div>
         </div>
-      {/if}
+        <div class="flex justify-end">
+          <button class="btn btn-primary btn-xs" on:click={saveAPIConfig}>保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-200 shadow-sm">
+      <div class="card-body p-4 gap-2">
+        <h3 class="card-title text-sm">故事配置</h3>
+        {#if hasAccepted}
+          <div class="alert alert-warning text-xs py-1.5 px-3">
+            <span>已有已确认章节，保存后将自动协调设定兼容性。</span>
+          </div>
+        {/if}
+        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+          <div>
+            <label class="text-[11px] text-base-content/50 mb-0.5 block">故事类型</label>
+            <input type="text" class="input input-sm w-full" bind:value={localStoryCfg.type} placeholder="奇幻/都市/科幻..." />
+          </div>
+          <div>
+            <label class="text-[11px] text-base-content/50 mb-0.5 block">小说标题（留空由 AI 生成）</label>
+            <input type="text" class="input input-sm w-full" bind:value={localStoryCfg.title} placeholder="留空则 AI 自动生成" />
+          </div>
+          <div>
+            <label class="text-[11px] text-base-content/50 mb-0.5 block">章节数量</label>
+            <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.chapter_count} />
+          </div>
+          <div>
+            <label class="text-[11px] text-base-content/50 mb-0.5 block">每章目标字数</label>
+            <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.target_words_per_chapter} />
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button class="btn btn-primary btn-xs" on:click={saveStoryConfig}>保存</button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Story Synopsis Card -->
+  <!-- Writing Style -->
   <div class="card bg-base-200 shadow-sm">
-    <div class="card-body p-5">
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="flex justify-between items-center cursor-pointer" on:click={() => synopsisCollapse = !synopsisCollapse}>
-        <h2 class="card-title text-base">故事梗概</h2>
-        <span class="text-xs transition-transform" class:rotate-90={synopsisCollapse}>▼</span>
+    <div class="card-body p-4 gap-2">
+      <div class="flex items-center justify-between">
+        <h3 class="card-title text-sm">写作风格</h3>
+        <button class="btn btn-accent btn-xs" class:loading={polishingField === 'writing_style'} disabled={polishingField !== ''} on:click={() => polishField('writing_style')}>
+          {polishingField === 'writing_style' ? '润色中...' : 'AI 润色'}
+        </button>
       </div>
-      {#if !synopsisCollapse}
-        <div class="mt-3">
-          <div class="bg-base-300 rounded-lg p-4 space-y-2">
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">故事梗概</span></label>
-              <textarea class="textarea textarea-bordered textarea-sm h-24" bind:value={localStoryCfg.story_synopsis} placeholder="可包含：故事主线走向、核心冲突、关键转折点..."></textarea>
-            </div>
-            <div class="flex gap-2 justify-end">
-              <button class="btn btn-accent btn-xs" class:loading={polishingField === 'story_synopsis'} disabled={polishingField !== ''} on:click={() => polishField('story_synopsis')}>
-                {polishingField === 'story_synopsis' ? '润色中...' : 'AI 润色'}
-              </button>
-            </div>
-          </div>
-        </div>
-      {/if}
+      <textarea class="textarea w-full h-40 text-sm" bind:value={localStoryCfg.writing_style} placeholder="描述你期望的写作风格..."></textarea>
+    </div>
+  </div>
+
+  <!-- Story Synopsis -->
+  <div class="card bg-base-200 shadow-sm">
+    <div class="card-body p-4 gap-2">
+      <div class="flex items-center justify-between">
+        <h3 class="card-title text-sm">故事梗概</h3>
+        <button class="btn btn-accent btn-xs" class:loading={polishingField === 'story_synopsis'} disabled={polishingField !== ''} on:click={() => polishField('story_synopsis')}>
+          {polishingField === 'story_synopsis' ? '润色中...' : 'AI 润色'}
+        </button>
+      </div>
+      <textarea class="textarea w-full h-40 text-sm" bind:value={localStoryCfg.story_synopsis} placeholder="可包含：故事主线走向、核心冲突、关键转折点..."></textarea>
     </div>
   </div>
 
   <!-- Characters -->
   <div class="card bg-base-200 shadow-sm">
-    <div class="card-body p-5">
+    <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="flex justify-between items-center cursor-pointer" on:click={() => charCollapse = !charCollapse}>
-        <h2 class="card-title text-base">角色管理</h2>
-        <span class="text-xs transition-transform" class:rotate-90={charCollapse}>▼</span>
+      <div class="flex justify-between items-center cursor-pointer select-none" on:click={() => charCollapse = !charCollapse}>
+        <h3 class="card-title text-sm">角色管理 <span class="text-xs font-normal text-base-content/40">({chars.length})</span></h3>
+        <svg class="w-4 h-4 text-base-content/40 transition-transform" class:rotate-180={charCollapse} viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
       </div>
       {#if !charCollapse}
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 mt-3">
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
           {#if chars.length === 0}
-            <p class="text-sm text-base-content/50 col-span-full">暂无角色，点击下方按钮创建。</p>
+            <p class="text-xs text-base-content/40 col-span-full py-2">暂无角色，点击下方按钮创建。</p>
           {:else}
             {#each chars as c}
-              <div class="card card-compact bg-base-300 border border-base-content/10">
-                <div class="card-body">
-                  <h3 class="card-title text-sm">{c.name}</h3>
-                  <p class="text-xs text-base-content/60 line-clamp-2">{c.personality || c.background || c.age || ''}</p>
-                  <div class="card-actions justify-end gap-1">
-                    <button class="btn btn-ghost btn-xs" on:click={() => openCharForm(c)}>编辑</button>
-                    <button class="btn btn-error btn-xs" on:click={() => deleteCharacter(c.id)}>删除</button>
-                  </div>
+              <div class="flex items-start gap-2.5 bg-base-300 rounded-lg p-2.5 group">
+                <div class="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold shrink-0">{c.name[0]}</div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate">{c.name}</div>
+                  <div class="text-[11px] text-base-content/40 line-clamp-1">{c.personality || c.background || c.age || ''}</div>
+                </div>
+                <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openCharForm(c)}>编辑</button>
+                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteCharacter(c.id)}>删除</button>
                 </div>
               </div>
             {/each}
@@ -402,42 +374,44 @@
         </div>
 
         {#if showCharForm}
-          <div class="bg-base-300 rounded-lg p-4 mt-3 space-y-2">
-            <div class="grid grid-cols-2 gap-2">
-              <div class="form-control">
-                <label class="label py-0"><span class="label-text text-xs">名称</span></label>
-                <input type="text" class="input input-bordered input-xs" bind:value={charName} />
+          <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
+            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">名称</label>
+                <input type="text" class="input input-sm w-full" bind:value={charName} />
               </div>
-              <div class="form-control">
-                <label class="label py-0"><span class="label-text text-xs">年龄</span></label>
-                <input type="text" class="input input-bordered input-xs" bind:value={charAge} />
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">年龄</label>
+                <input type="text" class="input input-sm w-full" bind:value={charAge} />
               </div>
             </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">外貌</span></label>
-              <textarea class="textarea textarea-bordered textarea-xs h-12" bind:value={charAppearance}></textarea>
+            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">外貌</label>
+                <textarea class="textarea textarea-sm w-full h-14" bind:value={charAppearance}></textarea>
+              </div>
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">性格</label>
+                <textarea class="textarea textarea-sm w-full h-14" bind:value={charPersonality}></textarea>
+              </div>
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">背景</label>
+                <textarea class="textarea textarea-sm w-full h-14" bind:value={charBackground}></textarea>
+              </div>
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">动机</label>
+                <textarea class="textarea textarea-sm w-full h-14" bind:value={charMotivation}></textarea>
+              </div>
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">能力</label>
+                <textarea class="textarea textarea-sm w-full h-14" bind:value={charAbilities}></textarea>
+              </div>
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">备注</label>
+                <textarea class="textarea textarea-sm w-full h-14" bind:value={charNotes}></textarea>
+              </div>
             </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">性格</span></label>
-              <textarea class="textarea textarea-bordered textarea-xs h-12" bind:value={charPersonality}></textarea>
-            </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">背景</span></label>
-              <textarea class="textarea textarea-bordered textarea-xs h-12" bind:value={charBackground}></textarea>
-            </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">动机</span></label>
-              <textarea class="textarea textarea-bordered textarea-xs h-12" bind:value={charMotivation}></textarea>
-            </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">能力</span></label>
-              <textarea class="textarea textarea-bordered textarea-xs h-12" bind:value={charAbilities}></textarea>
-            </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">备注</span></label>
-              <textarea class="textarea textarea-bordered textarea-xs h-12" bind:value={charNotes}></textarea>
-            </div>
-            <div class="flex gap-2">
+            <div class="flex gap-1.5">
               <button class="btn btn-success btn-xs" on:click={saveCharacter}>保存角色</button>
               <button class="btn btn-accent btn-xs" class:loading={polishingField === 'character'} disabled={polishingField !== ''} on:click={() => polishField('character')}>
                 {polishingField === 'character' ? '润色中...' : 'AI 润色'}
@@ -447,7 +421,7 @@
           </div>
         {/if}
 
-        <div class="flex gap-2 mt-3">
+        <div class="flex gap-1.5">
           <button class="btn btn-primary btn-xs" on:click={() => openCharForm(null)}>新建角色</button>
           <button class="btn btn-ghost btn-xs" on:click={aiGenerateSettings}>AI 自动生成</button>
         </div>
@@ -457,15 +431,15 @@
 
   <!-- Worldview -->
   <div class="card bg-base-200 shadow-sm">
-    <div class="card-body p-5">
+    <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="flex justify-between items-center cursor-pointer" on:click={() => wvCollapse = !wvCollapse}>
-        <h2 class="card-title text-base">世界观管理</h2>
-        <span class="text-xs transition-transform" class:rotate-90={wvCollapse}>▼</span>
+      <div class="flex justify-between items-center cursor-pointer select-none" on:click={() => wvCollapse = !wvCollapse}>
+        <h3 class="card-title text-sm">世界观管理 <span class="text-xs font-normal text-base-content/40">({filteredWvs.length})</span></h3>
+        <svg class="w-4 h-4 text-base-content/40 transition-transform" class:rotate-180={wvCollapse} viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
       </div>
       {#if !wvCollapse}
-        <div class="tabs tabs-boxed tabs-xs bg-base-300 w-fit mt-3">
+        <div class="tabs tabs-box tabs-xs bg-base-300 w-fit">
           {#each wvTabs as [cat, label]}
             <button class="tab tab-xs {$wvFilter === cat ? 'tab-active' : ''}" on:click={() => wvFilter.set(cat)}>
               {label}
@@ -473,19 +447,20 @@
           {/each}
         </div>
 
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 mt-3">
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
           {#if filteredWvs.length === 0}
-            <p class="text-sm text-base-content/50 col-span-full">暂无世界观条目。</p>
+            <p class="text-xs text-base-content/40 col-span-full py-2">暂无世界观条目。</p>
           {:else}
             {#each filteredWvs as w}
-              <div class="card card-compact bg-base-300 border border-base-content/10">
-                <div class="card-body">
-                  <h3 class="card-title text-sm">{w.name} <span class="text-xs font-normal text-base-content/50">[{catLabels[w.category] || w.category}]</span></h3>
-                  <p class="text-xs text-base-content/60 line-clamp-2">{w.description}</p>
-                  <div class="card-actions justify-end gap-1">
-                    <button class="btn btn-ghost btn-xs" on:click={() => openWvForm(w)}>编辑</button>
-                    <button class="btn btn-error btn-xs" on:click={() => deleteWorldview(w.id)}>删除</button>
-                  </div>
+              <div class="flex items-start gap-2.5 bg-base-300 rounded-lg p-2.5 group">
+                <div class="w-8 h-8 rounded-lg bg-accent/20 text-accent flex items-center justify-center text-xs font-bold shrink-0">{w.name[0]}</div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate">{w.name} <span class="text-[10px] font-normal text-base-content/30">[{catLabels[w.category] || w.category}]</span></div>
+                  <div class="text-[11px] text-base-content/40 line-clamp-1">{w.description}</div>
+                </div>
+                <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openWvForm(w)}>编辑</button>
+                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteWorldview(w.id)}>删除</button>
                 </div>
               </div>
             {/each}
@@ -493,15 +468,15 @@
         </div>
 
         {#if showWvForm}
-          <div class="bg-base-300 rounded-lg p-4 mt-3 space-y-2">
-            <div class="grid grid-cols-2 gap-2">
-              <div class="form-control">
-                <label class="label py-0"><span class="label-text text-xs">名称</span></label>
-                <input type="text" class="input input-bordered input-xs" bind:value={wvName} />
+          <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
+            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">名称</label>
+                <input type="text" class="input input-sm w-full" bind:value={wvName} />
               </div>
-              <div class="form-control">
-                <label class="label py-0"><span class="label-text text-xs">分类</span></label>
-                <select class="select select-bordered select-xs" bind:value={wvCategory}>
+              <div>
+                <label class="text-[11px] text-base-content/50 mb-0.5 block">分类</label>
+                <select class="select select-sm w-full" bind:value={wvCategory}>
                   <option value="geography">地理</option>
                   <option value="faction">势力</option>
                   <option value="rule">规则</option>
@@ -510,15 +485,15 @@
                 </select>
               </div>
             </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">描述</span></label>
-              <textarea class="textarea textarea-bordered textarea-xs h-12" bind:value={wvDescription}></textarea>
+            <div>
+              <label class="text-[11px] text-base-content/50 mb-0.5 block">描述</label>
+              <textarea class="textarea textarea-sm w-full h-16" bind:value={wvDescription}></textarea>
             </div>
-            <div class="form-control">
-              <label class="label py-0"><span class="label-text text-xs">标签</span></label>
-              <input type="text" class="input input-bordered input-xs" bind:value={wvTags} placeholder="逗号分隔" />
+            <div>
+              <label class="text-[11px] text-base-content/50 mb-0.5 block">标签</label>
+              <input type="text" class="input input-sm w-full" bind:value={wvTags} placeholder="逗号分隔" />
             </div>
-            <div class="flex gap-2">
+            <div class="flex gap-1.5">
               <button class="btn btn-success btn-xs" on:click={saveWorldview}>保存</button>
               <button class="btn btn-accent btn-xs" class:loading={polishingField === 'worldview'} disabled={polishingField !== ''} on:click={() => polishField('worldview')}>
                 {polishingField === 'worldview' ? '润色中...' : 'AI 润色'}
@@ -528,7 +503,7 @@
           </div>
         {/if}
 
-        <div class="mt-3">
+        <div>
           <button class="btn btn-primary btn-xs" on:click={() => openWvForm(null)}>新建世界观条目</button>
         </div>
       {/if}
