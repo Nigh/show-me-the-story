@@ -147,6 +147,13 @@ func (lb *LogBroadcaster) PolishResult(chapterIdx int, text string) {
 	})
 }
 
+func (lb *LogBroadcaster) SettingsPolishResult(fieldType, text string) {
+	lb.Emit("settings_polish_result", map[string]interface{}{
+		"field_type": fieldType,
+		"text":       text,
+	})
+}
+
 func (lb *LogBroadcaster) Close() {
 	lb.mu.Lock()
 	lb.closed = true

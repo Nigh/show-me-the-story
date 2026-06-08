@@ -192,14 +192,12 @@ func generateChapterContent(ctx context.Context, apiCfg *APIConfig, cfg *Config,
 		"Title":             state.Title,
 		"ChapterNum":        fmt.Sprintf("%d", ch.Num),
 		"CorePrompt":        state.CorePrompt,
-		"CoreRequirements":  state.CoreRequirements,
+		"StorySynopsis":     state.StorySynopsis,
 		"HistorySummary":    historySummary,
 		"ChapterTitle":      ch.Title,
 		"ChapterOutline":    ch.Outline,
 		"WritingStyle":      snapshot.WritingStyle,
-		"CharacterSetting":  snapshot.CharacterSetting,
 		"CharacterContext":  characterContext,
-		"WorldSetting":      snapshot.WorldSetting,
 		"WorldviewContext":  worldviewContext,
 		"TargetWords":       fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
 		"Foreshadows":       foreshadowContext,
@@ -232,14 +230,12 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 		"Title":             state.Title,
 		"ChapterNum":        fmt.Sprintf("%d", ch.Num),
 		"CorePrompt":        state.CorePrompt,
-		"CoreRequirements":  state.CoreRequirements,
+		"StorySynopsis":     state.StorySynopsis,
 		"HistorySummary":    historySummary,
 		"ChapterTitle":      ch.Title,
 		"ChapterOutline":    ch.Outline,
 		"WritingStyle":      snapshot.WritingStyle,
-		"CharacterSetting":  snapshot.CharacterSetting,
 		"CharacterContext":  characterContext,
-		"WorldSetting":      snapshot.WorldSetting,
 		"WorldviewContext":  worldviewContext,
 		"TargetWords":       fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
 		"Foreshadows":       foreshadowContext,
@@ -472,14 +468,14 @@ func reviseChapterContent(ctx context.Context, apiCfg *APIConfig, cfg *Config, s
 	userPrompt := fmt.Sprintf(`请根据以下意见修改第 %d 章《%s》的正文。
 
 【核心写作提示词】%s
-【核心写作要求】%s
+【故事梗概】%s
 【前情提要】%s
 【本章大纲】%s
 【用户修改意见】%s
 
 请输出修改后的完整章节正文。`,
 		ch.Num, ch.Title,
-		state.CorePrompt, state.CoreRequirements,
+		state.CorePrompt, state.StorySynopsis,
 		historySummary, ch.Outline, userFeedback)
 
 	return CallAPI(ctx, apiCfg, systemPrompt, userPrompt)
@@ -498,14 +494,14 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Con
 	userPrompt := fmt.Sprintf(`请根据以下意见修改第 %d 章《%s》的正文。
 
 【核心写作提示词】%s
-【核心写作要求】%s
+【故事梗概】%s
 【前情提要】%s
 【本章大纲】%s
 【用户修改意见】%s
 
 请输出修改后的完整章节正文。`,
 		ch.Num, ch.Title,
-		state.CorePrompt, state.CoreRequirements,
+		state.CorePrompt, state.StorySynopsis,
 		historySummary, ch.Outline, userFeedback)
 
 	totalChars := 0

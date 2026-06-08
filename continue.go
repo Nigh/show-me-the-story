@@ -9,14 +9,12 @@ import (
 )
 
 type ContinueAnalysis struct {
-	Title            string            `json:"title"`
-	StoryType        string            `json:"story_type"`
-	CorePrompt       string            `json:"core_prompt"`
-	CoreRequirements string            `json:"core_requirements"`
-	WritingStyle     string            `json:"writing_style"`
-	CharacterSetting string            `json:"character_setting"`
-	WorldSetting     string            `json:"world_setting"`
-	Chapters         []ContinueChapter `json:"chapters"`
+	Title         string            `json:"title"`
+	StoryType     string            `json:"story_type"`
+	CorePrompt    string            `json:"core_prompt"`
+	StorySynopsis string            `json:"story_synopsis"`
+	WritingStyle  string            `json:"writing_style"`
+	Chapters      []ContinueChapter `json:"chapters"`
 }
 
 type ContinueChapter struct {
@@ -83,7 +81,7 @@ func splitContentByChapters(content string, chapters []ContinueChapter) []string
 func ImportContinueAction(cfg *Config, state *Progress, analysis *ContinueAnalysis, content string, progressPath string, cfgPath string) error {
 	state.Title = analysis.Title
 	state.CorePrompt = analysis.CorePrompt
-	state.CoreRequirements = analysis.CoreRequirements
+	state.StorySynopsis = analysis.StorySynopsis
 
 	segments := splitContentByChapters(content, analysis.Chapters)
 
@@ -112,9 +110,7 @@ func ImportContinueAction(cfg *Config, state *Progress, analysis *ContinueAnalys
 		ChapterCount:          len(state.Chapters),
 		TargetWordsPerChapter: cfg.Story.TargetWordsPerChapter,
 		WritingStyle:          analysis.WritingStyle,
-		CharacterSetting:      analysis.CharacterSetting,
-		WorldSetting:          analysis.WorldSetting,
-		CoreRequirements:      analysis.CoreRequirements,
+		StorySynopsis:         analysis.StorySynopsis,
 	}
 	state.StoryConfigSnapshot = &snapshot
 
@@ -123,9 +119,7 @@ func ImportContinueAction(cfg *Config, state *Progress, analysis *ContinueAnalys
 	cfg.Story.Type = analysis.StoryType
 	cfg.Story.Title = analysis.Title
 	cfg.Story.WritingStyle = analysis.WritingStyle
-	cfg.Story.CharacterSetting = analysis.CharacterSetting
-	cfg.Story.WorldSetting = analysis.WorldSetting
-	cfg.Story.CoreRequirements = analysis.CoreRequirements
+	cfg.Story.StorySynopsis = analysis.StorySynopsis
 
 	if err := SaveProgress(progressPath, state); err != nil {
 		cfg.Story = oldStory
@@ -163,10 +157,8 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *APIConfig, cfg *Co
 		"Title":            state.Title,
 		"StoryType":        snapshot.Type,
 		"CorePrompt":       state.CorePrompt,
-		"CoreRequirements": state.CoreRequirements,
+		"StorySynopsis":    state.StorySynopsis,
 		"WritingStyle":     snapshot.WritingStyle,
-		"CharacterSetting": snapshot.CharacterSetting,
-		"WorldSetting":     snapshot.WorldSetting,
 		"ExistingOutline":  existingOutline,
 		"NewChapterCount":  fmt.Sprintf("%d", newChapterCount),
 		"StartNum":         fmt.Sprintf("%d", startNum),
@@ -202,8 +194,8 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *APIConfig, cfg *Co
 	if resp.CorePrompt != "" {
 		state.CorePrompt = resp.CorePrompt
 	}
-	if resp.CoreRequirements != "" {
-		state.CoreRequirements = resp.CoreRequirements
+	if resp.StorySynopsis != "" {
+		state.StorySynopsis = resp.StorySynopsis
 	}
 
 	if err := SaveProgress(progressPath, state); err != nil {

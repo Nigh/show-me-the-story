@@ -95,6 +95,11 @@ export function connectSSE() {
     api('GET', '/api/progress').then(p => progress.set(p)).catch(() => {});
   });
 
+  eventSource.addEventListener('settings_polish_result', e => {
+    const d = JSON.parse(e.data);
+    window.dispatchEvent(new CustomEvent('settings_polish_result', { detail: d }));
+  });
+
   eventSource.onerror = () => {
     eventSource.close();
     clearTimeout(reconnectTimer);

@@ -16,7 +16,7 @@
   }
 </script>
 
-<div class="card bg-base-200">
+<div class="card bg-base-200 shadow-sm">
   <div class="card-body">
     <h2 class="card-title">技能管理</h2>
     <p class="text-xs text-base-content/60 mb-3">技能是可选的创作辅助工具。启用后，全局助理会参考这些技能，去AI味功能需要启用 polish 类技能。</p>

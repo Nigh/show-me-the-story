@@ -47,6 +47,7 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, cfgPath s
 	mux.HandleFunc("POST /api/settings/reconcile", h.PostSettingsReconcile)
 	mux.HandleFunc("GET /api/settings", h.GetSettings)
 	mux.HandleFunc("POST /api/settings/ai-generate", h.PostSettingsAIGenerate)
+	mux.HandleFunc("POST /api/settings/polish", h.PostSettingsPolish)
 
 	mux.HandleFunc("POST /api/characters", h.PostCharacter)
 	mux.HandleFunc("PUT /api/characters/{id}", h.PutCharacter)

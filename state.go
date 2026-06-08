@@ -44,7 +44,7 @@ type Progress struct {
 	Phase               string            `json:"phase"` // outline | writing
 	Title               string            `json:"title"`
 	CorePrompt          string            `json:"core_prompt"`
-	CoreRequirements    string            `json:"core_requirements"`
+	StorySynopsis       string            `json:"story_synopsis"`
 	Chapters            []ChapterState    `json:"chapters"`
 	CurrentChapterIndex int               `json:"current_chapter_index"`
 	StoryConfigSnapshot *StoryConfig      `json:"story_config_snapshot,omitempty"`

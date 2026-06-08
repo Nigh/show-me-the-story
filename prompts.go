@@ -17,7 +17,7 @@ var DefaultPrompts = PromptsConfig{
 {
   "title": "小说标题",
   "core_prompt": "核心写作提示词（用于指导后续各章创作的系统级提示）",
-  "core_requirements": "核心写作要求",
+  "story_synopsis": "故事梗概",
   "chapters": [
     {"num": 1, "title": "章节标题", "outline": "本章大纲"},
     ...
@@ -28,9 +28,7 @@ var DefaultPrompts = PromptsConfig{
 【章节数量】{{.ChapterCount}}
 【每章字数】{{.TargetWords}}
 【写作风格】{{.WritingStyle}}
-【角色设定】{{.CharacterSetting}}
-【世界观】{{.WorldSetting}}
-【核心写作要求】{{.CoreRequirements}}
+【故事梗概】{{.StorySynopsis}}
 
 注意：
 1. 大纲需要覆盖完整的故事弧线，从开端到结局
@@ -43,8 +41,8 @@ var DefaultPrompts = PromptsConfig{
 【核心写作提示词】
 {{.CorePrompt}}
 
-【核心写作要求】
-{{.CoreRequirements}}
+【故事梗概】
+{{.StorySynopsis}}
 
 【前情提要（滚动最近章节进展，请严格承接状态）】
 {{.HistorySummary}}
@@ -54,8 +52,7 @@ var DefaultPrompts = PromptsConfig{
 核心大纲：{{.ChapterOutline}}
 
 【写作风格】{{.WritingStyle}}
-【角色设定】{{.CharacterSetting}}
-{{.CharacterContext}}【世界观】{{.WorldSetting}}
+{{.CharacterContext}}
 {{.WorldviewContext}}
 请直接输出小说正文，字数{{.TargetWords}}字左右。`,
 
@@ -104,7 +101,7 @@ var DefaultPrompts = PromptsConfig{
 {
   "title": "小说标题",
   "core_prompt": "核心写作提示词",
-  "core_requirements": "核心写作要求",
+  "story_synopsis": "故事梗概",
   "chapters": [
     {"num": 1, "title": "章节标题", "outline": "本章大纲"},
     ...
@@ -117,16 +114,10 @@ var DefaultPrompts = PromptsConfig{
 
 【小说标题】{{.Title}}
 【核心写作提示词】{{.CorePrompt}}
-【核心写作要求】{{.CoreRequirements}}
+【故事梗概】{{.StorySynopsis}}
 
 【完整大纲】
 {{.Outline}}
-
-【角色设定】
-{{.CharacterSetting}}
-
-【世界观】
-{{.WorldSetting}}
 
 请设计 3-8 条伏笔，遵循以下原则：
 1. 伏笔应服务于故事主线和人物弧线，而非为了悬疑而悬疑
@@ -197,10 +188,8 @@ var DefaultPrompts = PromptsConfig{
   "title": "小说标题",
   "story_type": "故事类型（如：奇幻/都市/科幻/悬疑等）",
   "core_prompt": "核心写作提示词（用于指导后续各章创作的系统级提示）",
-  "core_requirements": "核心写作要求",
+  "story_synopsis": "故事梗概",
   "writing_style": "写作风格描述",
-  "character_setting": "角色设定",
-  "world_setting": "世界观设定",
   "chapters": [
     {
       "num": 1,
@@ -216,7 +205,7 @@ var DefaultPrompts = PromptsConfig{
 2. 为每章生成：outline（本章内容概要）和 summary（用于后续创作的结构化摘要）
 3. summary 需保留可延续的状态信息：核心事件、心理轨迹、关键细节、情绪色调
 4. 提取故事元数据：故事类型、写作风格、角色设定、世界观设定
-5. 生成 core_prompt 和 core_requirements，用于指导后续创作
+5. 生成 core_prompt 和 story_synopsis，用于指导后续创作
 
 【已有小说文本】
 {{.ExistingContent}}
@@ -228,10 +217,8 @@ var DefaultPrompts = PromptsConfig{
 【小说标题】{{.Title}}
 【故事类型】{{.StoryType}}
 【核心写作提示词】{{.CorePrompt}}
-【核心写作要求】{{.CoreRequirements}}
+【故事梗概】{{.StorySynopsis}}
 【写作风格】{{.WritingStyle}}
-【角色设定】{{.CharacterSetting}}
-【世界观】{{.WorldSetting}}
 
 【已有章节】
 {{.ExistingOutline}}
@@ -256,9 +243,7 @@ var DefaultPrompts = PromptsConfig{
 【用户的新设定】
 故事类型：{{.NewType}}
 写作风格：{{.NewWritingStyle}}
-角色设定：{{.NewCharacterSetting}}
-世界观：{{.NewWorldSetting}}
-核心写作要求：{{.NewCoreRequirements}}
+故事梗概：{{.NewStorySynopsis}}
 
 【已有已确认章节摘要】
 {{.ExistingSummaries}}
@@ -267,9 +252,7 @@ var DefaultPrompts = PromptsConfig{
 {
   "type": "...",
   "writing_style": "...",
-  "character_setting": "...",
-  "world_setting": "...",
-  "core_requirements": "...",
+  "story_synopsis": "...",
   "explanation": "说明做了哪些调整及原因"
 }
 

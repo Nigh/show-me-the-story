@@ -443,7 +443,7 @@ func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
 
 	h.state.Title = ""
 	h.state.CorePrompt = ""
-	h.state.CoreRequirements = ""
+	h.state.StorySynopsis = ""
 	h.state.Chapters = nil
 	h.state.StoryConfigSnapshot = nil
 	h.state.CurrentChapterIndex = 0
@@ -1379,8 +1379,7 @@ func (h *Handlers) aiGenerateSettings(ctx context.Context) error {
 小说标题: 《%s》
 故事类型: %s
 写作风格: %s
-角色设定（原文）: %s
-世界观设定（原文）: %s
+故事梗概: %s
 
 大纲:
 %s
@@ -1423,7 +1422,7 @@ func (h *Handlers) aiGenerateSettings(ctx context.Context) error {
 3. 组织应反映故事中的势力结构
 4. 请严格以JSON格式输出`,
 		h.state.Title, snapshot.Type, snapshot.WritingStyle,
-		snapshot.CharacterSetting, snapshot.WorldSetting, outline)
+		snapshot.StorySynopsis, outline)
 
 	systemPrompt := "你是一位专业的小说设定生成师。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
 
@@ -1462,6 +1461,90 @@ func (h *Handlers) aiGenerateSettings(ctx context.Context) error {
 		len(resp.Characters), len(resp.Worldview), len(resp.Organizations)))
 
 	return nil
+}
+
+func (h *Handlers) PostSettingsPolish(w http.ResponseWriter, r *http.Request) {
+	if !h.tryStartTask() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+
+	var req struct {
+		FieldType string `json:"field_type"`
+		Content   string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.endTask()
+		h.writeError(w, http.StatusBadRequest, "无效的JSON: "+err.Error())
+		return
+	}
+	if req.FieldType == "" {
+		h.endTask()
+		h.writeError(w, http.StatusBadRequest, "缺少 field_type")
+		return
+	}
+
+	go func() {
+		h.logger.TaskStart("settings_polish")
+		ctx := h.taskCtx
+
+		h.logger.Info("正在 AI 润色...")
+
+		outline := ""
+		for _, ch := range h.state.Chapters {
+			outline += fmt.Sprintf("第%d章《%s》: %s\n", ch.Num, ch.Title, ch.Outline)
+		}
+		if outline == "" {
+			outline = "暂无大纲"
+		}
+
+		snapshot := h.state.StoryConfigSnapshot
+		if snapshot == nil {
+			snapshot = &h.cfg.Story
+		}
+
+		var systemPrompt, userPrompt string
+
+		switch req.FieldType {
+		case "character":
+			systemPrompt = "你是一位专业的小说角色设计师。请根据已有信息补充和润色角色设定，保持原有信息不变，补充空白的字段。输出格式与输入相同，包含所有字段。"
+			userPrompt = fmt.Sprintf("小说标题: 《%s》\n故事类型: %s\n写作风格: %s\n故事梗概: %s\n\n大纲:\n%s\n\n当前角色信息:\n%s\n\n请对以上角色设定进行润色和补充。保留已有内容，为未填写的字段补充合理的内容。直接输出润色后的完整角色设定文本，保持原有格式。", h.state.Title, snapshot.Type, snapshot.WritingStyle, snapshot.StorySynopsis, outline, req.Content)
+		case "worldview":
+			systemPrompt = "你是一位专业的小说世界观架构师。请根据已有信息补充和润色世界观设定，保持原有信息不变，补充空白的内容。"
+			userPrompt = fmt.Sprintf("小说标题: 《%s》\n故事类型: %s\n写作风格: %s\n故事梗概: %s\n\n大纲:\n%s\n\n当前世界观设定:\n%s\n\n请对以上世界观设定进行润色和补充。保留已有内容，补充缺失的细节。直接输出润色后的完整文本。", h.state.Title, snapshot.Type, snapshot.WritingStyle, snapshot.StorySynopsis, outline, req.Content)
+		case "writing_style":
+			systemPrompt = "你是一位专业的文学风格顾问。请根据已有信息润色和补充写作风格描述。"
+			userPrompt = fmt.Sprintf("小说标题: 《%s》\n故事类型: %s\n故事梗概: %s\n\n大纲:\n%s\n\n当前写作风格描述:\n%s\n\n请对以上写作风格描述进行润色和补充，使其更加具体和有指导性。直接输出润色后的完整文本。", h.state.Title, snapshot.Type, snapshot.StorySynopsis, outline, req.Content)
+		case "story_synopsis":
+			systemPrompt = "你是一位专业的小说策划编辑。请根据已有信息润色和补充故事梗概。"
+			userPrompt = fmt.Sprintf("小说标题: 《%s》\n故事类型: %s\n写作风格: %s\n\n大纲:\n%s\n\n当前故事梗概:\n%s\n\n请对以上故事梗概进行润色和补充，使其包含完整的故事主线走向、核心冲突、关键转折点等要素。直接输出润色后的完整文本。", h.state.Title, snapshot.Type, snapshot.WritingStyle, outline, req.Content)
+		default:
+			h.endTask()
+			h.logger.Error("未知的字段类型: " + req.FieldType)
+			h.logger.TaskEnd("settings_polish", false)
+			return
+		}
+
+		result := CallAPIWithRetryLog(ctx, h.apiCfg, systemPrompt, userPrompt, h.logger)
+		if result == "" {
+			h.endTask()
+			if ctx.Err() != nil {
+				h.logger.Warn("AI 润色已取消")
+				h.logger.TaskEnd("settings_polish", false)
+			} else {
+				h.logger.Error("AI 润色失败")
+				h.logger.TaskEnd("settings_polish", false)
+			}
+			return
+		}
+
+		h.endTask()
+		h.logger.Success("AI 润色完成！")
+		h.logger.TaskEnd("settings_polish", true)
+		h.logger.SettingsPolishResult(req.FieldType, result)
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
 func (h *Handlers) GetSkills(w http.ResponseWriter, r *http.Request) {

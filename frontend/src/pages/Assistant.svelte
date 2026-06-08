@@ -59,9 +59,9 @@
   }
 </script>
 
-<div class="grid grid-cols-[240px_1fr] gap-4" style="height:calc(100vh - 180px)">
+<div class="grid grid-cols-[240px_1fr] gap-3" style="height:calc(100vh - 180px)">
   <!-- Session list -->
-  <div class="bg-base-200 border border-base-content/10 rounded-lg overflow-y-auto">
+  <div class="bg-base-200 shadow-sm border border-base-content/10 rounded-lg overflow-y-auto">
     <div class="p-3 border-b border-base-content/10">
       <button class="btn btn-primary btn-sm w-full" on:click={createSession}>新建会话</button>
     </div>
@@ -82,7 +82,7 @@
   </div>
 
   <!-- Chat area -->
-  <div class="flex flex-col bg-base-200 border border-base-content/10 rounded-lg">
+  <div class="flex flex-col bg-base-200 shadow-sm border border-base-content/10 rounded-lg">
     <div bind:this={messagesContainer} class="flex-1 overflow-y-auto p-4 space-y-3">
       {#if !$currentChatSession}
         <div class="text-center text-base-content/50 py-16">选择或创建一个会话开始对话</div>
@@ -138,7 +138,7 @@
     {#if $currentChatSession}
       <div class="border-t border-base-content/10 p-3 flex gap-2">
         <textarea
-          class="textarea textarea-bordered textarea-sm flex-1 min-h-[44px] max-h-[120px] resize-none"
+          class="textarea textarea-sm flex-1 min-h-[44px] max-h-[120px] resize-none"
           bind:value={chatInput}
           placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
           on:keydown={handleKeydown}

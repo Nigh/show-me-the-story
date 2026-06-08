@@ -30,23 +30,16 @@ type ForeshadowUpdateResponse struct {
 }
 
 func SuggestForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, logger *LogBroadcaster) ([]ForeshadowSuggestion, error) {
-	snapshot := state.StoryConfigSnapshot
-	if snapshot == nil {
-		snapshot = &cfg.Story
-	}
-
 	outline := ""
 	for _, ch := range state.Chapters {
 		outline += fmt.Sprintf("第%d章《%s》: %s\n", ch.Num, ch.Title, ch.Outline)
 	}
 
 	userPrompt := RenderPrompt(cfg.Prompts.ForeshadowPlanning, map[string]string{
-		"Title":            state.Title,
-		"CorePrompt":       state.CorePrompt,
-		"CoreRequirements": state.CoreRequirements,
-		"Outline":          outline,
-		"CharacterSetting": snapshot.CharacterSetting,
-		"WorldSetting":     snapshot.WorldSetting,
+		"Title":         state.Title,
+		"CorePrompt":    state.CorePrompt,
+		"StorySynopsis": state.StorySynopsis,
+		"Outline":       outline,
 	})
 
 	systemPrompt := "你是一位资深的小说叙事架构师。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
@@ -76,20 +69,13 @@ func UpdateForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, stat
 
 	historySummary := buildHistorySummary(state, chapterIdx)
 
-	snapshot := state.StoryConfigSnapshot
-	if snapshot == nil {
-		snapshot = &cfg.Story
-	}
-
 	userPrompt := RenderPrompt(cfg.Prompts.ForeshadowUpdate, map[string]string{
-		"Title":           state.Title,
-		"ChapterNum":      fmt.Sprintf("%d", ch.Num),
-		"ChapterTitle":    ch.Title,
-		"ChapterContent":  ch.Content,
-		"HistorySummary":  historySummary,
-		"Foreshadows":     foreshadowsText,
-		"CharacterSetting": snapshot.CharacterSetting,
-		"WorldSetting":    snapshot.WorldSetting,
+		"Title":          state.Title,
+		"ChapterNum":     fmt.Sprintf("%d", ch.Num),
+		"ChapterTitle":   ch.Title,
+		"ChapterContent": ch.Content,
+		"HistorySummary": historySummary,
+		"Foreshadows":    foreshadowsText,
 	})
 
 	systemPrompt := "你是一位严谨的小说伏笔追踪员。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"

@@ -25,9 +25,7 @@ type StoryConfig struct {
 	ChapterCount          int    `json:"chapter_count"`
 	TargetWordsPerChapter int    `json:"target_words_per_chapter"`
 	WritingStyle          string `json:"writing_style"`
-	CharacterSetting      string `json:"character_setting"`
-	WorldSetting          string `json:"world_setting"`
-	CoreRequirements      string `json:"core_requirements"`
+	StorySynopsis         string `json:"story_synopsis"`
 }
 
 type PromptsConfig struct {

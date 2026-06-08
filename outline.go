@@ -8,10 +8,10 @@ import (
 )
 
 type OutlineResponse struct {
-	Title            string           `json:"title"`
-	CorePrompt       string           `json:"core_prompt"`
-	CoreRequirements string           `json:"core_requirements"`
-	Chapters         []OutlineChapter `json:"chapters"`
+	Title        string           `json:"title"`
+	CorePrompt   string           `json:"core_prompt"`
+	StorySynopsis string          `json:"story_synopsis"`
+	Chapters     []OutlineChapter `json:"chapters"`
 }
 
 type OutlineChapter struct {
@@ -25,13 +25,11 @@ func generateOutline(ctx context.Context, apiCfg *APIConfig, cfg *Config) (*Outl
 	targetWordsStr := fmt.Sprintf("%d", cfg.Story.TargetWordsPerChapter)
 
 	userPrompt := RenderPrompt(cfg.Prompts.OutlineGeneration, map[string]string{
-		"StoryType":         cfg.Story.Type,
-		"ChapterCount":      chapterCountStr,
-		"TargetWords":       targetWordsStr,
-		"WritingStyle":      cfg.Story.WritingStyle,
-		"CharacterSetting":  cfg.Story.CharacterSetting,
-		"WorldSetting":      cfg.Story.WorldSetting,
-		"CoreRequirements":  cfg.Story.CoreRequirements,
+		"StoryType":        cfg.Story.Type,
+		"ChapterCount":     chapterCountStr,
+		"TargetWords":      targetWordsStr,
+		"WritingStyle":     cfg.Story.WritingStyle,
+		"StorySynopsis":    cfg.Story.StorySynopsis,
 	})
 
 	systemPrompt := "你是一位专业的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
@@ -114,8 +112,8 @@ func applyOutlineRevision(resp OutlineResponse, state *Progress) {
 	if resp.CorePrompt != "" {
 		state.CorePrompt = resp.CorePrompt
 	}
-	if resp.CoreRequirements != "" {
-		state.CoreRequirements = resp.CoreRequirements
+	if resp.StorySynopsis != "" {
+		state.StorySynopsis = resp.StorySynopsis
 	}
 }
 
@@ -152,7 +150,7 @@ func GenerateOutlineAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 
 	state.Title = outlineResp.Title
 	state.CorePrompt = outlineResp.CorePrompt
-	state.CoreRequirements = outlineResp.CoreRequirements
+	state.StorySynopsis = outlineResp.StorySynopsis
 	state.Chapters = make([]ChapterState, len(outlineResp.Chapters))
 	for i, ch := range outlineResp.Chapters {
 		state.Chapters[i] = ChapterState{

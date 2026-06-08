@@ -7,12 +7,10 @@ import (
 )
 
 type ReconciliationResult struct {
-	Type             string `json:"type"`
-	WritingStyle     string `json:"writing_style"`
-	CharacterSetting string `json:"character_setting"`
-	WorldSetting     string `json:"world_setting"`
-	CoreRequirements string `json:"core_requirements"`
-	Explanation      string `json:"explanation"`
+	Type          string `json:"type"`
+	WritingStyle  string `json:"writing_style"`
+	StorySynopsis string `json:"story_synopsis"`
+	Explanation   string `json:"explanation"`
 }
 
 func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress,
@@ -31,12 +29,10 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 	}
 
 	userPrompt := RenderPrompt(cfg.Prompts.SettingsReconciliation, map[string]string{
-		"NewType":             newSettings.Type,
-		"NewWritingStyle":     newSettings.WritingStyle,
-		"NewCharacterSetting": newSettings.CharacterSetting,
-		"NewWorldSetting":     newSettings.WorldSetting,
-		"NewCoreRequirements": newSettings.CoreRequirements,
-		"ExistingSummaries":   acceptedSummaries,
+		"NewType":          newSettings.Type,
+		"NewWritingStyle":  newSettings.WritingStyle,
+		"NewStorySynopsis": newSettings.StorySynopsis,
+		"ExistingSummaries": acceptedSummaries,
 	})
 
 	systemPrompt := "你是一位专业的小说一致性审查编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
@@ -57,9 +53,7 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 	adjustedStory := cfg.Story
 	adjustedStory.Type = result.Type
 	adjustedStory.WritingStyle = result.WritingStyle
-	adjustedStory.CharacterSetting = result.CharacterSetting
-	adjustedStory.WorldSetting = result.WorldSetting
-	adjustedStory.CoreRequirements = result.CoreRequirements
+	adjustedStory.StorySynopsis = result.StorySynopsis
 
 	state.StoryConfigSnapshot = &adjustedStory
 
@@ -100,14 +94,8 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 	if result.WritingStyle != newSettings.WritingStyle {
 		changedFields = append(changedFields, "writing_style")
 	}
-	if result.CharacterSetting != newSettings.CharacterSetting {
-		changedFields = append(changedFields, "character_setting")
-	}
-	if result.WorldSetting != newSettings.WorldSetting {
-		changedFields = append(changedFields, "world_setting")
-	}
-	if result.CoreRequirements != newSettings.CoreRequirements {
-		changedFields = append(changedFields, "core_requirements")
+	if result.StorySynopsis != newSettings.StorySynopsis {
+		changedFields = append(changedFields, "story_synopsis")
 	}
 
 	logger.SettingsReconciled(map[string]interface{}{
@@ -136,8 +124,8 @@ func regeneratePendingOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Conf
 		lockedChapters = "无已锁定章节。"
 	}
 
-	feedback := fmt.Sprintf("故事设定已更新为：类型=%s，写作风格=%s，角色设定=%s，世界观=%s。请根据新设定调整待定章节大纲，使其与新设定和已有章节保持一致。",
-		cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.CharacterSetting, cfg.Story.WorldSetting)
+	feedback := fmt.Sprintf("故事设定已更新为：类型=%s，写作风格=%s，故事梗概=%s。请根据新设定调整待定章节大纲，使其与新设定和已有章节保持一致。",
+		cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.StorySynopsis)
 
 	userPrompt := RenderPrompt(cfg.Prompts.OutlineRevision, map[string]string{
 		"CurrentOutline": pendingChapters,
