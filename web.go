@@ -15,8 +15,8 @@ import (
 //go:embed static
 var staticFiles embed.FS
 
-func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, cfgPath string, state *Progress, progressPath string, logger *LogBroadcaster, port string) {
-	h := NewHandlers(apiCfg, apiCfgPath, cfg, cfgPath, state, progressPath, logger)
+func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, cfgPath string, state *Progress, progressPath string, settings *ProjectSettings, settingsPath string, skills []Skill, sessionsDir string, logger *LogBroadcaster, port string, projectDir string) {
+	h := NewHandlers(apiCfg, apiCfgPath, cfg, cfgPath, state, progressPath, settings, settingsPath, skills, sessionsDir, logger, projectDir)
 
 	mux := http.NewServeMux()
 
@@ -37,11 +37,30 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, cfgPath s
 	mux.HandleFunc("POST /api/chapter/generate", h.PostChapterGenerate)
 	mux.HandleFunc("POST /api/chapter/confirm", h.PostChapterConfirm)
 	mux.HandleFunc("POST /api/chapter/revise", h.PostChapterRevise)
+	mux.HandleFunc("POST /api/chapter/polish", h.PostChapterPolish)
 	mux.HandleFunc("DELETE /api/chapter", h.DeleteChapter)
 	mux.HandleFunc("DELETE /api/chapters/from/{num}", h.DeleteChaptersFrom)
 	mux.HandleFunc("DELETE /api/outline", h.DeleteOutline)
 
 	mux.HandleFunc("POST /api/settings/reconcile", h.PostSettingsReconcile)
+	mux.HandleFunc("GET /api/settings", h.GetSettings)
+	mux.HandleFunc("POST /api/settings/ai-generate", h.PostSettingsAIGenerate)
+
+	mux.HandleFunc("POST /api/characters", h.PostCharacter)
+	mux.HandleFunc("PUT /api/characters/{id}", h.PutCharacter)
+	mux.HandleFunc("DELETE /api/characters/{id}", h.DeleteCharacter)
+
+	mux.HandleFunc("POST /api/worldview", h.PostWorldview)
+	mux.HandleFunc("PUT /api/worldview/{id}", h.PutWorldview)
+	mux.HandleFunc("DELETE /api/worldview/{id}", h.DeleteWorldview)
+
+	mux.HandleFunc("POST /api/organizations", h.PostOrganization)
+	mux.HandleFunc("PUT /api/organizations/{id}", h.PutOrganization)
+	mux.HandleFunc("DELETE /api/organizations/{id}", h.DeleteOrganization)
+
+	mux.HandleFunc("POST /api/relations", h.PostRelation)
+	mux.HandleFunc("PUT /api/relations/{id}", h.PutRelation)
+	mux.HandleFunc("DELETE /api/relations/{id}", h.DeleteRelation)
 
 	mux.HandleFunc("GET /api/foreshadows", h.GetForeshadows)
 	mux.HandleFunc("POST /api/foreshadows/suggest", h.PostForeshadowsSuggest)
@@ -52,6 +71,15 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, cfgPath s
 
 	mux.HandleFunc("POST /api/continue/import", h.PostContinueImport)
 	mux.HandleFunc("POST /api/continue/confirm", h.PostContinueConfirm)
+
+	mux.HandleFunc("GET /api/skills", h.GetSkills)
+	mux.HandleFunc("PUT /api/skills/{id}/toggle", h.PutSkillToggle)
+
+	mux.HandleFunc("GET /api/chat/sessions", h.GetChatSessions)
+	mux.HandleFunc("POST /api/chat/sessions", h.PostChatSession)
+	mux.HandleFunc("GET /api/chat/sessions/{id}", h.GetChatSession)
+	mux.HandleFunc("DELETE /api/chat/sessions/{id}", h.DeleteChatSession)
+	mux.HandleFunc("POST /api/chat/sessions/{id}/messages", h.PostChatMessage)
 
 	mux.HandleFunc("GET /api/events", h.SSEHandler)
 
@@ -88,6 +116,7 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, cfgPath s
 
 	fmt.Printf(" [系统] AI 小说生成器 Web UI 启动中...\n")
 	fmt.Printf(" [系统] 访问地址: http://localhost%s\n", port)
+	fmt.Printf(" [系统] 项目目录: %s\n", projectDir)
 	fmt.Printf(" [系统] 当前阶段: %s\n", state.Phase)
 	if state.Title != "" {
 		fmt.Printf(" [系统] 小说标题: 《%s》\n", state.Title)

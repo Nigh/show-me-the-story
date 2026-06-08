@@ -14,8 +14,9 @@ type APIConfig struct {
 }
 
 type Config struct {
-	Story   StoryConfig   `json:"story"`
-	Prompts PromptsConfig `json:"prompts"`
+	Story       StoryConfig   `json:"story"`
+	Prompts     PromptsConfig `json:"prompts"`
+	SkillConfig *SkillConfig  `json:"skill_config,omitempty"`
 }
 
 type StoryConfig struct {
@@ -53,6 +54,9 @@ func DefaultConfig() *Config {
 		Story: StoryConfig{
 			ChapterCount:          30,
 			TargetWordsPerChapter: 2500,
+		},
+		SkillConfig: &SkillConfig{
+			EnabledSkills: make(map[string]bool),
 		},
 	}
 	cfg.Prompts.applyDefaults()
@@ -118,6 +122,14 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	cfg.Prompts.applyDefaults()
+
+	if cfg.SkillConfig == nil {
+		cfg.SkillConfig = &SkillConfig{
+			EnabledSkills: make(map[string]bool),
+		}
+	} else {
+		cfg.SkillConfig.applyDefaults()
+	}
 
 	return &cfg, nil
 }

@@ -55,8 +55,8 @@ var DefaultPrompts = PromptsConfig{
 
 【写作风格】{{.WritingStyle}}
 【角色设定】{{.CharacterSetting}}
-【世界观】{{.WorldSetting}}
-
+{{.CharacterContext}}【世界观】{{.WorldSetting}}
+{{.WorldviewContext}}
 请直接输出小说正文，字数{{.TargetWords}}字左右。`,
 
 	ChapterSummary: `你是一位精准的小说叙事状态分析师，擅长从文学性文本中提取关键叙事要素和人物心理轨迹。你的摘要将作为后续章节创作的前情提要，因此必须保留可延续的状态信息。

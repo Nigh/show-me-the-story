@@ -117,6 +117,36 @@ func (lb *LogBroadcaster) SettingsReconciled(data interface{}) {
 	lb.Emit("settings_reconciled", data)
 }
 
+func (lb *LogBroadcaster) ChatChunk(sessionID, text string) {
+	lb.Emit("chat_chunk", map[string]interface{}{
+		"session_id": sessionID,
+		"text":       text,
+	})
+}
+
+func (lb *LogBroadcaster) ToolCallStart(sessionID, toolName, args string) {
+	lb.Emit("tool_call_start", map[string]interface{}{
+		"session_id": sessionID,
+		"tool_name":  toolName,
+		"args":       args,
+	})
+}
+
+func (lb *LogBroadcaster) ToolCallEnd(sessionID, toolName, result string) {
+	lb.Emit("tool_call_end", map[string]interface{}{
+		"session_id": sessionID,
+		"tool_name":  toolName,
+		"result":     result,
+	})
+}
+
+func (lb *LogBroadcaster) PolishResult(chapterIdx int, text string) {
+	lb.Emit("polish_result", map[string]interface{}{
+		"chapter_idx": chapterIdx,
+		"text":        text,
+	})
+}
+
 func (lb *LogBroadcaster) Close() {
 	lb.mu.Lock()
 	lb.closed = true

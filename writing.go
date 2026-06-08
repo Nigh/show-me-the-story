@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func GenerateChapterAction(apiCfg *APIConfig, cfg *Config, state *Progress, progressPath string, logger *LogBroadcaster) error {
+func GenerateChapterAction(apiCfg *APIConfig, cfg *Config, state *Progress, progressPath string, settings *ProjectSettings, logger *LogBroadcaster) error {
 	if state.Phase != "writing" {
 		return fmt.Errorf("当前不在写作阶段")
 	}
@@ -33,7 +33,7 @@ func GenerateChapterAction(apiCfg *APIConfig, cfg *Config, state *Progress, prog
 	maxFactCheckRetries := 3
 	for attempt := 0; attempt <= maxFactCheckRetries; attempt++ {
 		logger.StepInfo(1, 4, "正在构思并撰写正文...")
-		content := generateChapterContentStreamWithRetryLog(apiCfg, cfg, state, i, logger)
+		content := generateChapterContentStreamWithRetryLog(apiCfg, cfg, state, i, settings, logger)
 		ch.Content = content
 		logger.Info(fmt.Sprintf("正文撰写完毕，共 %d 字", len([]rune(content))))
 
@@ -163,7 +163,7 @@ func ConfirmChapterAction(state *Progress, progressPath string) error {
 	return SaveProgress(progressPath, state)
 }
 
-func generateChapterContent(apiCfg *APIConfig, cfg *Config, state *Progress, idx int) (string, error) {
+func generateChapterContent(apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings) (string, error) {
 	ch := state.Chapters[idx]
 
 	historySummary := buildHistorySummary(state, idx)
@@ -175,19 +175,24 @@ func generateChapterContent(apiCfg *APIConfig, cfg *Config, state *Progress, idx
 
 	foreshadowContext := formatActiveForeshadowsForChapter(state.Foreshadows, ch.Num)
 
+	characterContext := buildCharacterContext(settings, ch.Outline)
+	worldviewContext := buildWorldviewContext(settings, ch.Outline)
+
 	userPrompt := RenderPrompt(cfg.Prompts.ChapterWriting, map[string]string{
-		"Title":            state.Title,
-		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
-		"CorePrompt":       state.CorePrompt,
-		"CoreRequirements": state.CoreRequirements,
-		"HistorySummary":   historySummary,
-		"ChapterTitle":     ch.Title,
-		"ChapterOutline":   ch.Outline,
-		"WritingStyle":     snapshot.WritingStyle,
-		"CharacterSetting": snapshot.CharacterSetting,
-		"WorldSetting":     snapshot.WorldSetting,
-		"TargetWords":      fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
-		"Foreshadows":      foreshadowContext,
+		"Title":             state.Title,
+		"ChapterNum":        fmt.Sprintf("%d", ch.Num),
+		"CorePrompt":        state.CorePrompt,
+		"CoreRequirements":  state.CoreRequirements,
+		"HistorySummary":    historySummary,
+		"ChapterTitle":      ch.Title,
+		"ChapterOutline":    ch.Outline,
+		"WritingStyle":      snapshot.WritingStyle,
+		"CharacterSetting":  snapshot.CharacterSetting,
+		"CharacterContext":  characterContext,
+		"WorldSetting":      snapshot.WorldSetting,
+		"WorldviewContext":  worldviewContext,
+		"TargetWords":       fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
+		"Foreshadows":       foreshadowContext,
 	})
 
 	systemPrompt := state.CorePrompt
@@ -198,7 +203,7 @@ func generateChapterContent(apiCfg *APIConfig, cfg *Config, state *Progress, idx
 	return CallAPI(apiCfg, systemPrompt, userPrompt)
 }
 
-func generateChapterContentStream(apiCfg *APIConfig, cfg *Config, state *Progress, idx int, logger *LogBroadcaster) (string, error) {
+func generateChapterContentStream(apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) (string, error) {
 	ch := state.Chapters[idx]
 
 	historySummary := buildHistorySummary(state, idx)
@@ -210,19 +215,24 @@ func generateChapterContentStream(apiCfg *APIConfig, cfg *Config, state *Progres
 
 	foreshadowContext := formatActiveForeshadowsForChapter(state.Foreshadows, ch.Num)
 
+	characterContext := buildCharacterContext(settings, ch.Outline)
+	worldviewContext := buildWorldviewContext(settings, ch.Outline)
+
 	userPrompt := RenderPrompt(cfg.Prompts.ChapterWriting, map[string]string{
-		"Title":            state.Title,
-		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
-		"CorePrompt":       state.CorePrompt,
-		"CoreRequirements": state.CoreRequirements,
-		"HistorySummary":   historySummary,
-		"ChapterTitle":     ch.Title,
-		"ChapterOutline":   ch.Outline,
-		"WritingStyle":     snapshot.WritingStyle,
-		"CharacterSetting": snapshot.CharacterSetting,
-		"WorldSetting":     snapshot.WorldSetting,
-		"TargetWords":      fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
-		"Foreshadows":      foreshadowContext,
+		"Title":             state.Title,
+		"ChapterNum":        fmt.Sprintf("%d", ch.Num),
+		"CorePrompt":        state.CorePrompt,
+		"CoreRequirements":  state.CoreRequirements,
+		"HistorySummary":    historySummary,
+		"ChapterTitle":      ch.Title,
+		"ChapterOutline":    ch.Outline,
+		"WritingStyle":      snapshot.WritingStyle,
+		"CharacterSetting":  snapshot.CharacterSetting,
+		"CharacterContext":  characterContext,
+		"WorldSetting":      snapshot.WorldSetting,
+		"WorldviewContext":  worldviewContext,
+		"TargetWords":       fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
+		"Foreshadows":       foreshadowContext,
 	})
 
 	systemPrompt := state.CorePrompt
@@ -244,10 +254,10 @@ func generateChapterContentStream(apiCfg *APIConfig, cfg *Config, state *Progres
 	return CallAPIStream(apiCfg, systemPrompt, userPrompt, onChunk)
 }
 
-func generateChapterContentWithRetry(apiCfg *APIConfig, cfg *Config, state *Progress, idx int) string {
+func generateChapterContentWithRetry(apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings) string {
 	retryCount := 0
 	for {
-		content, err := generateChapterContent(apiCfg, cfg, state, idx)
+		content, err := generateChapterContent(apiCfg, cfg, state, idx, settings)
 		if err == nil && content != "" {
 			return content
 		}
@@ -259,10 +269,10 @@ func generateChapterContentWithRetry(apiCfg *APIConfig, cfg *Config, state *Prog
 	}
 }
 
-func generateChapterContentStreamWithRetry(apiCfg *APIConfig, cfg *Config, state *Progress, idx int, logger *LogBroadcaster) string {
+func generateChapterContentStreamWithRetry(apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) string {
 	retryCount := 0
 	for {
-		content, err := generateChapterContentStream(apiCfg, cfg, state, idx, logger)
+		content, err := generateChapterContentStream(apiCfg, cfg, state, idx, settings, logger)
 		if err == nil && content != "" {
 			return content
 		}
@@ -274,10 +284,10 @@ func generateChapterContentStreamWithRetry(apiCfg *APIConfig, cfg *Config, state
 	}
 }
 
-func generateChapterContentStreamWithRetryLog(apiCfg *APIConfig, cfg *Config, state *Progress, idx int, logger *LogBroadcaster) string {
+func generateChapterContentStreamWithRetryLog(apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) string {
 	retryCount := 0
 	for {
-		content, err := generateChapterContentStream(apiCfg, cfg, state, idx, logger)
+		content, err := generateChapterContentStream(apiCfg, cfg, state, idx, settings, logger)
 		if err == nil && content != "" {
 			return content
 		}
@@ -493,4 +503,60 @@ func buildHistorySummary(state *Progress, idx int) string {
 		history = "当前为故事开端，无历史前情。"
 	}
 	return history
+}
+
+func PolishChapterAction(apiCfg *APIConfig, cfg *Config, state *Progress, chapterIdx int, skills []Skill, progressPath string, logger *LogBroadcaster) error {
+	if chapterIdx < 0 || chapterIdx >= len(state.Chapters) {
+		return fmt.Errorf("章节索引越界")
+	}
+
+	ch := &state.Chapters[chapterIdx]
+	if ch.Content == "" {
+		return fmt.Errorf("章节内容为空，无法润色")
+	}
+
+	skillsContent := FormatSkillsContent(skills)
+	if skillsContent == "" {
+		return fmt.Errorf("没有启用的润色技能，请先在技能管理页启用")
+	}
+
+	userPrompt := fmt.Sprintf(`请根据以下规则对下面的章节正文进行去AI味处理，输出修改后的完整正文。
+
+## 润色规则
+
+%s
+
+## 待处理正文
+
+%s`, skillsContent, ch.Content)
+
+	systemPrompt := "你是一位专业的中文小说润色编辑。请严格按照规则修改文本，输出修改后的完整章节正文。不要添加任何解释或标记。"
+
+	totalChars := 0
+	nextReport := 500
+	onChunk := func(chunk string) {
+		logger.ContentChunk(chapterIdx, chunk)
+		totalChars += len([]rune(chunk))
+		if totalChars >= nextReport {
+			logger.StreamProgress(chapterIdx, totalChars)
+			nextReport += 500
+		}
+	}
+
+	result, err := CallAPIStream(apiCfg, systemPrompt, userPrompt, onChunk)
+	if err != nil {
+		return fmt.Errorf("润色失败: %w", err)
+	}
+
+	ch.Content = result
+	ch.Status = StatusReview
+
+	SaveChapterMarkdown(*ch, state.Title)
+
+	if err := SaveProgress(progressPath, state); err != nil {
+		return fmt.Errorf("保存进度失败: %w", err)
+	}
+
+	logger.PolishResult(chapterIdx, result)
+	return nil
 }
