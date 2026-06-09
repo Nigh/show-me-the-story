@@ -104,6 +104,8 @@ task dev                              # 编译并启动 Go 后端
 | `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph 类），支持拖拽 |
 | `src/pages/Assistant.svelte` | 助理页：聊天会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
 | `src/pages/Skills.svelte` | 技能页：技能表格 + toggle 开关 |
+| `src/components/ChatPanel.svelte` | 右侧聊天面板：会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
+| `src/components/ConfirmModal.svelte` | 全局确认弹窗组件（替代浏览器 confirm） |
 | `src/components/LogPanel.svelte` | 底部可折叠实时日志面板 |
 
 ## 关键设计模式
@@ -343,17 +345,15 @@ planted → progressing → resolved
 
 | 占位符 | 来源 | 说明 |
 |--------|------|------|
-| `{{.Title}}` | `state.Title` | 小说标题 |
+| `{{.Title}}` | `preferUserValue(cfg.Story.Title, state.Title)` | 小说标题（优先用户配置） |
 | `{{.ChapterNum}}` | `ch.Num` | 章节编号 |
 | `{{.CorePrompt}}` | `state.CorePrompt` | 核心写作提示词 |
-| `{{.CoreRequirements}}` | `state.CoreRequirements` | 核心写作要求 |
+| `{{.StorySynopsis}}` | `preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)` | 故事梗概（优先用户配置） |
 | `{{.HistorySummary}}` | `buildHistorySummary()` | 最近 5 章摘要 |
 | `{{.ChapterTitle}}` | `ch.Title` | 本章标题 |
-| `{{.ChapterOutline}}` | `ch.Outline` | 本章大纲 |
-| `{{.WritingStyle}}` | snapshot | 写作风格 |
-| `{{.CharacterSetting}}` | snapshot | 原始角色设定文本 |
+| `{{.ChapterOutline}}` | `ch.Outline` | 本章大纲（修订时附加用户修改意见） |
+| `{{.WritingStyle}}` | `cfg.Story.WritingStyle` | 写作风格（始终使用当前配置） |
 | `{{.CharacterContext}}` | `buildCharacterContext()` | 结构化角色详情（从 settings 匹配） |
-| `{{.WorldSetting}}` | snapshot | 原始世界观设定文本 |
 | `{{.WorldviewContext}}` | `buildWorldviewContext()` | 结构化世界观详情（从 settings 匹配） |
 | `{{.TargetWords}}` | snapshot | 每章目标字数 |
 | `{{.Foreshadows}}` | `formatActiveForeshadowsForChapter()` | 活跃伏笔上下文 |
