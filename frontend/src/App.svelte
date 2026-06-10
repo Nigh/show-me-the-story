@@ -1,14 +1,8 @@
 <script>
   import { currentPage } from './lib/router.js';
-  import { progress, taskRunning, contextPage, toastStore, taskNotification, currentProject } from './lib/stores.js';
+  import { progress, taskRunning, contextPage, toastStore, currentProject } from './lib/stores.js';
   import { connectSSE } from './lib/sse.js';
   import { api } from './lib/api.js';
-
-  async function stopTask() {
-    try {
-      await api('POST', '/api/task/stop');
-    } catch (e) {}
-  }
   import { onMount } from 'svelte';
   import Projects from './pages/Projects.svelte';
   import Config from './pages/Config.svelte';
@@ -37,6 +31,12 @@
 
   $: phaseNames = { outline: '大纲阶段', writing: '写作阶段' };
   $: phase = $progress ? (phaseNames[$progress.phase] || $progress.phase) : '未开始';
+  $: chapterStats = (() => {
+    const chs = $progress?.chapters || [];
+    if (chs.length === 0) return '';
+    const accepted = chs.filter(c => c.status === 'accepted').length;
+    return `${accepted}/${chs.length} 章`;
+  })();
 
   async function sendToChat(text) {
     if (chatPanel) await chatPanel.sendMessageToChat(text);
@@ -58,6 +58,9 @@
         {$currentProject} ✕
       </span>
       <span class="badge badge-sm" class:badge-primary={$progress}>{phase}</span>
+      {#if chapterStats}
+        <span class="badge badge-sm badge-ghost">{chapterStats}</span>
+      {/if}
       {#if $taskRunning}
         <span class="badge badge-sm badge-warning gap-1">
           <span class="loading loading-spinner loading-xs"></span>
@@ -79,17 +82,17 @@
         <!-- Nav -->
         <nav class="flex bg-base-200 border-b border-base-content/10 px-3 py-2 shrink-0 gap-1">
           {#each [
-            ['config', '配置'],
-            ['outline', '大纲'],
-            ['writing', '写作'],
-            ['relations', '图谱'],
-            ['skills', '技能']
-          ] as [page, label]}
+            ['config', '⚙️', '配置'],
+            ['outline', '📝', '大纲'],
+            ['writing', '✍️', '写作'],
+            ['relations', '🕸️', '图谱'],
+            ['skills', '🧩', '技能']
+          ] as [page, icon, label]}
             <button
-              class="btn btn-ghost btn-sm text-sm px-4 {$currentPage === page ? 'btn-active border-b-2 border-primary rounded-none' : ''}"
+              class="btn btn-sm text-sm px-4 gap-1.5 {$currentPage === page ? 'btn-primary' : 'btn-ghost'}"
               on:click={() => window.location.hash = '#' + page}
             >
-              {label}
+              <span class="text-xs">{icon}</span>{label}
             </button>
           {/each}
         </nav>
@@ -125,20 +128,6 @@
       </div>
     {/each}
   </div>
-
-  <!-- Task Completion Overlay -->
-  {#if $taskNotification}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center" on:click={() => taskNotification.set(null)}>
-      <div class="bg-base-200 rounded-xl shadow-2xl p-8 max-w-md mx-4 text-center border border-base-content/10 animate-bounce-in" on:click|stopPropagation>
-        <div class="text-4xl mb-4">✓</div>
-        <h3 class="text-xl font-bold mb-2">{$taskNotification.name}</h3>
-        <p class="text-base-content/70 mb-6">{$taskNotification.message}</p>
-        <button class="btn btn-primary" on:click={() => taskNotification.set(null)}>知道了</button>
-      </div>
-    </div>
-  {/if}
 
   <ConfirmModal />
 </div>

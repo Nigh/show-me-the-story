@@ -1,4 +1,4 @@
-import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, continueAnalysis, currentChatSession, settings, taskNotification, chatSessions, lastFailedTask, currentTaskName, logEntries } from './stores.js';
+import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, continueAnalysis, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries } from './stores.js';
 import { api } from './api.js';
 
 let eventSource = null;
@@ -49,7 +49,7 @@ export function connectSSE() {
 
     if (d.success) {
       const name = taskNames[d.task] || d.task;
-      taskNotification.set({ task: d.task, name, message: `${name}已完成` });
+      addToast(`✓ ${name}已完成`, 'success');
     } else {
       // 任务失败时记录重试信息
       lastFailedTask.set({ task: d.task, taskName: taskNames[d.task] || d.task });

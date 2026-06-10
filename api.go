@@ -57,13 +57,15 @@ func isFatalAPIError(err error) bool {
 		return false
 	}
 	msg := err.Error()
+	// 注意：不要把所有 "dial tcp" 都当作致命错误——
+	// "dial tcp ... i/o timeout" 等临时网络故障应当重试。
 	if strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "no such host") ||
-		strings.Contains(msg, "dial tcp") ||
-		strings.Contains(msg, "lookup ") {
+		strings.Contains(msg, "no such host") {
 		return true
 	}
-	if strings.Contains(msg, "状态码: 401") || strings.Contains(msg, "状态码: 404") {
+	if strings.Contains(msg, "状态码: 401") ||
+		strings.Contains(msg, "状态码: 403") ||
+		strings.Contains(msg, "状态码: 404") {
 		return true
 	}
 	if strings.Contains(msg, "context canceled") {
@@ -73,14 +75,19 @@ func isFatalAPIError(err error) bool {
 }
 
 func CallAPI(ctx context.Context, apiCfg *APIConfig, system, user string) (string, error) {
+	return CallAPIMessages(ctx, apiCfg, []Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	})
+}
+
+// CallAPIMessages 以完整的多轮消息数组调用 API（非流式）。
+func CallAPIMessages(ctx context.Context, apiCfg *APIConfig, messages []Message) (string, error) {
 	fullURL := normalizeURL(apiCfg.BaseURL)
 
 	reqBody := ChatRequest{
-		Model: apiCfg.Model,
-		Messages: []Message{
-			{Role: "system", Content: system},
-			{Role: "user", Content: user},
-		},
+		Model:    apiCfg.Model,
+		Messages: messages,
 	}
 
 	bts, err := json.Marshal(reqBody)
@@ -194,15 +201,20 @@ type streamDelta struct {
 }
 
 func CallAPIStream(ctx context.Context, apiCfg *APIConfig, system, user string, onChunk func(string)) (string, error) {
+	return CallAPIStreamMessages(ctx, apiCfg, []Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	}, onChunk)
+}
+
+// CallAPIStreamMessages 以完整的多轮消息数组调用 API（流式）。
+func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Message, onChunk func(string)) (string, error) {
 	fullURL := normalizeURL(apiCfg.BaseURL)
 
 	reqBody := ChatRequest{
-		Model: apiCfg.Model,
-		Messages: []Message{
-			{Role: "system", Content: system},
-			{Role: "user", Content: user},
-		},
-		Stream: true,
+		Model:    apiCfg.Model,
+		Messages: messages,
+		Stream:   true,
 	}
 
 	bts, err := json.Marshal(reqBody)

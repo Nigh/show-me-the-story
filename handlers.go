@@ -59,6 +59,16 @@ func (h *Handlers) storysDir() string {
 	return filepath.Join(h.progDir, "storys")
 }
 
+// projectDir returns the current project's directory (empty if no project selected).
+func (h *Handlers) projectDir() string {
+	h.projectMu.RLock()
+	defer h.projectMu.RUnlock()
+	if h.projectName == "" {
+		return h.progDir
+	}
+	return filepath.Join(h.progDir, "storys", h.projectName)
+}
+
 // switchProject loads all project-specific data for the given project name.
 func (h *Handlers) switchProject(name string) error {
 	h.projectMu.Lock()
@@ -269,10 +279,17 @@ func (h *Handlers) DeleteProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) PostOutlineGenerate(w http.ResponseWriter, r *http.Request) {
-	// 检查是否有写作中/审核中的章节，如果有则拒绝
+	if !h.ensureProject(w) {
+		return
+	}
+	// 检查是否有写作中/审核中/已确认的章节，如果有则拒绝
 	for _, ch := range h.state.Chapters {
 		if ch.Status == StatusWriting || ch.Status == StatusReview {
 			h.writeError(w, http.StatusConflict, "有正在写作/审核中的章节，请先处理后再重新生成大纲")
+			return
+		}
+		if ch.Status == StatusAccepted {
+			h.writeError(w, http.StatusConflict, "存在已确认章节，无法整体重新生成大纲。如需追加章节请使用「生成后续大纲」")
 			return
 		}
 	}
@@ -504,6 +521,55 @@ func (h *Handlers) PostChapterRevise(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
+// PostChapterReviseSpecific 对指定编号章节做定向最小化修订（含已确认章节），
+// 仅修改该章正文与摘要，不影响其他章节和大纲。
+func (h *Handlers) PostChapterReviseSpecific(w http.ResponseWriter, r *http.Request) {
+	numStr := r.PathValue("num")
+	var num int
+	if _, err := fmt.Sscanf(numStr, "%d", &num); err != nil {
+		h.writeError(w, http.StatusBadRequest, "无效的章节编号")
+		return
+	}
+
+	if !h.tryStartTask() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+
+	var body struct {
+		Feedback string `json:"feedback"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Feedback == "" {
+		h.endTask()
+		h.writeError(w, http.StatusBadRequest, "缺少 feedback 字段")
+		return
+	}
+
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("chapter_revision")
+		ctx := h.taskCtx
+
+		h.logger.Info(fmt.Sprintf("正在定向修订第 %d 章...", num))
+		err := ReviseSpecificChapterAction(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, num, body.Feedback, h.settings, h.logger)
+
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.Warn("章节修订已取消")
+			} else {
+				h.logger.Error(fmt.Sprintf("章节修订失败: %v", err))
+			}
+			h.logger.TaskEnd("chapter_revision", false)
+			return
+		}
+
+		h.logger.TaskEnd("chapter_revision", true)
+		h.broadcastProgress()
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
 func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 	if h.isTaskRunning() {
 		h.writeError(w, http.StatusConflict, "有任务正在运行，无法删除章节")
@@ -523,8 +589,7 @@ func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mdFile := fmt.Sprintf("Chapter_%02d.md", ch.Num)
-	deleteFile(mdFile)
+	deleteFile(ChapterMarkdownPath(h.projectDir(), ch.Num))
 
 	h.state.Chapters = h.state.Chapters[:lastIdx]
 
@@ -687,7 +752,7 @@ func (h *Handlers) DeleteChaptersFrom(w http.ResponseWriter, r *http.Request) {
 	deletedCount := len(h.state.Chapters) - startIdx
 
 	for i := startIdx; i < len(h.state.Chapters); i++ {
-		mdFile := fmt.Sprintf("Chapter_%02d.md", h.state.Chapters[i].Num)
+		mdFile := ChapterMarkdownPath(h.projectDir(), h.state.Chapters[i].Num)
 		if err := deleteFile(mdFile); err != nil {
 			h.logger.Warn(fmt.Sprintf("删除文件 %s 失败: %v", mdFile, err))
 		}
@@ -1610,6 +1675,8 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 	h.lastChatMessage = req.Content
 
 	go func() {
+		// defer 确保任何错误路径都会释放任务锁，否则后续所有任务将永久 409
+		defer h.endTask()
 		h.logger.TaskStart("chat_message")
 		ctx := h.taskCtx
 
@@ -1642,9 +1709,17 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 			SessionsDir:  h.sessionsDir,
 			ProjectDir:   filepath.Join(h.progDir, "storys", h.projectName),
 			StartAsync: func(taskName string, fn func(goCtx context.Context)) {
+				// 子任务必须计入 activeWork，否则 Agent 主循环结束后锁被释放，
+				// 子任务仍在运行时新任务可并发进入，造成数据竞争。
+				if !h.startChildWork() {
+					h.logger.Warn(fmt.Sprintf("无法启动子任务 %s：主任务已结束", taskName))
+					return
+				}
+				childCtx := h.taskCtx
 				go func() {
+					defer h.endTask()
 					h.logger.TaskStart(taskName)
-					fn(context.Background())
+					fn(childCtx)
 					h.logger.TaskEnd(taskName, true)
 					h.broadcastProgress()
 				}()
@@ -1653,35 +1728,22 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 
 		reply, newHistory, err := RunAgentLoop(ctx, agentCtx, req.Content, history, 30)
 		if err != nil {
+			// 即使失败也保存已产生的对话步骤，避免上下文丢失
+			saveAgentSteps(session, newHistory[len(history):])
+			session.UpdatedAt = time.Now().Format(time.RFC3339)
+			if saveErr := SaveChatSession(h.sessionsDir, session); saveErr != nil {
+				h.logger.Warn(fmt.Sprintf("保存会话失败: %v", saveErr))
+			}
 			if ctx.Err() != nil {
 				h.logger.Warn("助理对话已取消")
-				h.logger.TaskEnd("chat_message", false)
 			} else {
 				h.logger.Error(fmt.Sprintf("助理回复失败: %v", err))
-				h.logger.TaskEnd("chat_message", false)
 			}
+			h.logger.TaskEnd("chat_message", false)
 			return
 		}
 
-		for _, step := range newHistory[len(history):] {
-			if step.Role == "assistant" {
-				msg := ChatMessage{
-					Role:      "assistant",
-					Content:   step.Content,
-					Timestamp: time.Now().Format(time.RFC3339),
-				}
-				if step.ToolCall != nil {
-					msg.ToolCalls = []ToolCall{*step.ToolCall}
-				}
-				session.Messages = append(session.Messages, msg)
-			} else if step.Role == "tool" {
-				session.Messages = append(session.Messages, ChatMessage{
-					Role:       "tool",
-					ToolResult: step.ToolResult,
-					Timestamp:  time.Now().Format(time.RFC3339),
-				})
-			}
-		}
+		saveAgentSteps(session, newHistory[len(history):])
 
 		if reply != "" {
 			found := false
@@ -1708,12 +1770,34 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 
 		h.logger.ChatChunk(sessionID, reply)
 
-		h.endTask()
 		h.logger.Success("助理回复完成")
 		h.logger.TaskEnd("chat_message", true)
 	}()
 
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// saveAgentSteps 将 Agent 步骤追加为会话消息。
+func saveAgentSteps(session *ChatSession, steps []AgentStep) {
+	for _, step := range steps {
+		if step.Role == "assistant" {
+			msg := ChatMessage{
+				Role:      "assistant",
+				Content:   step.Content,
+				Timestamp: time.Now().Format(time.RFC3339),
+			}
+			if step.ToolCall != nil {
+				msg.ToolCalls = []ToolCall{*step.ToolCall}
+			}
+			session.Messages = append(session.Messages, msg)
+		} else if step.Role == "tool" {
+			session.Messages = append(session.Messages, ChatMessage{
+				Role:       "tool",
+				ToolResult: step.ToolResult,
+				Timestamp:  time.Now().Format(time.RFC3339),
+			})
+		}
+	}
 }
 
 func writeFileAtomic(path string, data []byte) error {

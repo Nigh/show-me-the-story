@@ -69,18 +69,33 @@
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function submitStoryConfig() {
-    const fields = [];
-    if (localStoryCfg.type) fields.push(`- 故事类型: ${localStoryCfg.type}`);
-    if (localStoryCfg.title) fields.push(`- 标题: ${localStoryCfg.title}`);
-    if (localStoryCfg.chapter_count) fields.push(`- 章节数: ${localStoryCfg.chapter_count}`);
-    if (localStoryCfg.target_words_per_chapter) fields.push(`- 每章字数: ${localStoryCfg.target_words_per_chapter}`);
-    if (localStoryCfg.writing_style) fields.push(`- 写作风格: ${localStoryCfg.writing_style}`);
-    if (localStoryCfg.story_synopsis) fields.push(`- 故事梗概: ${localStoryCfg.story_synopsis}`);
+  // 直接保存故事配置（不经过 AI），存在已确认章节且关键设定有变化时提示协调
+  async function saveStoryConfig() {
+    const prev = $config?.story || {};
+    const story = {
+      ...localStoryCfg,
+      chapter_count: Number(localStoryCfg.chapter_count) || 30,
+      target_words_per_chapter: Number(localStoryCfg.target_words_per_chapter) || 2500,
+    };
+    const settingsChanged =
+      story.type !== prev.type ||
+      story.writing_style !== prev.writing_style ||
+      story.story_synopsis !== prev.story_synopsis;
 
-    const msg = `请更新以下故事配置:\n${fields.join('\n')}`;
-    await sendToChat(msg);
-    addToast('已提交到 AI 助理', 'success');
+    try {
+      const saved = await api('PUT', '/api/config', { ...($config || {}), story });
+      config.set(saved);
+      addToast('故事配置已保存', 'success');
+
+      if (hasAccepted && settingsChanged) {
+        showConfirm('检测到关键设定有变化，且已有已确认章节。是否让 AI 协调新设定与已有内容的一致性？（推荐）', async () => {
+          try {
+            await api('POST', '/api/settings/reconcile', saved.story);
+            addToast('设定协调任务已启动', 'info');
+          } catch (e) { addToast(e.message, 'error'); }
+        });
+      }
+    } catch (e) { addToast(e.message, 'error'); }
   }
 
   function openCharForm(char) {
@@ -225,7 +240,7 @@
         <h3 class="card-title text-base">故事配置</h3>
         {#if hasAccepted}
           <div class="alert alert-warning text-xs py-1.5 px-3">
-            <span>已有已确认章节，提交后将自动协调设定兼容性。</span>
+            <span>已有已确认章节，修改关键设定后建议执行设定协调。</span>
           </div>
         {/if}
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
@@ -247,7 +262,7 @@
           </div>
         </div>
         <div class="flex justify-end">
-          <button class="btn btn-accent btn-xs" on:click={submitStoryConfig} disabled={$taskRunning}>手动提交</button>
+          <button class="btn btn-primary btn-xs" on:click={saveStoryConfig} disabled={$taskRunning}>保存</button>
         </div>
       </div>
     </div>
@@ -259,7 +274,7 @@
       <h3 class="card-title text-base">写作风格</h3>
       <textarea class="textarea w-full h-40 text-base" bind:value={localStoryCfg.writing_style} placeholder="描述你期望的写作风格..."></textarea>
       <div class="flex justify-end">
-        <button class="btn btn-accent btn-xs" on:click={() => sendToChat('请更新写作风格:\n' + localStoryCfg.writing_style)} disabled={$taskRunning}>手动提交</button>
+        <button class="btn btn-primary btn-xs" on:click={saveStoryConfig} disabled={$taskRunning}>保存</button>
       </div>
     </div>
   </div>
@@ -270,7 +285,7 @@
       <h3 class="card-title text-base">故事梗概</h3>
       <textarea class="textarea w-full h-40 text-base" bind:value={localStoryCfg.story_synopsis} placeholder="可包含：故事主线走向、核心冲突、关键转折点..."></textarea>
       <div class="flex justify-end">
-        <button class="btn btn-accent btn-xs" on:click={() => sendToChat('请更新故事梗概:\n' + localStoryCfg.story_synopsis)} disabled={$taskRunning}>手动提交</button>
+        <button class="btn btn-primary btn-xs" on:click={saveStoryConfig} disabled={$taskRunning}>保存</button>
       </div>
     </div>
   </div>

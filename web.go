@@ -51,6 +51,7 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	mux.HandleFunc("POST /api/chapter/generate", h.PostChapterGenerate)
 	mux.HandleFunc("POST /api/chapter/confirm", h.PostChapterConfirm)
 	mux.HandleFunc("POST /api/chapter/revise", h.PostChapterRevise)
+	mux.HandleFunc("POST /api/chapter/revise/{num}", h.PostChapterReviseSpecific)
 	mux.HandleFunc("POST /api/chapter/polish", h.PostChapterPolish)
 	mux.HandleFunc("DELETE /api/chapter", h.DeleteChapter)
 	mux.HandleFunc("DELETE /api/chapters/from/{num}", h.DeleteChaptersFrom)

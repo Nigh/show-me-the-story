@@ -139,6 +139,17 @@ func cleanJSONResponse(s string) string {
 }
 
 func GenerateOutlineAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, progressPath string, logger *LogBroadcaster) error {
+	if err := validateAPIConfig(apiCfg); err != nil {
+		return err
+	}
+	// 防护：整体生成大纲会覆盖全部章节，存在已确认章节时绝不允许，
+	// 否则会静默抹掉已写完的内容。续写场景请使用 GenerateContinuationOutline。
+	for _, ch := range state.Chapters {
+		if ch.Status == StatusAccepted {
+			return fmt.Errorf("存在已确认章节，无法整体重新生成大纲（会覆盖已完成内容）。如需追加章节请使用「生成后续大纲」")
+		}
+	}
+
 	logger.StepInfo(1, 2, "正在调用 AI 生成大纲...")
 
 	outlineResp, err := generateOutline(ctx, apiCfg, cfg)

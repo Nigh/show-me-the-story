@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -16,6 +17,9 @@ func preferUserValue(userVal, fallback string) string {
 }
 
 func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, progressPath string, settings *ProjectSettings, logger *LogBroadcaster) error {
+	if err := validateAPIConfig(apiCfg); err != nil {
+		return err
+	}
 	if state.Phase != "writing" {
 		return fmt.Errorf("当前不在写作阶段")
 	}
@@ -63,10 +67,11 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 		historySummary := buildHistorySummary(state, i)
 		factCheckResult := generateChapterFactCheckWithRetryLog(ctx, apiCfg, cfg, content, historySummary, logger)
 
-		if strings.Contains(factCheckResult, "FAIL") {
+		failed, issues := parseFactCheckResult(factCheckResult)
+		if failed {
 			if attempt < maxFactCheckRetries {
 				logger.Warn(fmt.Sprintf("[事实核查] 发现问题，正在重新生成第 %d 章（第 %d 次重试）...", ch.Num, attempt+1))
-				logger.Warn(fmt.Sprintf("核查详情: %s", factCheckResult))
+				logger.Warn(fmt.Sprintf("核查详情: %s", issues))
 				continue
 			}
 			logger.Warn("[事实核查] 已达最大重试次数，保留当前版本。")
@@ -95,7 +100,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 		}
 	}
 
-	SaveChapterMarkdown(*ch, state.Title)
+	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
 
 	ch.Status = StatusReview
 	state.CurrentChapterIndex = i
@@ -111,7 +116,29 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 	return nil
 }
 
+// parseFactCheckResult 解析事实核查结果。
+// 优先解析 JSON 中的 result 字段，解析失败时退化为字符串匹配。
+func parseFactCheckResult(raw string) (failed bool, issues string) {
+	cleaned := cleanJSONResponse(raw)
+	var resp struct {
+		Result string   `json:"result"`
+		Issues []string `json:"issues"`
+	}
+	if jsonStr := extractJSON(cleaned); jsonStr != "" {
+		if err := json.Unmarshal([]byte(jsonStr), &resp); err == nil && resp.Result != "" {
+			return strings.EqualFold(strings.TrimSpace(resp.Result), "FAIL"), strings.Join(resp.Issues, "；")
+		}
+	}
+	// fallback：无法解析 JSON 时按字符串匹配
+	return strings.Contains(raw, "FAIL"), truncate(raw, 300)
+}
+
+// ReviseChapterAction 修订"当前章节"（写作流程中处于 review/writing 状态的章节）。
+// 使用最小化修订提示词（提供原文），并在必要时同步修订后续 pending 章节大纲。
 func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, progressPath, feedback string, settings *ProjectSettings, logger *LogBroadcaster) error {
+	if err := validateAPIConfig(apiCfg); err != nil {
+		return err
+	}
 	if state.Phase != "writing" {
 		return fmt.Errorf("当前不在写作阶段")
 	}
@@ -128,7 +155,7 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 
 	logger.Info(fmt.Sprintf("正在修改第 %d 章《%s》...", ch.Num, ch.Title))
 
-	logger.StepInfo(1, 3, "正在根据意见重写正文...")
+	logger.StepInfo(1, 3, "正在根据意见修订正文...")
 	revisedContent, err := reviseChapterContentStream(ctx, apiCfg, cfg, state, chapterIdx, feedback, settings, logger)
 	if err != nil {
 		return fmt.Errorf("修改章节失败: %w", err)
@@ -137,10 +164,14 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 	logger.Info(fmt.Sprintf("正文修改完毕，共 %d 字", len([]rune(revisedContent))))
 
 	logger.StepInfo(2, 3, "重新提炼摘要...")
-	ch.Summary = generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, ch.Content, logger)
+	summary := generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, ch.Content, logger)
+	if summary == "" {
+		return fmt.Errorf("摘要提炼失败或被取消")
+	}
+	ch.Summary = summary
 	logger.Info("摘要提炼完成")
 
-	SaveChapterMarkdown(*ch, state.Title)
+	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
 
 	if chapterIdx+1 < len(state.Chapters) {
 		logger.StepInfo(3, 3, "正在修订后续章节大纲...")
@@ -157,6 +188,62 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 	}
 
 	logger.Success(fmt.Sprintf("第 %d 章已修订。", ch.Num))
+	return nil
+}
+
+// ReviseSpecificChapterAction 对指定编号的章节做最小化修订（包括已确认章节）。
+// 仅修改该章正文与摘要，绝不触碰其他章节、大纲或进度指针。
+func ReviseSpecificChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, progressPath string, chapterNum int, feedback string, settings *ProjectSettings, logger *LogBroadcaster) error {
+	if err := validateAPIConfig(apiCfg); err != nil {
+		return err
+	}
+	if strings.TrimSpace(feedback) == "" {
+		return fmt.Errorf("缺少修改意见")
+	}
+
+	chapterIdx := -1
+	for i, ch := range state.Chapters {
+		if ch.Num == chapterNum {
+			chapterIdx = i
+			break
+		}
+	}
+	if chapterIdx == -1 {
+		return fmt.Errorf("第 %d 章不存在", chapterNum)
+	}
+
+	ch := &state.Chapters[chapterIdx]
+	if ch.Content == "" {
+		return fmt.Errorf("第 %d 章尚未生成内容，无法修订（请先生成该章）", chapterNum)
+	}
+	if ch.Status == StatusWriting {
+		return fmt.Errorf("第 %d 章正在写作中，无法修订", chapterNum)
+	}
+
+	logger.Info(fmt.Sprintf("正在对第 %d 章《%s》进行定向修订（不影响其他章节）...", ch.Num, ch.Title))
+
+	logger.StepInfo(1, 2, "正在根据意见修订正文...")
+	revisedContent, err := reviseChapterContentStream(ctx, apiCfg, cfg, state, chapterIdx, feedback, settings, logger)
+	if err != nil {
+		return fmt.Errorf("修订章节失败: %w", err)
+	}
+	ch.Content = revisedContent
+	logger.Info(fmt.Sprintf("正文修订完毕，共 %d 字", len([]rune(revisedContent))))
+
+	logger.StepInfo(2, 2, "重新提炼摘要...")
+	summary := generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, ch.Content, logger)
+	if summary == "" {
+		return fmt.Errorf("摘要提炼失败或被取消")
+	}
+	ch.Summary = summary
+
+	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
+
+	if err := SaveProgress(progressPath, state); err != nil {
+		return err
+	}
+
+	logger.Success(fmt.Sprintf("第 %d 章定向修订完成（其余章节未受影响）。", ch.Num))
 	return nil
 }
 
@@ -180,44 +267,6 @@ func ConfirmChapterAction(state *Progress, progressPath string) error {
 	return SaveProgress(progressPath, state)
 }
 
-func generateChapterContent(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings) (string, error) {
-	ch := state.Chapters[idx]
-
-	historySummary := buildHistorySummary(state, idx)
-
-	snapshot := state.StoryConfigSnapshot
-	if snapshot == nil {
-		snapshot = &cfg.Story
-	}
-
-	foreshadowContext := formatActiveForeshadowsForChapter(state.Foreshadows, ch.Num)
-
-	characterContext := buildCharacterContext(settings, ch.Outline)
-	worldviewContext := buildWorldviewContext(settings, ch.Outline)
-
-	userPrompt := RenderPrompt(cfg.Prompts.ChapterWriting, map[string]string{
-		"Title":             preferUserValue(cfg.Story.Title, state.Title),
-		"ChapterNum":        fmt.Sprintf("%d", ch.Num),
-		"CorePrompt":        state.CorePrompt,
-		"StorySynopsis":     preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis),
-		"HistorySummary":    historySummary,
-		"ChapterTitle":      ch.Title,
-		"ChapterOutline":    ch.Outline,
-		"WritingStyle":      cfg.Story.WritingStyle,
-		"CharacterContext":  characterContext,
-		"WorldviewContext":  worldviewContext,
-		"TargetWords":       fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
-		"Foreshadows":       foreshadowContext,
-	})
-
-	systemPrompt := state.CorePrompt
-	if systemPrompt == "" {
-		systemPrompt = "你是一位小说作者。"
-	}
-
-	return CallAPI(ctx, apiCfg, systemPrompt, userPrompt)
-}
-
 func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) (string, error) {
 	ch := state.Chapters[idx]
 
@@ -234,18 +283,18 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 	worldviewContext := buildWorldviewContext(settings, ch.Outline)
 
 	userPrompt := RenderPrompt(cfg.Prompts.ChapterWriting, map[string]string{
-		"Title":             preferUserValue(cfg.Story.Title, state.Title),
-		"ChapterNum":        fmt.Sprintf("%d", ch.Num),
-		"CorePrompt":        state.CorePrompt,
-		"StorySynopsis":     preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis),
-		"HistorySummary":    historySummary,
-		"ChapterTitle":      ch.Title,
-		"ChapterOutline":    ch.Outline,
-		"WritingStyle":      cfg.Story.WritingStyle,
-		"CharacterContext":  characterContext,
-		"WorldviewContext":  worldviewContext,
-		"TargetWords":       fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
-		"Foreshadows":       foreshadowContext,
+		"Title":            preferUserValue(cfg.Story.Title, state.Title),
+		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
+		"CorePrompt":       state.CorePrompt,
+		"StorySynopsis":    preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis),
+		"HistorySummary":   historySummary,
+		"ChapterTitle":     ch.Title,
+		"ChapterOutline":   ch.Outline,
+		"WritingStyle":     cfg.Story.WritingStyle,
+		"CharacterContext": characterContext,
+		"WorldviewContext": worldviewContext,
+		"TargetWords":      fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
+		"Foreshadows":      foreshadowContext,
 	})
 
 	systemPrompt := state.CorePrompt
@@ -267,56 +316,6 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 	return CallAPIStream(ctx, apiCfg, systemPrompt, userPrompt, onChunk)
 }
 
-func generateChapterContentWithRetry(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings) string {
-	retryCount := 0
-	for {
-		if ctx.Err() != nil {
-			return ""
-		}
-		content, err := generateChapterContent(ctx, apiCfg, cfg, state, idx, settings)
-		if err == nil && content != "" {
-			return content
-		}
-		if isFatalAPIError(err) {
-			return ""
-		}
-
-		retryCount++
-		waitTime := getWaitTime(retryCount)
-		fmt.Printf(" ⚠️ [错误] 正文生成失败: %v。第 %d 次重试，等待 %ds 后重试...\n", err, retryCount, waitTime)
-		select {
-		case <-time.After(time.Duration(waitTime) * time.Second):
-		case <-ctx.Done():
-			return ""
-		}
-	}
-}
-
-func generateChapterContentStreamWithRetry(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) string {
-	retryCount := 0
-	for {
-		if ctx.Err() != nil {
-			return ""
-		}
-		content, err := generateChapterContentStream(ctx, apiCfg, cfg, state, idx, settings, logger)
-		if err == nil && content != "" {
-			return content
-		}
-		if isFatalAPIError(err) {
-			return ""
-		}
-
-		retryCount++
-		waitTime := getWaitTime(retryCount)
-		fmt.Printf(" ⚠️ [错误] 流式正文生成失败: %v。第 %d 次重试，等待 %ds 后重试...\n", err, retryCount, waitTime)
-		select {
-		case <-time.After(time.Duration(waitTime) * time.Second):
-		case <-ctx.Done():
-			return ""
-		}
-	}
-}
-
 func generateChapterContentStreamWithRetryLog(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) string {
 	retryCount := 0
 	for {
@@ -328,6 +327,7 @@ func generateChapterContentStreamWithRetryLog(ctx context.Context, apiCfg *APICo
 			return content
 		}
 		if isFatalAPIError(err) {
+			logger.Error(fmt.Sprintf("致命错误: %v，不再重试", err))
 			return ""
 		}
 
@@ -351,31 +351,6 @@ func generateChapterSummary(ctx context.Context, apiCfg *APIConfig, cfg *Config,
 	return CallAPI(ctx, apiCfg, systemPrompt, userPrompt)
 }
 
-func generateChapterSummaryWithRetry(ctx context.Context, apiCfg *APIConfig, cfg *Config, content string) string {
-	retryCount := 0
-	for {
-		if ctx.Err() != nil {
-			return ""
-		}
-		summary, err := generateChapterSummary(ctx, apiCfg, cfg, content)
-		if err == nil && summary != "" {
-			return summary
-		}
-		if isFatalAPIError(err) {
-			return ""
-		}
-
-		retryCount++
-		waitTime := getWaitTime(retryCount)
-		fmt.Printf(" ⚠️ [错误] 摘要提炼失败: %v。第 %d 次重试，等待 %ds 后重试...\n", err, retryCount, waitTime)
-		select {
-		case <-time.After(time.Duration(waitTime) * time.Second):
-		case <-ctx.Done():
-			return ""
-		}
-	}
-}
-
 func generateChapterSummaryWithRetryLog(ctx context.Context, apiCfg *APIConfig, cfg *Config, content string, logger *LogBroadcaster) string {
 	retryCount := 0
 	for {
@@ -387,6 +362,7 @@ func generateChapterSummaryWithRetryLog(ctx context.Context, apiCfg *APIConfig, 
 			return summary
 		}
 		if isFatalAPIError(err) {
+			logger.Error(fmt.Sprintf("致命错误: %v，不再重试", err))
 			return ""
 		}
 
@@ -412,31 +388,6 @@ func generateChapterFactCheck(ctx context.Context, apiCfg *APIConfig, cfg *Confi
 	return CallAPI(ctx, apiCfg, systemPrompt, userPrompt)
 }
 
-func generateChapterFactCheckWithRetry(ctx context.Context, apiCfg *APIConfig, cfg *Config, content string, historySummary string) string {
-	retryCount := 0
-	for {
-		if ctx.Err() != nil {
-			return ""
-		}
-		result, err := generateChapterFactCheck(ctx, apiCfg, cfg, content, historySummary)
-		if err == nil && result != "" {
-			return result
-		}
-		if isFatalAPIError(err) {
-			return ""
-		}
-
-		retryCount++
-		waitTime := getWaitTime(retryCount)
-		fmt.Printf(" ⚠️ [错误] 事实核查失败: %v。第 %d 次重试，等待 %ds 后重试...\n", err, retryCount, waitTime)
-		select {
-		case <-time.After(time.Duration(waitTime) * time.Second):
-		case <-ctx.Done():
-			return ""
-		}
-	}
-}
-
 func generateChapterFactCheckWithRetryLog(ctx context.Context, apiCfg *APIConfig, cfg *Config, content string, historySummary string, logger *LogBroadcaster) string {
 	retryCount := 0
 	for {
@@ -448,6 +399,7 @@ func generateChapterFactCheckWithRetryLog(ctx context.Context, apiCfg *APIConfig
 			return result
 		}
 		if isFatalAPIError(err) {
+			logger.Error(fmt.Sprintf("致命错误: %v，不再重试", err))
 			return ""
 		}
 
@@ -462,76 +414,31 @@ func generateChapterFactCheckWithRetryLog(ctx context.Context, apiCfg *APIConfig
 	}
 }
 
-func reviseChapterContent(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, chapterIdx int, userFeedback string, settings *ProjectSettings) (string, error) {
-	ch := state.Chapters[chapterIdx]
-
-	historySummary := buildHistorySummary(state, chapterIdx)
-
-	snapshot := state.StoryConfigSnapshot
-	if snapshot == nil {
-		snapshot = &cfg.Story
-	}
-
-	foreshadowContext := formatActiveForeshadowsForChapter(state.Foreshadows, ch.Num)
-	characterContext := buildCharacterContext(settings, ch.Outline)
-	worldviewContext := buildWorldviewContext(settings, ch.Outline)
-
-	userPrompt := RenderPrompt(cfg.Prompts.ChapterWriting, map[string]string{
-		"Title":             preferUserValue(cfg.Story.Title, state.Title),
-		"ChapterNum":        fmt.Sprintf("%d", ch.Num),
-		"CorePrompt":        state.CorePrompt,
-		"StorySynopsis":     preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis),
-		"HistorySummary":    historySummary,
-		"ChapterTitle":      ch.Title,
-		"ChapterOutline":    ch.Outline + "\n\n【用户修改意见】" + userFeedback,
-		"WritingStyle":      cfg.Story.WritingStyle,
-		"CharacterContext":  characterContext,
-		"WorldviewContext":  worldviewContext,
-		"TargetWords":       fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
-		"Foreshadows":       foreshadowContext,
-	})
-
-	systemPrompt := state.CorePrompt
-	if systemPrompt == "" {
-		systemPrompt = "你是一位小说作者。"
-	}
-
-	return CallAPI(ctx, apiCfg, systemPrompt, userPrompt)
-}
-
+// reviseChapterContentStream 基于原文做最小化修订（流式）。
 func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, chapterIdx int, userFeedback string, settings *ProjectSettings, logger *LogBroadcaster) (string, error) {
 	ch := state.Chapters[chapterIdx]
 
 	historySummary := buildHistorySummary(state, chapterIdx)
-
-	snapshot := state.StoryConfigSnapshot
-	if snapshot == nil {
-		snapshot = &cfg.Story
-	}
-
-	foreshadowContext := formatActiveForeshadowsForChapter(state.Foreshadows, ch.Num)
 	characterContext := buildCharacterContext(settings, ch.Outline)
 	worldviewContext := buildWorldviewContext(settings, ch.Outline)
 
-	userPrompt := RenderPrompt(cfg.Prompts.ChapterWriting, map[string]string{
-		"Title":             preferUserValue(cfg.Story.Title, state.Title),
-		"ChapterNum":        fmt.Sprintf("%d", ch.Num),
-		"CorePrompt":        state.CorePrompt,
-		"StorySynopsis":     preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis),
-		"HistorySummary":    historySummary,
-		"ChapterTitle":      ch.Title,
-		"ChapterOutline":    ch.Outline + "\n\n【用户修改意见】" + userFeedback,
-		"WritingStyle":      cfg.Story.WritingStyle,
-		"CharacterContext":  characterContext,
-		"WorldviewContext":  worldviewContext,
-		"TargetWords":       fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
-		"Foreshadows":       foreshadowContext,
+	userPrompt := RenderPrompt(cfg.Prompts.ChapterRevision, map[string]string{
+		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
+		"ChapterTitle":     ch.Title,
+		"CorePrompt":       state.CorePrompt,
+		"HistorySummary":   historySummary,
+		"WritingStyle":     cfg.Story.WritingStyle,
+		"CharacterContext": characterContext,
+		"WorldviewContext": worldviewContext,
+		"OriginalContent":  ch.Content,
+		"UserFeedback":     userFeedback,
 	})
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
 		systemPrompt = "你是一位小说作者。"
 	}
+	systemPrompt += "\n你正在执行章节修订任务：只做修改意见要求的改动，其余原文保持不变，输出修改后的完整正文。"
 
 	totalChars := 0
 	nextReport := 500
@@ -567,7 +474,7 @@ func reviseSubsequentOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Confi
 
 	userPrompt := RenderPrompt(cfg.Prompts.OutlineRevision, map[string]string{
 		"CurrentOutline": subsequentChapters,
-		"UserFeedback":   fmt.Sprintf("用户对第%d章提出了修改意见：%s\n请根据此意见修订后续章节大纲。", state.Chapters[currentIdx].Num, userFeedback),
+		"UserFeedback":   fmt.Sprintf("用户对第%d章提出了修改意见：%s\n请仅在该意见影响后续剧情时调整后续章节大纲；若意见只是文字细节修改，请原样返回大纲。", state.Chapters[currentIdx].Num, userFeedback),
 		"LockedChapters": lockedChapters,
 	})
 
@@ -659,7 +566,7 @@ func PolishChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 	ch.Content = result
 	ch.Status = StatusReview
 
-	SaveChapterMarkdown(*ch, state.Title)
+	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
 
 	if err := SaveProgress(progressPath, state); err != nil {
 		return fmt.Errorf("保存进度失败: %w", err)

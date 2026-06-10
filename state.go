@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 type ChapterState struct {
@@ -80,14 +81,18 @@ func SaveProgress(path string, p *Progress) error {
 	if err != nil {
 		return fmt.Errorf("序列化进度失败: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := writeFileAtomic(path, data); err != nil {
 		return fmt.Errorf("保存进度文件失败: %w", err)
 	}
 	return nil
 }
 
-func SaveChapterMarkdown(ch ChapterState, title string) {
-	filename := fmt.Sprintf("Chapter_%02d.md", ch.Num)
+// ChapterMarkdownPath returns the markdown file path for a chapter inside the project directory.
+func ChapterMarkdownPath(projectDir string, num int) string {
+	return filepath.Join(projectDir, fmt.Sprintf("Chapter_%02d.md", num))
+}
+
+func SaveChapterMarkdown(projectDir string, ch ChapterState, title string) {
 	content := fmt.Sprintf("# 第 %d 章: %s\n\n> **本章摘要**：%s\n\n---\n\n%s", ch.Num, ch.Title, ch.Summary, ch.Content)
-	_ = os.WriteFile(filename, []byte(content), 0644)
+	_ = os.WriteFile(ChapterMarkdownPath(projectDir, ch.Num), []byte(content), 0644)
 }
