@@ -59,6 +59,8 @@ export const taskNotification = writable(null);
 
 export const confirmModal = writable(null);
 
+export const postprocess = writable(null);
+
 export function showConfirm(message, onConfirm) {
   confirmModal.set({ message, onConfirm });
 }

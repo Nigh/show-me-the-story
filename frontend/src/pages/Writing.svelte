@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { progress, taskRunning, streamingContent, streamingChapterIdx, streamCharCount, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
+  import PostProcessPanel from '../components/PostProcessPanel.svelte';
 
   // 保留 prop 以兼容 App 传参
   export let sendToChat = async () => {};
@@ -10,6 +11,10 @@
     try {
       const res = await api('GET', '/api/autoconfirm');
       autoConfirm.set(!!res.enabled);
+    } catch (e) {}
+    try {
+      const sk = await api('GET', '/api/skills');
+      hasPolishSkills = (sk || []).some(s => s.enabled && s.skill?.category === 'polish');
     } catch (e) {}
   });
 
@@ -62,6 +67,7 @@
   let reviseFeedback = '';
   let showRevise = false;
   let contentEl;
+  let hasPolishSkills = false;
 
   // 流式输出时自动滚动到底部：合并到 rAF，每帧最多一次，避免高频强制重排
   let scrollPending = false;
@@ -116,6 +122,14 @@
       addToast(`第 ${ch.num} 章修订任务已启动（仅修改该章）`, 'info');
       reviseFeedback = '';
       showRevise = false;
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  async function doPolish() {
+    if (!ch) return;
+    try {
+      await api('POST', '/api/chapter/polish', { num: ch.num });
+      addToast(`第 ${ch.num} 章润色任务已启动`, 'info');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -188,6 +202,8 @@
         <div class="text-sm text-base-content/50">{pct}%（已确认 {accepted} / {total} 章）</div>
       </div>
     </div>
+
+    <PostProcessPanel />
 
     <!-- 章节区 -->
     <div class="grid grid-cols-[230px_1fr] gap-3" style="min-height:400px">
@@ -269,6 +285,9 @@
                 {/if}
                 {#if ch.content && ch.status !== 'writing'}
                   <button class="btn btn-ghost btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>✏️ 修改本章</button>
+                  {#if hasPolishSkills}
+                    <button class="btn btn-ghost btn-sm" on:click={doPolish} disabled={$taskRunning} title="需启用 polish 类技能">✨ 去AI味</button>
+                  {/if}
                   <button class="btn btn-ghost btn-sm" on:click={copyContent}>📋 复制</button>
                 {/if}
                 <div class="flex-1"></div>

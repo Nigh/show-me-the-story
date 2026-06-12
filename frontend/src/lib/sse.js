@@ -1,4 +1,4 @@
-import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, streamCharCount, continueAnalysis, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries } from './stores.js';
+import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, streamCharCount, continueAnalysis, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess } from './stores.js';
 import { api } from './api.js';
 
 let eventSource = null;
@@ -112,6 +112,12 @@ export function connectSSE() {
     'continuation_outline': '续写大纲',
     'settings_reconciliation': '设定协调',
     'chat_message': '助理对话',
+    'postprocess_diagnose': '全书优化分析',
+    'postprocess_consistency': '全书一致性核查',
+    'postprocess_roadmap': '优化路线图生成',
+    'postprocess_execute': '全书优化执行',
+    'chapter_polish': '章节润色',
+    'smooth_transitions': '章节衔接优化',
   };
 
   eventSource.addEventListener('task_end', e => {
@@ -129,6 +135,10 @@ export function connectSSE() {
     } else {
       // 任务失败时记录重试信息
       lastFailedTask.set({ task: d.task, taskName: taskNames[d.task] || d.task });
+    }
+
+    if (d.task === 'postprocess_diagnose' || d.task === 'postprocess_consistency' || d.task === 'postprocess_roadmap' || d.task === 'postprocess_execute') {
+      api('GET', '/api/postprocess').then(p => postprocess.set(p)).catch(() => {});
     }
 
     if (d.task === 'chat_message') {
@@ -212,6 +222,25 @@ export function connectSSE() {
       if (!s) return s;
       const toolCalls = [...(s.pending_tool_calls || []), { name: d.tool_name, status: 'running', args: d.args }];
       return { ...s, pending_tool_calls: toolCalls };
+    });
+  });
+
+  eventSource.addEventListener('postprocess_update', e => {
+    const d = JSON.parse(e.data);
+    postprocess.set(d);
+  });
+
+  eventSource.addEventListener('postprocess_roadmap', e => {
+    const d = JSON.parse(e.data);
+    postprocess.update(pp => pp ? { ...pp, state: d } : { book_complete: true, state: d });
+  });
+
+  eventSource.addEventListener('postprocess_item_done', e => {
+    const item = JSON.parse(e.data);
+    postprocess.update(pp => {
+      if (!pp?.state?.roadmap) return pp;
+      const roadmap = pp.state.roadmap.map(r => r.id === item.id ? { ...r, ...item } : r);
+      return { ...pp, state: { ...pp.state, roadmap } };
     });
   });
 

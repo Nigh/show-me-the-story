@@ -57,6 +57,7 @@ task dev                              # 编译并启动 Go 后端
                   ├─ config.go      ← 配置结构体 + 加载/保存（含 SkillConfig）
                   ├─ state.go       ← 进度/章节/伏笔结构体 + 持久化
                   ├─ prompts.go     ← 提示词模板渲染 + 内置默认模板
+                  ├─ postprocess.go ← 全书优化（诊断/核查/路线图/按章执行）+ postprocess.json 持久化
                   └─ filesys.go     ← 文件操作抽象
 ```
 
@@ -65,7 +66,7 @@ task dev                              # 编译并启动 Go 后端
 | 文件 | 职责 |
 |------|------|
 | `main.go` | 入口，确定程序目录（`progDir`），创建 `storys/` 目录，加载 API 配置，启动 Web 服务器（无项目选择状态） |
-| `config.go` | `APIConfig`、`Config`（含 `SkillConfig`）、`StoryConfig`、`PromptsConfig` 结构体，Load/Save 函数，`applyDefaults` |
+| `config.go` | `APIConfig`（含 `ContextBudgetTokens` 全书优化上下文预算）、`Config`（含 `SkillConfig`）、`StoryConfig`、`PromptsConfig` 结构体，Load/Save 函数，`applyDefaults` |
 | `state.go` | `Progress`、`ChapterState`、`Foreshadow` 结构体，`LoadProgress`、`SaveProgress`（原子写入）、`ChapterMarkdownPath`、`SaveChapterMarkdown(projectDir, ...)`（写入项目目录） |
 | `api.go` | `CallAPI`/`CallAPIMessages`（同步）、`CallAPIStream`/`CallAPIStreamMessages`（流式，支持完整多轮消息历史）、`CallAPIWithRetry`/`CallAPIWithRetryLog`（无限重试）、`CallAPIStreamWithRetry`/`CallAPIStreamWithRetryLog`，`validateAPIConfig`、`isFatalAPIError`（401/403/404 致命，网络超时可重试） |
 | `outline.go` | `generateOutline`、`reviseOutline`、`GenerateOutlineAction`（存在已确认章节时拒绝整体重新生成）、`ReviseOutlineAction`、`ConfirmOutlineAction`、`EditChapterOutline`、`cleanJSONResponse` |
@@ -77,9 +78,10 @@ task dev                              # 编译并启动 Go 后端
 | `skills.go` | `Skill`、`SkillConfig` 结构体，`LoadBuiltinSkills`、`LoadProjectSkills`、`MergeSkills`、`GetEnabledSkills`、`GetEnabledSkillsByCategory`、`FormatSkillsContent`，`//go:embed embeds/skills` |
 | `agent.go` | `Tool`、`AgentContext`、`AgentStep`、`ToolCall` 结构体，`RunAgentLoop`（多轮消息历史）、工具调用解析、内置工具集（读/写角色/世界观/章节等）、系统提示词含安全规则与工具选择指南、`requireConfirm`（破坏性工具需 `confirm: true`） |
 | `chat.go` | `ChatSession`、`ChatMessage`、`ChatSessionIndex` 结构体，`LoadChatSessions`、`LoadChatSession`、`SaveChatSession`、`DeleteChatSession` |
-| `handlers.go` | `Handlers` 结构体（含项目管理字段 `progDir`/`projectName`/`projectMu`、自动确认开关 `autoConfirm`）、`projectDir()` 帮助函数、项目切换 `switchProject()`、`ensureProject()` 检查、`rejectIfTaskRunning()`（任务运行期间编辑类端点返回 409）、所有 HTTP handler（含 `PostChapterReviseSpecific` 定向修订、`PostChaptersSmoothTransitions` 批量衔接优化、`GetAutoConfirm`/`PutAutoConfirm`）、`PostChapterGenerate` 自动确认循环（开启时每章生成后自动确认并继续下一章）、`tryStartTask`/`endTask`/`startChildWork` 互斥、项目管理 handler（`GetProjects`/`PostProject`/`PostProjectSelect`/`GetProjectCurrent`/`DeleteProject`） |
+| `postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体，`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略：全文/摘要模式）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`ExecuteRoadmapAction`（可选前置衔接优化 + 逐条定向修订/润色 + diff 节选） |
+| `handlers.go` | `Handlers` 结构体（含项目管理字段 `progDir`/`projectName`/`projectMu`、自动确认开关 `autoConfirm`、`postprocess`/`postprocessPath`）、`projectDir()` 帮助函数、项目切换 `switchProject()`、`ensureProject()` 检查、`rejectIfTaskRunning()`（任务运行期间编辑类端点返回 409）、所有 HTTP handler（含 `PostChapterPolish` 单章去AI味、`PostChapterReviseSpecific` 定向修订、`PostChaptersSmoothTransitions` 批量衔接优化、全书优化 `GetPostProcess`/`PostPostProcessDiagnose`/`PostPostProcessConsistency`/`PostPostProcessRoadmap`/`PutPostProcessRoadmap`/`PostPostProcessExecute`/`DeletePostProcess`、`GetAutoConfirm`/`PutAutoConfirm`）、`PostChapterGenerate` 自动确认循环（开启时每章生成后自动确认并继续下一章）、`tryStartTask`/`endTask`/`startChildWork` 互斥、项目管理 handler（`GetProjects`/`PostProject`/`PostProjectSelect`/`GetProjectCurrent`/`DeleteProject`） |
 | `web.go` | 路由注册（含项目管理端点、`/api/autoconfirm`）、CORS/日志中间件、静态文件服务、`startWebServer`、项目管理 handler（`GetProjects`/`PostProject`/`GetProjectCurrent`/`PostProjectSelect`/`DeleteProject`） |
-| `logger.go` | `LogBroadcaster`（SSE 广播）、所有日志/事件方法（含 `ChatChunk`、`ToolCallStart`、`ToolCallEnd`、`StreamStart`、`StreamProgress`、`PolishResult`） |
+| `logger.go` | `LogBroadcaster`（SSE 广播）、所有日志/事件方法（含 `ChatChunk`、`ToolCallStart`、`ToolCallEnd`、`StreamStart`、`StreamProgress`、`PolishResult`、`PostProcessReport`、`PostProcessRoadmap`、`PostProcessItemDone`、`PostProcessUpdate`） |
 | `prompts.go` | `RenderPrompt`（`{{.KeyName}}` 替换）、`DefaultPrompts` 变量（所有内置提示词模板） |
 | `filesys.go` | `writeFileImpl`、`deleteFileImpl`、`renameFileImpl` |
 | `embeds/skills/*.md` | 内置 Skill 文件（YAML frontmatter + prompt body），通过 `//go:embed` 嵌入 |
@@ -98,13 +100,14 @@ task dev                              # 编译并启动 Go 后端
 | `src/App.svelte` | 根组件：Header（项目badge + 「切换 / 新建项目」按钮（任务运行时禁用）+ 阶段badge + 章节进度badge + AI思考中badge） + 顶部导航（带图标） + 页面路由 + LogPanel + Toast 容器 |
 | `src/lib/api.js` | `api(method, url, body)` — fetch 封装 |
 | `src/lib/router.js` | `currentPage` store + hash 路由监听 |
-| `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、taskRunning、streamCharCount、autoConfirm、lastFailedTask 等）+ toast/log 管理 |
-| `src/lib/sse.js` | `connectSSE()` — EventSource 连接 + 13 种事件处理 → 更新 stores；content_chunk/chat_chunk 按 150ms 节流缓冲批量刷入；章节流式全文只存模块级变量，`streamingContent` store 仅保留尾部窗口（约 3000 字符，渲染成本 O(1)，避免全文重排导致页面卡死）；`refreshProgress()` 对 progress_update 拉取做 500ms 去抖（task_end 立即刷新）；stream_start 事件清空流式缓冲 |
+| `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、postprocess、taskRunning、streamCharCount、autoConfirm、lastFailedTask 等）+ toast/log 管理 |
+| `src/lib/sse.js` | `connectSSE()` — EventSource 连接 + 多种事件处理 → 更新 stores；content_chunk/chat_chunk 按 150ms 节流缓冲批量刷入；章节流式全文只存模块级变量，`streamingContent` store 仅保留尾部窗口（约 3000 字符，渲染成本 O(1)，避免全文重排导致页面卡死）；`refreshProgress()` 对 progress_update 拉取做 500ms 去抖（task_end 立即刷新）；stream_start 事件清空流式缓冲；全书优化 `postprocess_update`/`postprocess_roadmap`/`postprocess_item_done` 事件 |
 | `src/lib/markdown.js` | `renderMarkdown(text)` — marked 解析 + DOMPurify 清洗，供聊天气泡渲染 markdown |
 | `src/pages/Projects.svelte` | 项目选择页：新建项目 + 项目列表（选择/删除）；是否显示由 `currentProject` store 决定（仅 `App.svelte` 在初始加载时查询 `/api/projects/current` 回填，本组件不查询，避免点击「切换 / 新建项目」后被立即跳回） |
-| `src/pages/Config.svelte` | 配置页：API 配置、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；任务运行时所有输入控件禁用 |
+| `src/pages/Config.svelte` | 配置页：API 配置（含上下文预算 tokens）、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；任务运行时所有输入控件禁用 |
 | `src/pages/Outline.svelte` | 大纲页：直接操作按钮（生成/确认/修订意见/删除/生成后续大纲）+ 导入续写 + pending 章节内联编辑 + 流式预览 |
-| `src/pages/Writing.svelte` | 写作页：章节列表（状态点）+ 直接操作（生成/确认/修改意见，自动区分当前章修订与定向修订）+ 自动确认模式开关（toggle，随时可开关）+ 优化章节衔接（进度卡片工具栏小按钮，已确认 ≥ 2 章时显示，ConfirmModal 确认后启动批量衔接优化任务）+ 导出 TXT + 复制 + 上下章导航 + 流式尾部窗口展示（含「仅显示最新内容」提示，字数用 streamCharCount）+ rAF 自动滚动（自动确认模式下自动跟随正在生成的章节） |
+| `src/pages/Writing.svelte` | 写作页：章节列表（状态点）+ 直接操作（生成/确认/修改意见/去AI味，自动区分当前章修订与定向修订）+ 自动确认模式开关（toggle，随时可开关）+ 优化章节衔接（进度卡片工具栏小按钮，已确认 ≥ 2 章时显示）+ 导出 TXT + 复制 + 上下章导航 + 流式尾部窗口展示（含「仅显示最新内容」提示，字数用 streamCharCount）+ rAF 自动滚动（自动确认模式下自动跟随正在生成的章节）+ 全书完成后展示 `PostProcessPanel` |
+| `src/components/PostProcessPanel.svelte` | 全书优化面板：开始全书分析（诊断+核查+路线图）/ 重新核查 / 重新生成路线图 / 清空；诊断与核查报告 Markdown 展示；优化工单表格（勾选、编辑意见、执行选项、diff 对比弹窗） |
 | `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph 类），支持拖拽、滚轮缩放（以光标为中心，0.3x–3x）、hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
 | `src/pages/Assistant.svelte` | 助理页：聊天会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
 | `src/pages/Skills.svelte` | 技能页：技能表格 + toggle 开关 |
@@ -205,7 +208,7 @@ API 配置（`APIConfig`）与故事配置（`Config`）完全分离，分别保
 
 注入规则：
 - 大纲生成/章节写作/修订/事实核查/AI设定生成：不注入任何 skill（除非作者显式启用）
-- 去AI味按钮：加载所有 enabled 的 `polish` 类 skill
+- 去AI味（`POST /api/chapter/polish`）：加载所有 enabled 的 `polish` 类 skill；全书优化执行时可选附加去 AI 味
 - 全局助理：加载所有 enabled 的 skill 作为参考
 
 ### Agent Loop
@@ -272,6 +275,26 @@ planted → progressing → resolved
 ### 会话管理
 
 聊天会话存储为项目目录 `sessions/` 下的 JSON 文件。`sessions/index.json` 为会话索引。每个会话文件名为 `{id}.json`。使用 `writeFileAtomic` 保持一致性。
+
+## 全书优化流程
+
+```
+写作页全书已确认 → 「全书优化」面板
+ → POST /api/postprocess/diagnose（异步，同一任务锁）
+    1. DiagnoseBookAction：设定+摘要+全文（超预算时仅摘要模式）→ 诊断报告
+    2. ConsistencyCheckBookAction：按卷（15万字/卷）核查 → 核查报告
+    3. BuildRoadmapAction：报告 → 结构化工单 JSON → postprocess.json
+ → 用户审阅报告、勾选/编辑工单
+ → POST /api/postprocess/execute（异步）
+    可选前置 SmoothTransitionsAction
+    逐条 ExecuteRoadmapAction：同章多条工单合并为一次 ReviseSpecificChapterAction / PolishChapterAction
+    每条完成后保存 diff 节选（前 500 字）+ 更新工单状态
+ → 可随时 POST /api/task/stop 取消（已完成项不丢失）
+```
+
+- 上下文预算：`api.json` 的 `context_budget_tokens`（默认 900000），配置页可编辑
+- 数据持久化：项目目录 `postprocess.json`（报告、工单、执行状态）
+- 单独重跑：`POST /api/postprocess/consistency`（仅核查）、`POST /api/postprocess/roadmap`（仅路线图）
 
 ## 续写功能流程
 
@@ -343,8 +366,15 @@ planted → progressing → resolved
 | POST | `/api/chapter/confirm` | 同步 | 确认章节 |
 | POST | `/api/chapter/revise` | 异步 | 修订当前审核中章节 |
 | POST | `/api/chapter/revise/{num}` | 异步 | 定向最小化修订指定章节（含已确认章节，不影响其他章节） |
-| POST | `/api/chapter/polish` | 异步 | 去AI味（需启用 polish 类技能） |
+| POST | `/api/chapter/polish` | 异步 | 单章去AI味（`{"num":N}` 可选，需启用 polish 类技能；已确认章节润色后保持 accepted 状态） |
 | POST | `/api/chapters/smooth-transitions` | 异步 | 批量优化已确认章节衔接（逐章检查上一章结尾与本章开头，仅生硬时最小化重写开头片段，逐章落盘可随时停止） |
+| GET | `/api/postprocess` | 同步 | 获取全书优化状态（报告 + 工单 + 元信息） |
+| DELETE | `/api/postprocess` | 同步 | 清空全书优化报告与工单 |
+| PUT | `/api/postprocess/roadmap` | 同步 | 更新优化工单（勾选/编辑意见/执行选项） |
+| POST | `/api/postprocess/diagnose` | 异步 | 全书优化分析（诊断 → 一致性核查 → 生成路线图，需全书已确认） |
+| POST | `/api/postprocess/consistency` | 异步 | 仅重新运行全书一致性核查 |
+| POST | `/api/postprocess/roadmap` | 异步 | 根据已有报告重新生成路线图 |
+| POST | `/api/postprocess/execute` | 异步 | 执行已勾选工单（可选前置衔接优化 + 逐章修订/润色，逐条落盘可随时停止） |
 | DELETE | `/api/chapter` | 同步 | 删除最后章节 |
 | DELETE | `/api/chapters/from/{num}` | 同步 | 从第 N 章删除到末尾 |
 | DELETE | `/api/outline` | 同步 | 删除大纲 |
@@ -386,6 +416,10 @@ planted → progressing → resolved
 | `tool_call_start` | `{session_id, tool_name, args}` | Agent 工具调用开始 |
 | `tool_call_end` | `{session_id, tool_name, result}` | Agent 工具调用结束 |
 | `polish_result` | `{chapter_idx, text}` | 去AI味结果 |
+| `postprocess_report` | `{type, content}` | 全书诊断/核查报告（type: diagnosis/consistency） |
+| `postprocess_roadmap` | `PostProcessState` | 优化路线图生成完成 |
+| `postprocess_item_done` | `RoadmapItem` | 单条工单执行完成（含 diff 节选） |
+| `postprocess_update` | `{book_complete, state}` | 全书优化状态更新 |
 
 ## PromptsConfig 字段
 
@@ -404,6 +438,9 @@ planted → progressing → resolved
 | `SettingsReconciliation` | `settings_reconciliation` | 设定协调 |
 | `TransitionSmoothing` | `transition_smoothing` | 章节衔接优化（判断 + 最小化重写开头片段，无需修改时输出 NO_CHANGE） |
 | `OutlineConsistencyCheck` | `outline_consistency_check` | 写前大纲一致性检查（对照前情提要 + 上一章结尾，冲突时输出最小化修订后的本章大纲） |
+| `BookDiagnosis` | `book_diagnosis` | 全书完稿诊断报告（只诊断不改写） |
+| `BookConsistencyCheck` | `book_consistency_check` | 全书一致性核查（超长书按卷分段） |
+| `BookRoadmap` | `book_roadmap` | 诊断+核查报告 → 结构化工单 JSON |
 
 新增 prompt 模板时需要：(1) 在 `PromptsConfig` 添加字段，(2) 在 `DefaultPrompts` 添加默认值，(3) 在 `applyDefaults` 添加 fallback。
 

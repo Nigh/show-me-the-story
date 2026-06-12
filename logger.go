@@ -128,6 +128,32 @@ func (lb *LogBroadcaster) SettingsUpdated() {
 	lb.Emit("settings_updated", map[string]string{"status": "ok"})
 }
 
+func (lb *LogBroadcaster) PostProcessReport(reportType, content string) {
+	lb.Emit("postprocess_report", map[string]string{
+		"type":    reportType,
+		"content": content,
+	})
+}
+
+func (lb *LogBroadcaster) PostProcessRoadmap(pp *PostProcessState) {
+	lb.Emit("postprocess_roadmap", pp)
+}
+
+func (lb *LogBroadcaster) PostProcessItemDone(item RoadmapItem) {
+	lb.Emit("postprocess_item_done", item)
+}
+
+func (lb *LogBroadcaster) PostProcessUpdate(pp *PostProcessState) {
+	lb.Emit("postprocess_update", pp)
+}
+
+func (lb *LogBroadcaster) PolishResult(chapterIdx int, text string) {
+	lb.Emit("polish_result", map[string]interface{}{
+		"chapter_idx": chapterIdx,
+		"text":        text,
+	})
+}
+
 func (lb *LogBroadcaster) ChatChunk(sessionID, text string) {
 	lb.Emit("chat_chunk", map[string]interface{}{
 		"session_id": sessionID,

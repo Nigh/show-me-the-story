@@ -7,10 +7,11 @@ import (
 )
 
 type APIConfig struct {
-	APIKey             string `json:"api_key"`
-	BaseURL            string `json:"base_url"`
-	Model              string `json:"model"`
-	HTTPTimeoutSeconds int    `json:"http_timeout_seconds"`
+	APIKey               string `json:"api_key"`
+	BaseURL              string `json:"base_url"`
+	Model                string `json:"model"`
+	HTTPTimeoutSeconds   int    `json:"http_timeout_seconds"`
+	ContextBudgetTokens  int    `json:"context_budget_tokens"` // 全书优化上下文预算，默认 900000
 }
 
 type Config struct {
@@ -42,11 +43,15 @@ type PromptsConfig struct {
 	SettingsReconciliation        string `json:"settings_reconciliation"`
 	TransitionSmoothing           string `json:"transition_smoothing"`
 	OutlineConsistencyCheck       string `json:"outline_consistency_check"`
+	BookDiagnosis                 string `json:"book_diagnosis"`
+	BookConsistencyCheck          string `json:"book_consistency_check"`
+	BookRoadmap                   string `json:"book_roadmap"`
 }
 
 func DefaultAPIConfig() *APIConfig {
 	return &APIConfig{
-		HTTPTimeoutSeconds: 300,
+		HTTPTimeoutSeconds:  300,
+		ContextBudgetTokens: defaultContextBudgetTokens,
 	}
 }
 
@@ -84,6 +89,9 @@ func LoadAPIConfig(path string) (*APIConfig, error) {
 
 	if cfg.HTTPTimeoutSeconds <= 0 {
 		cfg.HTTPTimeoutSeconds = 300
+	}
+	if cfg.ContextBudgetTokens <= 0 {
+		cfg.ContextBudgetTokens = defaultContextBudgetTokens
 	}
 
 	return &cfg, nil
@@ -182,5 +190,14 @@ func (p *PromptsConfig) applyDefaults() {
 	}
 	if p.OutlineConsistencyCheck == "" {
 		p.OutlineConsistencyCheck = DefaultPrompts.OutlineConsistencyCheck
+	}
+	if p.BookDiagnosis == "" {
+		p.BookDiagnosis = DefaultPrompts.BookDiagnosis
+	}
+	if p.BookConsistencyCheck == "" {
+		p.BookConsistencyCheck = DefaultPrompts.BookConsistencyCheck
+	}
+	if p.BookRoadmap == "" {
+		p.BookRoadmap = DefaultPrompts.BookRoadmap
 	}
 }

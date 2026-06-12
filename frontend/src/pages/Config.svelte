@@ -29,7 +29,7 @@
   $: cfgKey = $apiConfig?.api_key || '';
   $: cfgTimeout = $apiConfig?.http_timeout_seconds || 300;
 
-  let localApiCfg = { base_url: '', model: '', api_key: '', http_timeout_seconds: 300 };
+  let localApiCfg = { base_url: '', model: '', api_key: '', http_timeout_seconds: 300, context_budget_tokens: 900000 };
   let localStoryCfg = { type: '', title: '', chapter_count: 30, target_words_per_chapter: 2500, writing_style: '', story_synopsis: '' };
 
   let apiCfgSnapshot = '';
@@ -353,6 +353,10 @@
           <div>
             <label class="text-xs text-base-content/50 mb-0.5 block">HTTP 超时（秒）</label>
             <input type="number" class="input input-sm w-full" bind:value={localApiCfg.http_timeout_seconds} disabled={$taskRunning} />
+          </div>
+          <div class="col-span-2">
+            <label class="text-xs text-base-content/50 mb-0.5 block">上下文预算（tokens）</label>
+            <input type="number" class="input input-sm w-full" bind:value={localApiCfg.context_budget_tokens} placeholder="900000" disabled={$taskRunning} title="全书优化时估算上下文用量，默认 900000（约 1M 模型）" />
           </div>
           <div class="col-span-2">
             <label class="text-xs text-base-content/50 mb-0.5 block">API Key</label>

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -30,6 +31,8 @@ type Handlers struct {
 	settingsPath string
 	skills       []Skill
 	sessionsDir  string
+	postprocess     *PostProcessState
+	postprocessPath string
 
 	// Task management
 	taskMu      sync.Mutex
@@ -53,6 +56,9 @@ func NewHandlers(apiCfg *APIConfig, apiCfgPath string, logger *LogBroadcaster, p
 		cfg:        DefaultConfig(),
 		state:      &Progress{Phase: "outline"},
 		settings:   &ProjectSettings{},
+		postprocess: &PostProcessState{
+			ExecuteOptions: &PostProcessExecuteOptions{RunSmoothTransitionsFirst: true},
+		},
 	}
 }
 
@@ -106,6 +112,12 @@ func (h *Handlers) switchProject(name string) error {
 
 	skills := LoadAllSkills(cfg, projectDir)
 
+	postprocessPath := filepath.Join(projectDir, "postprocess.json")
+	postprocess, err := LoadPostProcess(postprocessPath)
+	if err != nil {
+		return fmt.Errorf("加载全书优化状态失败: %w", err)
+	}
+
 	h.projectName = name
 	h.cfg = cfg
 	h.cfgPath = configPath
@@ -115,6 +127,8 @@ func (h *Handlers) switchProject(name string) error {
 	h.settingsPath = settingsPath
 	h.skills = skills
 	h.sessionsDir = sessionsDir
+	h.postprocessPath = postprocessPath
+	h.postprocess = postprocess
 
 	fmt.Printf(" [系统] 已切换到项目: %s (%s)\n", name, projectDir)
 	return nil
@@ -256,6 +270,9 @@ func (h *Handlers) PutAPIConfig(w http.ResponseWriter, r *http.Request) {
 
 	if newCfg.HTTPTimeoutSeconds <= 0 {
 		newCfg.HTTPTimeoutSeconds = 300
+	}
+	if newCfg.ContextBudgetTokens <= 0 {
+		newCfg.ContextBudgetTokens = defaultContextBudgetTokens
 	}
 
 	data, err := json.MarshalIndent(newCfg, "", "  ")
@@ -1684,7 +1701,334 @@ func (h *Handlers) PostSettingsPolish(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) PostChapterPolish(w http.ResponseWriter, r *http.Request) {
-	h.writeError(w, http.StatusGone, "此功能已移至 LLM 对话中，请通过聊天让 AI 帮你去AI味")
+	if !h.ensureProject(w) {
+		return
+	}
+
+	polishSkills := GetEnabledSkillsByCategory(h.skills, h.cfg.SkillConfig, "polish")
+	if len(polishSkills) == 0 {
+		h.writeError(w, http.StatusBadRequest, "没有启用的润色技能，请先在技能管理页启用 polish 类技能")
+		return
+	}
+
+	var body struct {
+		Num int `json:"num"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	chapterIdx := -1
+	if body.Num > 0 {
+		for i, ch := range h.state.Chapters {
+			if ch.Num == body.Num {
+				chapterIdx = i
+				break
+			}
+		}
+		if chapterIdx == -1 {
+			h.writeError(w, http.StatusBadRequest, "章节不存在")
+			return
+		}
+	} else {
+		chapterIdx = h.state.CurrentChapterIndex
+		if chapterIdx < 0 || chapterIdx >= len(h.state.Chapters) {
+			h.writeError(w, http.StatusBadRequest, "请指定章节编号")
+			return
+		}
+	}
+
+	ch := h.state.Chapters[chapterIdx]
+	if ch.Content == "" {
+		h.writeError(w, http.StatusBadRequest, "章节内容为空，无法润色")
+		return
+	}
+	if ch.Status == StatusWriting {
+		h.writeError(w, http.StatusBadRequest, "章节正在写作中，无法润色")
+		return
+	}
+
+	if !h.tryStartTask() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+
+	prevStatus := ch.Status
+	idx := chapterIdx
+
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("chapter_polish")
+		ctx := h.taskCtx
+
+		err := PolishChapterAction(ctx, h.apiCfg, h.cfg, h.state, idx, polishSkills, h.progressPath, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.Warn("章节润色已取消")
+			} else {
+				h.logger.Error(fmt.Sprintf("章节润色失败: %v", err))
+			}
+			h.logger.TaskEnd("chapter_polish", false)
+			return
+		}
+
+		if prevStatus == StatusAccepted {
+			h.state.Chapters[idx].Status = StatusAccepted
+			_ = SaveProgress(h.progressPath, h.state)
+		}
+
+		h.logger.TaskEnd("chapter_polish", true)
+		h.broadcastProgress()
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// GetPostProcess 获取全书优化状态。
+func (h *Handlers) GetPostProcess(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w) {
+		return
+	}
+	h.writeJSON(w, http.StatusOK, h.postProcessResponse())
+}
+
+func (h *Handlers) postProcessResponse() map[string]interface{} {
+	return map[string]interface{}{
+		"book_complete": isBookFullyAccepted(h.state),
+		"state":         h.postprocess,
+	}
+}
+
+// PutPostProcessRoadmap 更新优化工单（勾选、编辑意见等）。
+func (h *Handlers) PutPostProcessRoadmap(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w) {
+		return
+	}
+	if h.rejectIfTaskRunning(w) {
+		return
+	}
+
+	var req struct {
+		Roadmap        []RoadmapItem              `json:"roadmap"`
+		ExecuteOptions *PostProcessExecuteOptions `json:"execute_options"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "无效的JSON: "+err.Error())
+		return
+	}
+	if req.Roadmap != nil {
+		h.postprocess.Roadmap = req.Roadmap
+	}
+	if req.ExecuteOptions != nil {
+		h.postprocess.ExecuteOptions = req.ExecuteOptions
+	}
+	if err := SavePostProcess(h.postprocessPath, h.postprocess); err != nil {
+		h.writeError(w, http.StatusInternalServerError, "保存失败: "+err.Error())
+		return
+	}
+	h.logger.PostProcessUpdate(h.postprocess)
+	h.writeJSON(w, http.StatusOK, h.postProcessResponse())
+}
+
+// DeletePostProcess 清空全书优化报告与工单。
+func (h *Handlers) DeletePostProcess(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w) {
+		return
+	}
+	if h.rejectIfTaskRunning(w) {
+		return
+	}
+
+	h.postprocess = &PostProcessState{
+		ExecuteOptions: &PostProcessExecuteOptions{RunSmoothTransitionsFirst: true},
+	}
+	if err := SavePostProcess(h.postprocessPath, h.postprocess); err != nil {
+		h.writeError(w, http.StatusInternalServerError, "清空失败: "+err.Error())
+		return
+	}
+	h.logger.PostProcessUpdate(h.postprocess)
+	h.writeJSON(w, http.StatusOK, h.postProcessResponse())
+}
+
+// PostPostProcessDiagnose 异步：全书诊断 + 一致性核查 + 生成路线图。
+func (h *Handlers) PostPostProcessDiagnose(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w) {
+		return
+	}
+	if !isBookFullyAccepted(h.state) {
+		h.writeError(w, http.StatusBadRequest, "全书尚未完成（需所有章节已确认）")
+		return
+	}
+	if !h.tryStartTask() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("postprocess_diagnose")
+		ctx := h.taskCtx
+
+		err := FullPostProcessAnalyzeAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.postprocess, h.postprocessPath, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.Warn("全书优化分析已取消")
+			} else {
+				h.logger.Error(fmt.Sprintf("全书优化分析失败: %v", err))
+			}
+			h.logger.TaskEnd("postprocess_diagnose", false)
+			return
+		}
+
+		h.logger.PostProcessUpdate(h.postprocess)
+		h.logger.TaskEnd("postprocess_diagnose", true)
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// PostPostProcessConsistency 异步：仅重新运行全书一致性核查。
+func (h *Handlers) PostPostProcessConsistency(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w) {
+		return
+	}
+	if !isBookFullyAccepted(h.state) {
+		h.writeError(w, http.StatusBadRequest, "全书尚未完成（需所有章节已确认）")
+		return
+	}
+	if !h.tryStartTask() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("postprocess_consistency")
+		ctx := h.taskCtx
+
+		report, err := ConsistencyCheckBookAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.Warn("全书一致性核查已取消")
+			} else {
+				h.logger.Error(fmt.Sprintf("全书一致性核查失败: %v", err))
+			}
+			h.logger.TaskEnd("postprocess_consistency", false)
+			return
+		}
+
+		h.postprocess.ConsistencyReport = report
+		h.postprocess.ConsistencyAt = time.Now().Format(time.RFC3339)
+		_ = SavePostProcess(h.postprocessPath, h.postprocess)
+		h.logger.PostProcessReport("consistency", report)
+		h.logger.PostProcessUpdate(h.postprocess)
+		h.logger.TaskEnd("postprocess_consistency", true)
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// PostPostProcessRoadmap 异步：根据已有报告重新生成路线图。
+func (h *Handlers) PostPostProcessRoadmap(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w) {
+		return
+	}
+	if strings.TrimSpace(h.postprocess.DiagnosisReport) == "" && strings.TrimSpace(h.postprocess.ConsistencyReport) == "" {
+		h.writeError(w, http.StatusBadRequest, "缺少诊断或核查报告，请先运行全书诊断")
+		return
+	}
+	if !h.tryStartTask() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("postprocess_roadmap")
+		ctx := h.taskCtx
+
+		roadmap, err := BuildRoadmapAction(ctx, h.apiCfg, h.cfg, h.postprocess.DiagnosisReport, h.postprocess.ConsistencyReport, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.Warn("路线图生成已取消")
+			} else {
+				h.logger.Error(fmt.Sprintf("路线图生成失败: %v", err))
+			}
+			h.logger.TaskEnd("postprocess_roadmap", false)
+			return
+		}
+
+		h.postprocess.Roadmap = roadmap
+		h.postprocess.RoadmapAt = time.Now().Format(time.RFC3339)
+		_ = SavePostProcess(h.postprocessPath, h.postprocess)
+		h.logger.PostProcessRoadmap(h.postprocess)
+		h.logger.PostProcessUpdate(h.postprocess)
+		h.logger.TaskEnd("postprocess_roadmap", true)
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// PostPostProcessExecute 异步：执行已勾选的优化工单。
+func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w) {
+		return
+	}
+	if !isBookFullyAccepted(h.state) {
+		h.writeError(w, http.StatusBadRequest, "全书尚未完成（需所有章节已确认）")
+		return
+	}
+	if len(h.postprocess.Roadmap) == 0 {
+		h.writeError(w, http.StatusBadRequest, "没有可执行的优化工单")
+		return
+	}
+
+	var body struct {
+		ExecuteOptions *PostProcessExecuteOptions `json:"execute_options"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body.ExecuteOptions != nil {
+		h.postprocess.ExecuteOptions = body.ExecuteOptions
+	}
+
+	selected := 0
+	for i := range h.postprocess.Roadmap {
+		if h.postprocess.Roadmap[i].Selected && h.postprocess.Roadmap[i].Status == RoadmapStatusPending {
+			selected++
+		}
+	}
+	if selected == 0 {
+		h.writeError(w, http.StatusBadRequest, "请至少勾选一条待执行的工单")
+		return
+	}
+
+	if !h.tryStartTask() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("postprocess_execute")
+		ctx := h.taskCtx
+
+		err := ExecuteRoadmapAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.postprocess, h.progressPath, h.postprocessPath, h.skills, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.Warn("全书优化执行已取消（已完成项不会丢失）")
+			} else {
+				h.logger.Error(fmt.Sprintf("全书优化执行失败: %v", err))
+			}
+			h.logger.TaskEnd("postprocess_execute", false)
+			h.broadcastProgress()
+			h.logger.PostProcessUpdate(h.postprocess)
+			return
+		}
+
+		h.logger.TaskEnd("postprocess_execute", true)
+		h.broadcastProgress()
+		h.logger.PostProcessUpdate(h.postprocess)
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
 func (h *Handlers) GetSkills(w http.ResponseWriter, r *http.Request) {
