@@ -93,6 +93,7 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	mux.HandleFunc("DELETE /api/relations/{id}", h.DeleteRelation)
 
 	mux.HandleFunc("GET /api/foreshadows", h.GetForeshadows)
+	mux.HandleFunc("GET /api/foreshadows/roadmap", h.GetForeshadowsRoadmap)
 	mux.HandleFunc("POST /api/foreshadows/suggest", h.PostForeshadowsSuggest)
 	mux.HandleFunc("POST /api/foreshadows/confirm", h.PostForeshadowsConfirm)
 	mux.HandleFunc("POST /api/foreshadows", h.PostForeshadow)

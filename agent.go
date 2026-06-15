@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -609,7 +610,23 @@ func getBuiltinTools() []Tool {
 
 				var result strings.Builder
 				for _, fs := range ctx.State.Foreshadows {
-					result.WriteString(fmt.Sprintf("#%d [%s] %s\n  %s\n\n", fs.ID, fs.Status, fs.Name, fs.Description))
+					result.WriteString(fmt.Sprintf("#%d [%s] %s\n", fs.ID, foreshadowStatusLabel(fs.Status), fs.Name))
+					result.WriteString(fmt.Sprintf("  描述: %s\n", fs.Description))
+					result.WriteString(fmt.Sprintf("  埋设: 第%d章", fs.PlantChapter))
+					if fs.TargetChapter > 0 {
+						result.WriteString(fmt.Sprintf(" → 预计回收: 第%d章", fs.TargetChapter))
+					}
+					result.WriteString("\n")
+					if len(fs.Events) > 0 {
+						result.WriteString("  进展:\n")
+						for _, ev := range fs.Events {
+							result.WriteString(fmt.Sprintf("    - 第%d章: %s\n", ev.Chapter, ev.Note))
+						}
+					}
+					if fs.Resolution != "" {
+						result.WriteString(fmt.Sprintf("  回收方式: %s\n", fs.Resolution))
+					}
+					result.WriteString("\n")
 				}
 				return result.String(), nil
 			},
@@ -1491,6 +1508,7 @@ func getBuiltinTools() []Tool {
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
 					return "", fmt.Errorf("保存失败: %w", err)
 				}
+				_ = SaveForeshadowRoadmap(filepath.Dir(ctx.ProgressPath), ctx.State)
 				return fmt.Sprintf("伏笔「%s」创建成功 (ID: %d)", fs.Name, fs.ID), nil
 			},
 		},
@@ -1543,6 +1561,7 @@ func getBuiltinTools() []Tool {
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
 					return "", fmt.Errorf("保存失败: %w", err)
 				}
+				_ = SaveForeshadowRoadmap(filepath.Dir(ctx.ProgressPath), ctx.State)
 				return fmt.Sprintf("伏笔「%s」已更新", fs.Name), nil
 			},
 		},
@@ -1561,6 +1580,7 @@ func getBuiltinTools() []Tool {
 						if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
 							return "", fmt.Errorf("保存失败: %w", err)
 						}
+						_ = SaveForeshadowRoadmap(filepath.Dir(ctx.ProgressPath), ctx.State)
 						return fmt.Sprintf("伏笔「%s」已删除", fs.Name), nil
 					}
 				}

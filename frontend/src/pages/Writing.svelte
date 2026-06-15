@@ -57,6 +57,13 @@
   $: wordCount = isStreamingThis ? $streamCharCount : (ch?.content ? ch.content.replace(/\s/g, '').length : 0);
   $: totalWords = chapters.reduce((sum, c) => sum + (c.content ? c.content.replace(/\s/g, '').length : 0), 0);
 
+  $: foreshadows = p?.foreshadows || [];
+  $: fsActive = foreshadows.filter(f => f.status === 'planted' || f.status === 'progressing');
+  $: fsOverdue = fsActive.filter(f => f.target_chapter > 0 && (currentIdx + 1) > f.target_chapter);
+  $: fsNearTarget = fsActive.filter(f =>
+    f.target_chapter > 0 && (currentIdx + 1) >= f.target_chapter - 2 && (currentIdx + 1) <= f.target_chapter
+  );
+
   const statusMeta = {
     pending:  { label: '待写作', cls: 'badge-ghost', dot: 'bg-base-content/20' },
     writing:  { label: '写作中', cls: 'badge-warning', dot: 'bg-warning animate-pulse' },
@@ -202,6 +209,39 @@
         <div class="text-sm text-base-content/50">{pct}%（已确认 {accepted} / {total} 章）</div>
       </div>
     </div>
+
+    {#if foreshadows.length > 0}
+      <div class="card bg-base-200 shadow-sm">
+        <div class="card-body p-4 gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="font-medium text-sm">伏笔追踪</h3>
+            <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>查看路线图 →</button>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs">
+            <span class="badge badge-ghost">共 {foreshadows.length} 条</span>
+            <span class="badge badge-info badge-outline">活跃 {fsActive.length}</span>
+            {#if fsOverdue.length > 0}
+              <span class="badge badge-error">超期 {fsOverdue.length}</span>
+            {/if}
+            {#if fsNearTarget.length > 0}
+              <span class="badge badge-warning badge-outline">临近回收 {fsNearTarget.length}</span>
+            {/if}
+          </div>
+          {#if fsOverdue.length > 0}
+            <p class="text-xs text-warning">⚠️ {fsOverdue.map(f => `#${f.id} ${f.name}`).join('、')} 已超过预计回收章节</p>
+          {:else if fsNearTarget.length > 0}
+            <p class="text-xs text-base-content/50">本章可优先考虑：{fsNearTarget.map(f => f.name).join('、')}</p>
+          {/if}
+        </div>
+      </div>
+    {:else}
+      <div class="card bg-base-200 shadow-sm">
+        <div class="card-body p-4 flex items-center justify-between gap-2">
+          <p class="text-sm text-base-content/50">尚未设置伏笔 — 写作时不会注入伏笔约束</p>
+          <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>去设置 →</button>
+        </div>
+      </div>
+    {/if}
 
     <PostProcessPanel />
 

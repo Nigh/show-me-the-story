@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 type ForeshadowSuggestion struct {
@@ -245,4 +248,162 @@ func NextForeshadowID(foreshadows []Foreshadow) int {
 		}
 	}
 	return maxID + 1
+}
+
+func foreshadowStatusLabel(status ForeshadowStatus) string {
+	switch status {
+	case ForeshadowPlanted:
+		return "已埋设"
+	case ForeshadowProgressing:
+		return "推进中"
+	case ForeshadowResolved:
+		return "已回收"
+	case ForeshadowAbandoned:
+		return "已放弃"
+	default:
+		return string(status)
+	}
+}
+
+func maxChapterNum(state *Progress) int {
+	maxNum := 0
+	for _, ch := range state.Chapters {
+		if ch.Num > maxNum {
+			maxNum = ch.Num
+		}
+	}
+	for _, fs := range state.Foreshadows {
+		if fs.PlantChapter > maxNum {
+			maxNum = fs.PlantChapter
+		}
+		if fs.TargetChapter > maxNum {
+			maxNum = fs.TargetChapter
+		}
+		for _, ev := range fs.Events {
+			if ev.Chapter > maxNum {
+				maxNum = ev.Chapter
+			}
+		}
+	}
+	return maxNum
+}
+
+// BuildForeshadowRoadmapMarkdown 生成供用户阅读的伏笔路线图 Markdown。
+func BuildForeshadowRoadmapMarkdown(state *Progress) string {
+	title := state.Title
+	if title == "" {
+		title = "未命名小说"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("# 伏笔路线图 — 《%s》\n\n", title))
+	sb.WriteString(fmt.Sprintf("> 更新时间：%s\n\n", time.Now().Format("2006-01-02 15:04:05")))
+
+	if len(state.Foreshadows) == 0 {
+		sb.WriteString("当前尚无伏笔记录。\n")
+		return sb.String()
+	}
+
+	active, resolved, abandoned := 0, 0, 0
+	for _, fs := range state.Foreshadows {
+		switch fs.Status {
+		case ForeshadowPlanted, ForeshadowProgressing:
+			active++
+		case ForeshadowResolved:
+			resolved++
+		case ForeshadowAbandoned:
+			abandoned++
+		}
+	}
+
+	sb.WriteString("## 概览\n\n")
+	sb.WriteString(fmt.Sprintf("- 总计 **%d** 条 | 活跃 **%d** | 已回收 **%d** | 已放弃 **%d**\n\n", len(state.Foreshadows), active, resolved, abandoned))
+
+	if warn := BuildForeshadowWarnings(state); warn != "" {
+		sb.WriteString("## 超期告警\n\n")
+		sb.WriteString(strings.TrimPrefix(warn, "⚠️ 伏笔超期告警: "))
+		sb.WriteString("\n\n")
+	}
+
+	maxCh := maxChapterNum(state)
+	if maxCh > 0 {
+		sb.WriteString("## 按章节时间线\n\n")
+		for chNum := 1; chNum <= maxCh; chNum++ {
+			var lines []string
+			for _, fs := range state.Foreshadows {
+				if fs.PlantChapter == chNum {
+					lines = append(lines, fmt.Sprintf("- 🔵 **#%d %s** — 埋设（%s）", fs.ID, fs.Name, foreshadowStatusLabel(fs.Status)))
+				}
+				if fs.TargetChapter == chNum {
+					lines = append(lines, fmt.Sprintf("- 🎯 **#%d %s** — 预计回收（%s）", fs.ID, fs.Name, foreshadowStatusLabel(fs.Status)))
+				}
+				for _, ev := range fs.Events {
+					if ev.Chapter == chNum {
+						lines = append(lines, fmt.Sprintf("- 📌 **#%d %s** — %s", fs.ID, fs.Name, ev.Note))
+					}
+				}
+			}
+			if len(lines) == 0 {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("### 第 %d 章\n\n", chNum))
+			sb.WriteString(strings.Join(lines, "\n"))
+			sb.WriteString("\n\n")
+		}
+	}
+
+	sb.WriteString("## 伏笔详情\n\n")
+	for _, fs := range state.Foreshadows {
+		sb.WriteString(fmt.Sprintf("### #%d %s [%s]\n\n", fs.ID, fs.Name, foreshadowStatusLabel(fs.Status)))
+		sb.WriteString(fmt.Sprintf("%s\n\n", fs.Description))
+		sb.WriteString(fmt.Sprintf("- 埋设章节：第 **%d** 章\n", fs.PlantChapter))
+		if fs.TargetChapter > 0 {
+			sb.WriteString(fmt.Sprintf("- 预计回收：第 **%d** 章\n", fs.TargetChapter))
+		}
+		if len(fs.Events) > 0 {
+			sb.WriteString("- 进展记录：\n")
+			for _, ev := range fs.Events {
+				sb.WriteString(fmt.Sprintf("  - 第 %d 章：%s\n", ev.Chapter, ev.Note))
+			}
+		}
+		if fs.Resolution != "" {
+			sb.WriteString(fmt.Sprintf("- 回收方式：%s\n", fs.Resolution))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// SaveForeshadowRoadmap 将伏笔路线图写入项目目录 Foreshadows.md。
+func SaveForeshadowRoadmap(projectDir string, state *Progress) error {
+	content := BuildForeshadowRoadmapMarkdown(state)
+	return os.WriteFile(ForeshadowRoadmapPath(projectDir), []byte(content), 0644)
+}
+
+// syncForeshadowsAfterChapter 在章节正文变更后更新伏笔状态并落盘路线图。
+func syncForeshadowsAfterChapter(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, chapterIdx int, progressPath string, logger *LogBroadcaster) {
+	if len(state.Foreshadows) == 0 {
+		return
+	}
+	if err := UpdateForeshadows(ctx, apiCfg, cfg, state, chapterIdx, logger); err != nil {
+		logger.Warn(fmt.Sprintf("伏笔状态更新失败: %v（不影响本章）", err))
+		return
+	}
+	active, resolved := 0, 0
+	for _, fs := range state.Foreshadows {
+		switch fs.Status {
+		case ForeshadowPlanted, ForeshadowProgressing:
+			active++
+		case ForeshadowResolved:
+			resolved++
+		}
+	}
+	logger.Info(fmt.Sprintf("伏笔状态已更新（活跃: %d, 已回收: %d）", active, resolved))
+	if err := SaveForeshadowRoadmap(filepath.Dir(progressPath), state); err != nil {
+		logger.Warn(fmt.Sprintf("伏笔路线图保存失败: %v", err))
+	}
+	if warn := BuildForeshadowWarnings(state); warn != "" {
+		logger.Warn(warn)
+	}
 }

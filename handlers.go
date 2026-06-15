@@ -957,6 +957,23 @@ func (h *Handlers) GetForeshadows(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, h.state.Foreshadows)
 }
 
+func (h *Handlers) GetForeshadowsRoadmap(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w) {
+		return
+	}
+	markdown := BuildForeshadowRoadmapMarkdown(h.state)
+	h.writeJSON(w, http.StatusOK, map[string]string{
+		"markdown": markdown,
+		"path":     ForeshadowRoadmapPath(h.projectDir()),
+	})
+}
+
+func (h *Handlers) persistForeshadowRoadmap() {
+	if err := SaveForeshadowRoadmap(h.projectDir(), h.state); err != nil {
+		h.logger.Warn(fmt.Sprintf("伏笔路线图保存失败: %v", err))
+	}
+}
+
 func (h *Handlers) PostForeshadowsSuggest(w http.ResponseWriter, r *http.Request) {
 	if !h.tryStartTask() {
 		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
@@ -1036,6 +1053,7 @@ func (h *Handlers) PostForeshadow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.persistForeshadowRoadmap()
 	h.writeJSON(w, http.StatusOK, fs)
 }
 
@@ -1100,6 +1118,7 @@ func (h *Handlers) PutForeshadow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.persistForeshadowRoadmap()
 	h.writeJSON(w, http.StatusOK, fs)
 }
 
@@ -1133,6 +1152,7 @@ func (h *Handlers) DeleteForeshadow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.persistForeshadowRoadmap()
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -1163,6 +1183,8 @@ func (h *Handlers) PostForeshadowsConfirm(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.persistForeshadowRoadmap()
+	h.broadcastProgress()
 	h.writeJSON(w, http.StatusOK, h.state.Foreshadows)
 }
 

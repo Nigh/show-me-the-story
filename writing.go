@@ -100,21 +100,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 
 	if len(state.Foreshadows) > 0 {
 		logger.StepInfo(5, 5, "正在更新伏笔状态...")
-		if err := UpdateForeshadows(ctx, apiCfg, cfg, state, i, logger); err != nil {
-			logger.Warn(fmt.Sprintf("伏笔状态更新失败: %v（不影响本章）", err))
-		} else {
-			active := 0
-			resolved := 0
-			for _, fs := range state.Foreshadows {
-				switch fs.Status {
-				case ForeshadowPlanted, ForeshadowProgressing:
-					active++
-				case ForeshadowResolved:
-					resolved++
-				}
-			}
-			logger.Info(fmt.Sprintf("伏笔状态已更新（活跃: %d, 已回收: %d）", active, resolved))
-		}
+		syncForeshadowsAfterChapter(ctx, apiCfg, cfg, state, i, progressPath, logger)
 	}
 
 	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
@@ -123,10 +109,6 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 	state.CurrentChapterIndex = i
 	if err := SaveProgress(progressPath, state); err != nil {
 		return err
-	}
-
-	if warn := BuildForeshadowWarnings(state); warn != "" {
-		logger.Warn(warn)
 	}
 
 	logger.Success(fmt.Sprintf("第 %d 章创作完成！", ch.Num))
@@ -256,6 +238,13 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 		return err
 	}
 
+	if len(state.Foreshadows) > 0 {
+		syncForeshadowsAfterChapter(ctx, apiCfg, cfg, state, chapterIdx, progressPath, logger)
+		if err := SaveProgress(progressPath, state); err != nil {
+			return err
+		}
+	}
+
 	logger.Success(fmt.Sprintf("第 %d 章已修订。", ch.Num))
 	return nil
 }
@@ -310,6 +299,13 @@ func ReviseSpecificChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Co
 
 	if err := SaveProgress(progressPath, state); err != nil {
 		return err
+	}
+
+	if len(state.Foreshadows) > 0 {
+		syncForeshadowsAfterChapter(ctx, apiCfg, cfg, state, chapterIdx, progressPath, logger)
+		if err := SaveProgress(progressPath, state); err != nil {
+			return err
+		}
 	}
 
 	logger.Success(fmt.Sprintf("第 %d 章定向修订完成（其余章节未受影响）。", ch.Num))
@@ -369,6 +365,7 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 		"OutlineConstraints": outlineConstraints,
 	})
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.OutlineConstraints}}", outlineConstraints)
+	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.Foreshadows}}", foreshadowContext)
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {

@@ -96,3 +96,8 @@ func SaveChapterMarkdown(projectDir string, ch ChapterState, title string) {
 	content := fmt.Sprintf("# 第 %d 章: %s\n\n> **本章摘要**：%s\n\n---\n\n%s", ch.Num, ch.Title, ch.Summary, ch.Content)
 	_ = os.WriteFile(ChapterMarkdownPath(projectDir, ch.Num), []byte(content), 0644)
 }
+
+// ForeshadowRoadmapPath returns the foreshadow roadmap markdown path inside the project directory.
+func ForeshadowRoadmapPath(projectDir string) string {
+	return filepath.Join(projectDir, "Foreshadows.md")
+}

@@ -1,4 +1,4 @@
-import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, streamCharCount, continueAnalysis, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess } from './stores.js';
+import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, streamCharCount, continueAnalysis, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions } from './stores.js';
 import { api } from './api.js';
 
 let eventSource = null;
@@ -202,7 +202,10 @@ export function connectSSE() {
 
   eventSource.addEventListener('foreshadow_suggestions', e => {
     const d = JSON.parse(e.data);
-    addToast(`伏笔建议已生成，共 ${d.length} 条`, 'info');
+    const items = (d || []).map(s => ({ ...s, _selected: true }));
+    foreshadowSuggestions.set(items);
+    foreshadowShowSuggestions.set(true);
+    addToast(`伏笔建议已生成，共 ${items.length} 条 — 请前往「伏笔」页确认`, 'info');
   });
 
   eventSource.addEventListener('chat_chunk', e => {

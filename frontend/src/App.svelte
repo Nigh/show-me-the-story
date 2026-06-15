@@ -10,6 +10,7 @@
   import Writing from './pages/Writing.svelte';
   import Relations from './pages/Relations.svelte';
   import Skills from './pages/Skills.svelte';
+  import Foreshadows from './pages/Foreshadows.svelte';
   import ChatPanel from './components/ChatPanel.svelte';
   import ConfirmModal from './components/ConfirmModal.svelte';
 
@@ -89,6 +90,7 @@
             ['config', '⚙️', '配置'],
             ['outline', '📝', '大纲'],
             ['writing', '✍️', '写作'],
+            ['foreshadows', '🔗', '伏笔'],
             ['relations', '🕸️', '图谱'],
             ['skills', '🧩', '技能']
           ] as [page, icon, label]}
@@ -109,6 +111,8 @@
             <Outline {sendToChat} />
           {:else if $currentPage === 'writing'}
             <Writing {sendToChat} />
+          {:else if $currentPage === 'foreshadows'}
+            <Foreshadows />
           {:else if $currentPage === 'relations'}
             <Relations />
           {:else if $currentPage === 'skills'}

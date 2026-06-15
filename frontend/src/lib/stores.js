@@ -61,6 +61,9 @@ export const confirmModal = writable(null);
 
 export const postprocess = writable(null);
 
+export const foreshadowSuggestions = writable([]);
+export const foreshadowShowSuggestions = writable(false);
+
 export function showConfirm(message, onConfirm) {
   confirmModal.set({ message, onConfirm });
 }
