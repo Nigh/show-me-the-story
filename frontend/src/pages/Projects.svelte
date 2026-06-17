@@ -1,14 +1,20 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { currentProject, projects, addToast, showConfirm, taskRunning, progress, config, settings, chatSessions, currentChatSession } from '../lib/stores.js';
+  import { currentProject, projects, addToast, showConfirm, taskRunning, progress, config, settings, chatSessions, currentChatSession, projectLanguage } from '../lib/stores.js';
+  import { t, setLocale } from '../lib/i18n/index.js';
 
   let newProjectName = '';
+  let newProjectLang = 'zh';
   let creating = false;
 
-  const phaseLabels = { outline: '大纲', writing: '写作' };
-
   onMount(loadProjects);
+
+  function phaseLabel(p) {
+    if (p === 'outline') return $t('app.phase.outline');
+    if (p === 'writing') return $t('app.phase.writing');
+    return p || '';
+  }
 
   async function loadProjects() {
     try {
@@ -25,11 +31,18 @@
       currentProject.set(name);
       // Reload all project data
       try { progress.set(await api('GET', '/api/progress')); } catch (e) {}
-      try { config.set(await api('GET', '/api/config')); } catch (e) {}
+      try {
+        const cfg = await api('GET', '/api/config');
+        config.set(cfg);
+        if (cfg && cfg.language) {
+          projectLanguage.set(cfg.language);
+          setLocale(cfg.language);
+        }
+      } catch (e) {}
       try { settings.set(await api('GET', '/api/settings')); } catch (e) {}
       try { chatSessions.set(await api('GET', '/api/chat/sessions')); } catch (e) {}
       currentChatSession.set(null);
-      addToast('已切换到项目: ' + name, 'success');
+      addToast($t('projects.toast.switched', { name }), 'success');
     } catch (e) {
       addToast(e.message, 'error');
     }
@@ -38,12 +51,12 @@
   async function createProject() {
     const name = newProjectName.trim();
     if (!name) {
-      addToast('请输入项目名称', 'error');
+      addToast($t('projects.toast.needName'), 'error');
       return;
     }
     creating = true;
     try {
-      await api('POST', '/api/projects', { name });
+      await api('POST', '/api/projects', { name, language: newProjectLang });
       newProjectName = '';
       await loadProjects();
       await selectProject(name);
@@ -55,11 +68,11 @@
   }
 
   async function deleteProject(name) {
-    showConfirm(`确认删除项目「${name}」？此操作不可恢复！`, async () => {
+    showConfirm($t('projects.confirm.delete', { name }), async () => {
       try {
         await api('DELETE', '/api/projects/' + encodeURIComponent(name));
         await loadProjects();
-        addToast('项目已删除', 'success');
+        addToast($t('projects.toast.deleted'), 'success');
       } catch (e) {
         addToast(e.message, 'error');
       }
@@ -79,23 +92,27 @@
     <!-- Title -->
     <div class="text-center">
       <div class="text-5xl mb-4">📚</div>
-      <h2 class="text-2xl font-bold mb-1">选择故事项目</h2>
-      <p class="text-sm text-base-content/50">选择已有项目或创建新项目开始创作</p>
+      <h2 class="text-2xl font-bold mb-1">{$t('projects.title')}</h2>
+      <p class="text-sm text-base-content/50">{$t('projects.subtitle')}</p>
     </div>
 
     <!-- Create new project -->
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4">
-        <h3 class="card-title text-sm">新建项目</h3>
+        <h3 class="card-title text-sm">{$t('projects.create')}</h3>
         <div class="flex gap-2">
           <input
             type="text"
             class="input input-sm flex-1"
             bind:value={newProjectName}
-            placeholder="输入项目名称..."
+            placeholder={$t('projects.create.placeholder')}
             on:keydown={handleKeydown}
             disabled={creating}
           />
+          <select class="select select-sm" bind:value={newProjectLang} disabled={creating} title={$t('projects.create.lang')}>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
           <button
             class="btn btn-primary btn-sm"
             on:click={createProject}
@@ -104,19 +121,20 @@
             {#if creating}
               <span class="loading loading-spinner loading-xs"></span>
             {:else}
-              创建
+              {$t('projects.create.button')}
             {/if}
           </button>
         </div>
+        <p class="text-xs text-base-content/40 mt-1">{$t('projects.create.langHint')}</p>
       </div>
     </div>
 
     <!-- Project list -->
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4">
-        <h3 class="card-title text-sm">已有项目 <span class="text-xs font-normal text-base-content/40">({$projects.length})</span></h3>
+        <h3 class="card-title text-sm">{$t('projects.list')} <span class="text-xs font-normal text-base-content/40">({$projects.length})</span></h3>
         {#if $projects.length === 0}
-          <p class="text-sm text-base-content/40 py-4 text-center">暂无项目，请创建一个新项目开始。</p>
+          <p class="text-sm text-base-content/40 py-4 text-center">{$t('projects.empty')}</p>
         {:else}
           <div class="space-y-1.5">
             {#each $projects as p}
@@ -132,27 +150,30 @@
                   {(p.name || '?')[0]}
                 </div>
                 <div class="flex-1 min-w-0">
-                  <div class="text-sm font-medium truncate">{p.name}</div>
+                  <div class="text-sm font-medium truncate flex items-center gap-2">
+                    <span>{p.name}</span>
+                    <span class="badge badge-accent badge-xs uppercase">{(p.language || 'zh') === 'en' ? 'EN' : 'ZH'}</span>
+                  </div>
                   <div class="text-xs text-base-content/40 truncate">
                     {#if p.title}
-                      《{p.title}》
+                      {$t('projects.bookTitle', { title: p.title })}
                       {#if p.phase}
-                        · {phaseLabels[p.phase] || p.phase}
+                        · {phaseLabel(p.phase)}
                       {/if}
                     {:else}
-                      空项目
+                      {$t('projects.emptyProject')}
                     {/if}
                   </div>
                 </div>
                 {#if $currentProject === p.name}
-                  <span class="badge badge-primary badge-xs">当前</span>
+                  <span class="badge badge-primary badge-xs">{$t('projects.current')}</span>
                 {:else}
                   <button
                     class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity"
                     on:click|stopPropagation={() => deleteProject(p.name)}
                     disabled={$taskRunning}
                   >
-                    删除
+                    {$t('common.delete')}
                   </button>
                 {/if}
               </div>

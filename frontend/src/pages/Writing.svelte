@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
   import { progress, taskRunning, streamingContent, streamingChapterIdx, streamCharCount, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
+  import { t } from '../lib/i18n/index.js';
   import PostProcessPanel from '../components/PostProcessPanel.svelte';
 
   // 保留 prop 以兼容 App 传参
@@ -23,7 +24,7 @@
     try {
       const res = await api('PUT', '/api/autoconfirm', { enabled });
       autoConfirm.set(!!res.enabled);
-      addToast(res.enabled ? '已开启自动确认模式：每章生成完成后自动确认并继续下一章' : '已关闭自动确认模式：当前章节完成后停止', 'info');
+      addToast(res.enabled ? $t('writing.toasts.autoConfirmOn') : $t('writing.toasts.autoConfirmOff'), 'info');
     } catch (err) {
       e.target.checked = $autoConfirm;
       addToast(err.message, 'error');
@@ -64,11 +65,11 @@
     f.target_chapter > 0 && (currentIdx + 1) >= f.target_chapter - 2 && (currentIdx + 1) <= f.target_chapter
   );
 
-  const statusMeta = {
-    pending:  { label: '待写作', cls: 'badge-ghost', dot: 'bg-base-content/20' },
-    writing:  { label: '写作中', cls: 'badge-warning', dot: 'bg-warning animate-pulse' },
-    review:   { label: '审核中', cls: 'badge-info', dot: 'bg-info' },
-    accepted: { label: '已确认', cls: 'badge-success', dot: 'bg-success' },
+  $: statusMeta = {
+    pending:  { label: $t('writing.status.pending'),  cls: 'badge-ghost',   dot: 'bg-base-content/20' },
+    writing:  { label: $t('writing.status.writing'),  cls: 'badge-warning', dot: 'bg-warning animate-pulse' },
+    review:   { label: $t('writing.status.review'),   cls: 'badge-info',    dot: 'bg-info' },
+    accepted: { label: $t('writing.status.accepted'), cls: 'badge-success', dot: 'bg-success' },
   };
 
   let reviseFeedback = '';
@@ -97,7 +98,7 @@
   async function doGenerate() {
     try {
       await api('POST', '/api/chapter/generate');
-      addToast(`第 ${ch?.num} 章生成任务已启动`, 'info');
+      addToast($t('writing.toasts.generateStarted', { num: ch?.num }), 'info');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -105,7 +106,7 @@
     try {
       await api('POST', '/api/chapter/confirm');
       progress.set(await api('GET', '/api/progress'));
-      addToast(`第 ${ch?.num} 章已确认`, 'success');
+      addToast($t('writing.toasts.confirmed', { num: ch?.num }), 'success');
       // 跳到下一章
       const next = await api('GET', '/api/progress');
       if (next.current_chapter_index < (next.chapters || []).length) {
@@ -116,7 +117,7 @@
 
   async function doRevise() {
     const fb = reviseFeedback.trim();
-    if (!fb) { addToast('请填写修改意见', 'error'); return; }
+    if (!fb) { addToast($t('writing.toasts.feedbackRequired'), 'error'); return; }
     if (!ch) return;
     try {
       if (isCurrent && ch.status === 'review') {
@@ -126,7 +127,7 @@
         // 其他章节（含已确认）：定向最小化修订，不影响其他章节
         await api('POST', '/api/chapter/revise/' + ch.num, { feedback: fb });
       }
-      addToast(`第 ${ch.num} 章修订任务已启动（仅修改该章）`, 'info');
+      addToast($t('writing.toasts.reviseStarted', { num: ch.num }), 'info');
       reviseFeedback = '';
       showRevise = false;
     } catch (e) { addToast(e.message, 'error'); }
@@ -136,7 +137,7 @@
     if (!ch) return;
     try {
       await api('POST', '/api/chapter/polish', { num: ch.num });
-      addToast(`第 ${ch.num} 章润色任务已启动`, 'info');
+      addToast($t('writing.toasts.polishStarted', { num: ch.num }), 'info');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -144,25 +145,26 @@
     if (!ch?.content) return;
     try {
       await navigator.clipboard.writeText(ch.content);
-      addToast('本章正文已复制', 'success');
-    } catch (e) { addToast('复制失败', 'error'); }
+      addToast($t('writing.toasts.copied'), 'success');
+    } catch (e) { addToast($t('common.copy.failed'), 'error'); }
   }
 
   function exportBook() {
     const written = chapters.filter(c => c.content);
-    if (written.length === 0) { addToast('暂无已写章节可导出', 'error'); return; }
-    const parts = [`《${p.title || '未命名'}》\n`];
+    if (written.length === 0) { addToast($t('writing.toasts.exportEmpty'), 'error'); return; }
+    const titleStr = p.title || $t('common.untitled');
+    const parts = [$t('writing.export.bookTitle', { title: titleStr }) + '\n'];
     for (const c of written) {
-      parts.push(`\n\n第 ${c.num} 章　${c.title}\n\n${c.content}`);
+      parts.push('\n\n' + $t('writing.export.chapterHeader', { num: c.num, title: c.title }) + '\n\n' + c.content);
     }
     const blob = new Blob([parts.join('')], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${p.title || '小说'}.txt`;
+    a.download = `${p.title || $t('writing.export.defaultName')}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    addToast(`已导出 ${written.length} 章`, 'success');
+    addToast($t('writing.toasts.exportDone', { n: written.length }), 'success');
   }
 
   function prevChapter() { if ($selectedChapter > 0) selectChapter($selectedChapter - 1); }
@@ -170,11 +172,11 @@
 
   function smoothTransitions() {
     confirmModal.set({
-      message: '将逐章检查已确认章节之间的衔接，仅在生硬时由 AI 最小化重写本章开头片段（不改动正文主体），每章处理完立即保存，可随时停止。是否开始？',
+      message: $t('writing.toasts.smoothAsk'),
       onConfirm: async () => {
         try {
           await api('POST', '/api/chapters/smooth-transitions');
-          addToast('章节衔接优化任务已启动', 'info');
+          addToast($t('writing.toasts.smoothStarted'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
       },
     });
@@ -184,9 +186,9 @@
 {#if !inWriting}
   <div class="text-center py-16 text-base-content/50">
     <div class="text-5xl mb-4">✍️</div>
-    <p class="text-base mb-1">尚未进入写作阶段</p>
-    <p class="text-sm text-base-content/35 mb-6">请先在「大纲」页生成并确认大纲</p>
-    <button class="btn btn-primary btn-sm" on:click={() => window.location.hash = '#outline'}>前往大纲页</button>
+    <p class="text-base mb-1">{$t('writing.notReady.title')}</p>
+    <p class="text-sm text-base-content/35 mb-6">{$t('writing.notReady.hint')}</p>
+    <button class="btn btn-primary btn-sm" on:click={() => window.location.hash = '#outline'}>{$t('writing.notReady.goto')}</button>
   </div>
 {:else}
   <div class="space-y-3">
@@ -194,19 +196,19 @@
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4 gap-2">
         <div class="flex items-center gap-3">
-          <h2 class="card-title text-base flex-1">写作进度</h2>
-          <label class="flex items-center gap-1.5 cursor-pointer" title="开启后：每章生成完成自动确认，并继续生成下一章，直到全部完成或关闭开关">
+          <h2 class="card-title text-base flex-1">{$t('writing.progress.title')}</h2>
+          <label class="flex items-center gap-1.5 cursor-pointer" title={$t('writing.progress.autoConfirmTip')}>
             <input type="checkbox" class="toggle toggle-xs toggle-success" checked={$autoConfirm} on:change={toggleAutoConfirm} />
-            <span class="text-xs text-base-content/60">自动确认模式</span>
+            <span class="text-xs text-base-content/60">{$t('writing.progress.autoConfirm')}</span>
           </label>
-          <span class="text-xs text-base-content/40">全书约 {totalWords.toLocaleString()} 字</span>
+          <span class="text-xs text-base-content/40">{$t('writing.progress.totalWords', { n: totalWords.toLocaleString() })}</span>
           {#if accepted >= 2}
-            <button class="btn btn-ghost btn-xs" on:click={smoothTransitions} disabled={$taskRunning} title="逐章检查并修补已确认章节之间的衔接，适合修补旧项目">🪡 优化章节衔接</button>
+            <button class="btn btn-ghost btn-xs" on:click={smoothTransitions} disabled={$taskRunning} title={$t('writing.btn.smoothTransitions.tip')}>{$t('writing.btn.smoothTransitions')}</button>
           {/if}
-          <button class="btn btn-ghost btn-xs" on:click={exportBook}>📤 导出 TXT</button>
+          <button class="btn btn-ghost btn-xs" on:click={exportBook}>{$t('writing.btn.exportTxt')}</button>
         </div>
         <progress class="progress progress-primary w-full" value={pct} max="100"></progress>
-        <div class="text-sm text-base-content/50">{pct}%（已确认 {accepted} / {total} 章）</div>
+        <div class="text-sm text-base-content/50">{$t('writing.progress.acceptedSummary', { pct, accepted, total })}</div>
       </div>
     </div>
 
@@ -214,31 +216,31 @@
       <div class="card bg-base-200 shadow-sm">
         <div class="card-body p-4 gap-2">
           <div class="flex items-center justify-between gap-2">
-            <h3 class="font-medium text-sm">伏笔追踪</h3>
-            <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>查看路线图 →</button>
+            <h3 class="font-medium text-sm">{$t('writing.fs.title')}</h3>
+            <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.goto')}</button>
           </div>
           <div class="flex flex-wrap gap-2 text-xs">
-            <span class="badge badge-ghost">共 {foreshadows.length} 条</span>
-            <span class="badge badge-info badge-outline">活跃 {fsActive.length}</span>
+            <span class="badge badge-ghost">{$t('writing.fs.total', { n: foreshadows.length })}</span>
+            <span class="badge badge-info badge-outline">{$t('writing.fs.active', { n: fsActive.length })}</span>
             {#if fsOverdue.length > 0}
-              <span class="badge badge-error">超期 {fsOverdue.length}</span>
+              <span class="badge badge-error">{$t('writing.fs.overdue', { n: fsOverdue.length })}</span>
             {/if}
             {#if fsNearTarget.length > 0}
-              <span class="badge badge-warning badge-outline">临近回收 {fsNearTarget.length}</span>
+              <span class="badge badge-warning badge-outline">{$t('writing.fs.nearTarget', { n: fsNearTarget.length })}</span>
             {/if}
           </div>
           {#if fsOverdue.length > 0}
-            <p class="text-xs text-warning">⚠️ {fsOverdue.map(f => `#${f.id} ${f.name}`).join('、')} 已超过预计回收章节</p>
+            <p class="text-xs text-warning">{$t('writing.fs.overdueDetail', { names: fsOverdue.map(f => `#${f.id} ${f.name}`).join(', ') })}</p>
           {:else if fsNearTarget.length > 0}
-            <p class="text-xs text-base-content/50">本章可优先考虑：{fsNearTarget.map(f => f.name).join('、')}</p>
+            <p class="text-xs text-base-content/50">{$t('writing.fs.nearDetail', { names: fsNearTarget.map(f => f.name).join(', ') })}</p>
           {/if}
         </div>
       </div>
     {:else}
       <div class="card bg-base-200 shadow-sm">
         <div class="card-body p-4 flex items-center justify-between gap-2">
-          <p class="text-sm text-base-content/50">尚未设置伏笔 — 写作时不会注入伏笔约束</p>
-          <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>去设置 →</button>
+          <p class="text-sm text-base-content/50">{$t('writing.fs.none')}</p>
+          <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.setup')}</button>
         </div>
       </div>
     {/if}
@@ -257,7 +259,7 @@
                 <span class="text-base-content/50 w-6 shrink-0 text-right">{c.num}</span>
                 <span class="flex-1 text-left truncate text-sm">{c.title}</span>
                 {#if i === currentIdx && c.status !== 'accepted'}
-                  <span class="badge badge-primary badge-xs shrink-0">当前</span>
+                  <span class="badge badge-primary badge-xs shrink-0">{$t('writing.tag.current')}</span>
                 {/if}
               </button>
             </li>
@@ -271,23 +273,23 @@
           <div class="card bg-base-200 shadow-sm">
             <div class="card-body p-4 gap-2">
               <div class="flex items-center gap-2 flex-wrap">
-                <h2 class="card-title text-base flex-1 min-w-0">第 {ch.num} 章 · {ch.title}</h2>
+                <h2 class="card-title text-base flex-1 min-w-0">{$t('writing.chapter.title', { num: ch.num, title: ch.title })}</h2>
                 <span class="badge badge-sm {statusMeta[ch.status]?.cls || 'badge-ghost'}">{statusMeta[ch.status]?.label || ch.status}</span>
                 {#if wordCount > 0}
-                  <span class="text-xs text-base-content/40">{wordCount.toLocaleString()} 字</span>
+                  <span class="text-xs text-base-content/40">{$t('writing.chapter.words', { n: wordCount.toLocaleString() })}</span>
                 {/if}
               </div>
 
               {#if ch.outline}
                 <details class="bg-base-300 rounded">
-                  <summary class="p-2 text-xs text-base-content/50 cursor-pointer select-none">本章大纲</summary>
+                  <summary class="p-2 text-xs text-base-content/50 cursor-pointer select-none">{$t('writing.chapter.outline')}</summary>
                   <div class="px-2 pb-2 text-sm text-base-content/70">{ch.outline}</div>
                 </details>
               {/if}
 
               {#if ch.summary}
                 <details class="bg-base-300 rounded">
-                  <summary class="p-2 text-xs text-base-content/50 cursor-pointer select-none">本章摘要</summary>
+                  <summary class="p-2 text-xs text-base-content/50 cursor-pointer select-none">{$t('writing.chapter.summary')}</summary>
                   <div class="px-2 pb-2 text-sm text-base-content/70 whitespace-pre-wrap">{ch.summary}</div>
                 </details>
               {/if}
@@ -296,7 +298,7 @@
                 {#if isStreamingThis}
                   <div class="text-xs text-warning/80 flex items-center gap-1.5">
                     <span class="loading loading-dots loading-xs"></span>
-                    生成中 · 为保证页面流畅仅显示最新内容，完成后展示全文
+                    {$t('writing.chapter.streamHint')}
                   </div>
                 {/if}
                 <div bind:this={contentEl} class="bg-base-300 rounded-lg p-4 text-[15px] chapter-content reading-area max-h-[calc(100vh-420px)] min-h-[200px] overflow-y-auto">
@@ -308,9 +310,9 @@
               {:else if ch.status === 'pending'}
                 <div class="bg-base-300 rounded-lg p-6 text-center text-sm text-base-content/40">
                   {#if isCurrent}
-                    本章尚未生成，点击下方「生成本章」开始创作
+                    {$t('writing.chapter.pendingCurrent')}
                   {:else}
-                    本章尚未生成（按顺序写作，当前进行到第 {chapters[currentIdx]?.num ?? '-'} 章）
+                    {$t('writing.chapter.pendingOther', { n: chapters[currentIdx]?.num ?? '-' })}
                   {/if}
                 </div>
               {/if}
@@ -318,22 +320,22 @@
               <!-- 操作 -->
               <div class="flex gap-2 flex-wrap items-center mt-1">
                 {#if ch.status === 'pending' && isCurrent}
-                  <button class="btn btn-primary btn-sm" on:click={doGenerate} disabled={$taskRunning}>✨ 生成本章</button>
+                  <button class="btn btn-primary btn-sm" on:click={doGenerate} disabled={$taskRunning}>{$t('writing.btn.generate')}</button>
                 {/if}
                 {#if ch.status === 'review' && isCurrent}
-                  <button class="btn btn-success btn-sm" on:click={doConfirm} disabled={$taskRunning}>✓ 确认本章</button>
+                  <button class="btn btn-success btn-sm" on:click={doConfirm} disabled={$taskRunning}>{$t('writing.btn.confirm')}</button>
                 {/if}
                 {#if ch.content && ch.status !== 'writing'}
-                  <button class="btn btn-ghost btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>✏️ 修改本章</button>
+                  <button class="btn btn-ghost btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('writing.btn.revise')}</button>
                   {#if hasPolishSkills}
-                    <button class="btn btn-ghost btn-sm" on:click={doPolish} disabled={$taskRunning} title="需启用 polish 类技能">✨ 去AI味</button>
+                    <button class="btn btn-ghost btn-sm" on:click={doPolish} disabled={$taskRunning} title={$t('writing.btn.polish.tip')}>{$t('writing.btn.polish')}</button>
                   {/if}
-                  <button class="btn btn-ghost btn-sm" on:click={copyContent}>📋 复制</button>
+                  <button class="btn btn-ghost btn-sm" on:click={copyContent}>{$t('writing.btn.copy')}</button>
                 {/if}
                 <div class="flex-1"></div>
                 <div class="join">
-                  <button class="btn btn-ghost btn-xs join-item" on:click={prevChapter} disabled={$selectedChapter <= 0}>← 上一章</button>
-                  <button class="btn btn-ghost btn-xs join-item" on:click={nextChapter} disabled={$selectedChapter >= chapters.length - 1}>下一章 →</button>
+                  <button class="btn btn-ghost btn-xs join-item" on:click={prevChapter} disabled={$selectedChapter <= 0}>{$t('writing.btn.prev')}</button>
+                  <button class="btn btn-ghost btn-xs join-item" on:click={nextChapter} disabled={$selectedChapter >= chapters.length - 1}>{$t('writing.btn.next')}</button>
                 </div>
               </div>
 
@@ -342,20 +344,20 @@
                   <textarea
                     class="textarea textarea-sm w-full h-20 text-sm"
                     bind:value={reviseFeedback}
-                    placeholder="修改意见，例如：第三段对话太生硬，改得口语化一些；把主角的剑改成长枪..."
+                    placeholder={$t('writing.revise.placeholder')}
                     disabled={$taskRunning}
                   ></textarea>
                   <div class="flex justify-between items-center">
                     <span class="text-xs text-base-content/40">
                       {#if !(isCurrent && ch.status === 'review')}
-                        定向修订：仅修改本章，不影响其他章节和大纲
+                        {$t('writing.revise.hintTargeted')}
                       {:else}
-                        修订当前章节，必要时会同步调整后续未写章节的大纲
+                        {$t('writing.revise.hintCurrent')}
                       {/if}
                     </span>
                     <div class="flex gap-2">
-                      <button class="btn btn-ghost btn-xs" on:click={() => { showRevise = false; reviseFeedback = ''; }}>取消</button>
-                      <button class="btn btn-primary btn-xs" on:click={doRevise} disabled={$taskRunning || !reviseFeedback.trim()}>提交修订</button>
+                      <button class="btn btn-ghost btn-xs" on:click={() => { showRevise = false; reviseFeedback = ''; }}>{$t('common.cancel')}</button>
+                      <button class="btn btn-primary btn-xs" on:click={doRevise} disabled={$taskRunning || !reviseFeedback.trim()}>{$t('writing.revise.submit')}</button>
                     </div>
                   </div>
                 </div>
@@ -363,7 +365,7 @@
             </div>
           </div>
         {:else}
-          <div class="text-center py-16 text-base-content/50 text-base">选择一个章节查看</div>
+          <div class="text-center py-16 text-base-content/50 text-base">{$t('writing.emptySelection')}</div>
         {/if}
       </div>
     </div>

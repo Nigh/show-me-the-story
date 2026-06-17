@@ -10,7 +10,9 @@ func RenderPrompt(template string, data map[string]string) string {
 	return result
 }
 
-var DefaultPrompts = PromptsConfig{
+// DefaultPromptsZH is the Chinese default prompt set.
+// EN version lives in prompts_en.go.
+var DefaultPromptsZH = PromptsConfig{
 	OutlineGeneration: `你是一位专业的小说策划编辑。请根据以下约束生成小说大纲。
 
 请以JSON格式返回，结构如下：

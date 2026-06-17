@@ -1,9 +1,10 @@
 <script>
   import { currentPage } from './lib/router.js';
-  import { progress, taskRunning, contextPage, toastStore, currentProject } from './lib/stores.js';
+  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage } from './lib/stores.js';
   import { connectSSE } from './lib/sse.js';
   import { api } from './lib/api.js';
   import { onMount } from 'svelte';
+  import { t, uiLocale, setLocale } from './lib/i18n/index.js';
   import Projects from './pages/Projects.svelte';
   import Config from './pages/Config.svelte';
   import Outline from './pages/Outline.svelte';
@@ -25,18 +26,27 @@
       const cur = await api('GET', '/api/projects/current');
       if (cur.name) {
         currentProject.set(cur.name);
+        if (cur.language) {
+          projectLanguage.set(cur.language);
+          // First time opening this project this session: align UI with project language.
+          // Subsequent toggles persist in localStorage.
+          setLocale(cur.language);
+        }
         try { const p = await api('GET', '/api/progress'); progress.set(p); } catch (e) {}
       }
     } catch (e) {}
   });
 
-  $: phaseNames = { outline: '大纲阶段', writing: '写作阶段' };
-  $: phase = $progress ? (phaseNames[$progress.phase] || $progress.phase) : '未开始';
+  $: phase = $progress
+    ? ($progress.phase === 'outline' ? $t('app.phase.outline')
+        : $progress.phase === 'writing' ? $t('app.phase.writing')
+        : $progress.phase)
+    : $t('app.phase.unstarted');
   $: chapterStats = (() => {
     const chs = $progress?.chapters || [];
     if (chs.length === 0) return '';
     const accepted = chs.filter(c => c.status === 'accepted').length;
-    return `${accepted}/${chs.length} 章`;
+    return $t('app.chapters.count', { accepted, total: chs.length });
   })();
 
   async function sendToChat(text) {
@@ -46,21 +56,28 @@
   function backToProjects() {
     currentProject.set(null);
   }
+
+  function toggleLocale() {
+    setLocale($uiLocale === 'en' ? 'zh' : 'en');
+  }
 </script>
 
 <div class="flex flex-col h-screen bg-base-300 text-base-content overflow-hidden">
   <!-- Header -->
   <header class="navbar bg-base-200 border-b border-base-content/10 px-6 min-h-[46px] shrink-0 gap-4">
-    <span class="text-lg font-semibold">AI 小说生成器</span>
+    <span class="text-lg font-semibold">{$t('app.title')}</span>
     {#if $currentProject}
       <span class="badge badge-sm badge-outline">{$currentProject}</span>
+      <span class="badge badge-sm badge-accent uppercase" title={$projectLanguage === 'en' ? 'English' : '中文'}>
+        {$projectLanguage === 'en' ? 'EN' : 'ZH'}
+      </span>
       <button
         class="btn btn-ghost btn-xs gap-1"
         on:click={backToProjects}
         disabled={$taskRunning}
-        title={$taskRunning ? 'AI 任务进行中，暂不能切换项目' : '关闭当前项目，返回项目列表（可切换或新建项目）'}
+        title={$taskRunning ? $t('app.switchProject.disabled') : $t('app.switchProject.tooltip')}
       >
-        ⇄ 切换 / 新建项目
+        {$t('app.switchProject')}
       </button>
       <span class="badge badge-sm" class:badge-primary={$progress}>{phase}</span>
       {#if chapterStats}
@@ -69,10 +86,18 @@
       {#if $taskRunning}
         <span class="badge badge-sm badge-warning gap-1">
           <span class="loading loading-spinner loading-xs"></span>
-          AI 思考中
+          {$t('app.aiThinking')}
         </span>
       {/if}
     {/if}
+    <span class="flex-1"></span>
+    <button
+      class="btn btn-ghost btn-xs gap-1"
+      on:click={toggleLocale}
+      title={$t('app.uiLang.label')}
+    >
+      {$uiLocale === 'en' ? $t('app.uiLang.en') : $t('app.uiLang.zh')}
+    </button>
   </header>
 
   {#if !$currentProject}
@@ -87,18 +112,18 @@
         <!-- Nav -->
         <nav class="flex bg-base-200 border-b border-base-content/10 px-3 py-2 shrink-0 gap-1">
           {#each [
-            ['config', '⚙️', '配置'],
-            ['outline', '📝', '大纲'],
-            ['writing', '✍️', '写作'],
-            ['foreshadows', '🔗', '伏笔'],
-            ['relations', '🕸️', '图谱'],
-            ['skills', '🧩', '技能']
-          ] as [page, icon, label]}
+            ['config', '⚙️', 'nav.config'],
+            ['outline', '📝', 'nav.outline'],
+            ['writing', '✍️', 'nav.writing'],
+            ['foreshadows', '🔗', 'nav.foreshadows'],
+            ['relations', '🕸️', 'nav.relations'],
+            ['skills', '🧩', 'nav.skills']
+          ] as [page, icon, labelKey]}
             <button
               class="btn btn-sm text-sm px-4 gap-1.5 {$currentPage === page ? 'btn-primary' : 'btn-ghost'}"
               on:click={() => window.location.hash = '#' + page}
             >
-              <span class="text-xs">{icon}</span>{label}
+              <span class="text-xs">{icon}</span>{$t(labelKey)}
             </button>
           {/each}
         </nav>

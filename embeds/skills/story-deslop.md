@@ -3,6 +3,7 @@ id: story-deslop
 name: 网文去AI味检测
 description: 6-Gate检测流程，识别并修复AI生成网文的典型问题
 category: polish
+lang: zh
 source: builtin
 ---
 

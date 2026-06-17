@@ -3,6 +3,7 @@
   import { api } from '../lib/api.js';
   import { renderMarkdown } from '../lib/markdown.js';
   import { chatSessions, currentChatSession, addToast, showConfirm, taskRunning, lastFailedTask, logEntries, currentTaskName, streamCharCount } from '../lib/stores.js';
+  import { t, uiLocale } from '../lib/i18n/index.js';
 
   export let contextPage = 'config';
 
@@ -19,29 +20,14 @@
   $: taskLogs = ($logEntries || []).slice(-20);
   let taskStatusCollapsed = false;
 
-  // 工具名中文映射
-  const toolNames = {
-    read_characters: '读取角色列表', read_character: '读取角色详情', read_worldview: '读取世界观',
-    read_organizations: '读取组织', read_chapter: '读取章节', read_outline: '读取大纲',
-    read_foreshadows: '读取伏笔', search_project: '搜索项目', read_project_config: '读取故事配置',
-    read_skills: '读取技能',
-    create_character: '创建角色', update_character: '更新角色',
-    create_worldview: '创建世界观条目', update_worldview: '更新世界观条目',
-    create_organization: '创建组织', update_organization: '更新组织',
-    create_relation: '创建关系', update_relation: '更新关系',
-    create_foreshadow: '创建伏笔', update_foreshadow: '更新伏笔',
-    update_project_config: '更新故事配置', toggle_skill: '切换技能',
-    generate_outline: '生成大纲', confirm_outline: '确认大纲', revise_outline: '修订大纲',
-    edit_chapter_outline: '编辑章节大纲', generate_chapter: '生成章节', confirm_chapter: '确认章节',
-    revise_chapter: '修订章节', suggest_foreshadows: 'AI 伏笔建议',
-    delete_character: '删除角色', delete_worldview: '删除世界观条目', delete_organization: '删除组织',
-    delete_relation: '删除关系', delete_foreshadow: '删除伏笔',
-    delete_chapter: '删除章节', delete_chapters_from: '批量删除章节',
-    delete_outline: '删除大纲', reset_progress: '重置进度',
-  };
   const dangerTools = new Set(['delete_chapter', 'delete_chapters_from', 'delete_outline', 'reset_progress']);
 
-  function toolLabel(name) { return toolNames[name] || name; }
+  function toolLabel(name) {
+    if (!name) return '';
+    const key = 'chat.toolNames.' + name;
+    const label = $t(key);
+    return label === key ? name : label;
+  }
   function fmtArgs(args) {
     const s = typeof args === 'string' ? args : JSON.stringify(args);
     if (!s || s === '{}' || s === 'null') return '';
@@ -49,7 +35,10 @@
   }
   function fmtTime(ts) {
     if (!ts) return '';
-    try { return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+    try {
+      const tag = $uiLocale === 'en' ? 'en-US' : 'zh-CN';
+      return new Date(ts).toLocaleTimeString(tag, { hour12: false, hour: '2-digit', minute: '2-digit' });
+    } catch { return ''; }
   }
 
   // 重试 API 端点映射
@@ -66,7 +55,8 @@
   function isHallucinatedWait(msg, allMsgs, idx) {
     if (msg.role !== 'assistant' || !msg.content) return false;
     if (msg.tool_calls?.length > 0) return false;
-    const waitPattern = /请(耐心)?等待|请稍等|正在生成|等待完成/;
+    // ponytail: heuristic on both zh and en wait-phrases; false positives are acceptable.
+    const waitPattern = /请(耐心)?等待|请稍等|正在生成|等待完成|please wait|generating|in progress|hold on|one moment/i;
     if (!waitPattern.test(msg.content)) return false;
     for (let i = idx - 1; i >= 0; i--) {
       if (allMsgs[i].role === 'user') break;
@@ -88,10 +78,10 @@
       const jsonStr = (match[1] || match[2] || '').trim();
       try {
         const tc = JSON.parse(jsonStr);
-        segments.push({ type: 'tool_call', name: tc.name || tc.tool || '未知工具', args: tc.arguments || tc.args || {} });
+        segments.push({ type: 'tool_call', name: tc.name || tc.tool || $t('chat.tool.unknown'), args: tc.arguments || tc.args || {} });
       } catch {
         // 未闭合/不完整的 tool_call（流式中途），按工具调用占位显示
-        segments.push({ type: 'tool_call', name: '准备调用工具', args: '' });
+        segments.push({ type: 'tool_call', name: $t('chat.tool.preparing'), args: '' });
       }
       lastIdx = match.index + match[0].length;
     }
@@ -158,7 +148,7 @@
 
   async function deleteSession(id, e) {
     e.stopPropagation();
-    showConfirm('确认删除此会话？', async () => {
+    showConfirm($t('chat.session.deleteConfirm'), async () => {
       try {
         await api('DELETE', '/api/chat/sessions/' + id);
         chatSessions.set(await api('GET', '/api/chat/sessions'));
@@ -172,8 +162,8 @@
   }
 
   async function sendMessage() {
-    if ($taskRunning) { addToast('有任务正在运行，请等待完成', 'error'); return; }
-    if (!$currentChatSession) { addToast('请先选择会话', 'error'); return; }
+    if ($taskRunning) { addToast($t('chat.toast.taskRunning'), 'error'); return; }
+    if (!$currentChatSession) { addToast($t('chat.toast.needSession'), 'error'); return; }
     const msg = chatInput.trim();
     if (!msg) return;
     chatInput = '';
@@ -204,7 +194,7 @@
   async function stopTask() {
     try {
       await api('POST', '/api/task/stop');
-      addToast('正在停止任务...', 'info');
+      addToast($t('chat.toast.stopping'), 'info');
     } catch (e) {}
   }
 
@@ -222,7 +212,7 @@
           return;
         }
       }
-      addToast('无法重试：找不到上次发送的消息', 'error');
+      addToast($t('chat.toast.retryNoMsg'), 'error');
       return;
     }
 
@@ -230,26 +220,33 @@
     if (endpoint) {
       try {
         await api(endpoint.method, endpoint.url);
-      } catch (e) { addToast('重试失败: ' + e.message, 'error'); }
+      } catch (e) { addToast($t('chat.toast.retryFailed', { msg: e.message }), 'error'); }
     } else {
-      addToast('此任务类型不支持自动重试', 'error');
+      addToast($t('chat.toast.retryUnsupported'), 'error');
     }
   }
+
+  $: welcomeHints = [
+    $t('chat.welcome.q1'),
+    $t('chat.welcome.q2'),
+    $t('chat.welcome.q3'),
+    $t('chat.welcome.q4'),
+  ];
 </script>
 
 <div class="flex flex-col h-full">
   <!-- 会话栏 -->
   <div class="border-b border-base-content/10 px-3 py-2 flex items-center gap-2 shrink-0">
     <button class="btn btn-ghost btn-xs" on:click={() => showSessionList = !showSessionList}>
-      {showSessionList ? '收起' : '☰ 会话'}
+      {showSessionList ? $t('chat.session.collapse') : $t('chat.session.menu')}
     </button>
     <span class="text-sm text-base-content/50 truncate flex-1">
-      {$currentChatSession?.title || '未选择会话'}
+      {$currentChatSession?.title || $t('chat.session.placeholder')}
     </span>
     {#if $taskRunning}
-      <button class="btn btn-error btn-xs gap-1" on:click={stopTask}>⏹ 停止</button>
+      <button class="btn btn-error btn-xs gap-1" on:click={stopTask}>{$t('chat.session.stop')}</button>
     {/if}
-    <button class="btn btn-primary btn-xs" on:click={createSession} disabled={$taskRunning}>＋ 新建</button>
+    <button class="btn btn-primary btn-xs" on:click={createSession} disabled={$taskRunning}>{$t('chat.session.new')}</button>
   </div>
 
   {#if showSessionList}
@@ -264,13 +261,13 @@
         >
           <div class="flex-1 min-w-0">
             <div class="text-sm font-medium truncate">{s.title}</div>
-            <div class="text-xs text-base-content/40">{new Date(s.updated_at).toLocaleString('zh-CN')} · {s.msg_count || 0} 条</div>
+            <div class="text-xs text-base-content/40">{new Date(s.updated_at).toLocaleString($uiLocale === 'en' ? 'en-US' : 'zh-CN')} · {$t('chat.session.msgs', { n: s.msg_count || 0 })}</div>
           </div>
-          <button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity" on:click={(e) => deleteSession(s.id, e)}>删除</button>
+          <button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity" on:click={(e) => deleteSession(s.id, e)}>{$t('common.delete')}</button>
         </div>
       {/each}
       {#if sessions.length === 0}
-        <div class="px-3 py-2 text-sm text-base-content/40">暂无会话</div>
+        <div class="px-3 py-2 text-sm text-base-content/40">{$t('chat.session.empty')}</div>
       {/if}
     </div>
   {/if}
@@ -286,11 +283,11 @@
         {:else}
           <span class="text-success text-xs">●</span>
         {/if}
-        <span class="text-xs font-semibold text-base-content/70">{$currentTaskName || '任务'}{$taskRunning ? ' 进行中' : ' 已结束'}</span>
+        <span class="text-xs font-semibold text-base-content/70">{$currentTaskName || $t('chat.task.placeholder')}{$taskRunning ? $t('chat.task.running') : $t('chat.task.ended')}</span>
         {#if $taskRunning && $streamCharCount > 0}
-          <span class="badge badge-xs badge-info gap-1 font-mono">已生成 {$streamCharCount.toLocaleString()} 字</span>
+          <span class="badge badge-xs badge-info gap-1 font-mono">{$t('chat.task.wordCount', { n: $streamCharCount.toLocaleString() })}</span>
         {/if}
-        <span class="text-xs text-base-content/40 ml-auto">{taskStatusCollapsed ? '展开 ▾' : '收起 ▴'}</span>
+        <span class="text-xs text-base-content/40 ml-auto">{taskStatusCollapsed ? $t('chat.task.expand') : $t('chat.task.collapse')}</span>
       </div>
       {#if !taskStatusCollapsed && taskLogs.length > 0}
         <div class="max-h-[150px] overflow-y-auto px-3 py-1 font-mono text-xs leading-relaxed space-y-0.5">
@@ -308,14 +305,14 @@
   <!-- 消息区 -->
   <div bind:this={messagesContainer} on:scroll={handleScroll} class="flex-1 overflow-y-auto p-3 space-y-2">
     {#if !$currentChatSession}
-      <div class="text-center text-base-content/40 py-8 text-base">选择或创建一个会话开始对话</div>
+      <div class="text-center text-base-content/40 py-8 text-base">{$t('chat.notSelected')}</div>
     {:else}
       {#if msgs.length === 0 && !streamingText}
         <div class="text-center text-base-content/40 py-10 space-y-3">
           <div class="text-3xl">💬</div>
-          <p class="text-sm">我是创作助理，可以帮你管理设定、生成大纲和章节。</p>
+          <p class="text-sm">{$t('chat.welcome.hint')}</p>
           <div class="flex flex-wrap justify-center gap-1.5 px-4">
-            {#each ['帮我完善故事设定', '请生成大纲', '当前写作进度如何？', '给主角设计一个伏笔'] as hint}
+            {#each welcomeHints as hint}
               <button class="btn btn-ghost btn-xs border border-base-content/10" on:click={() => { chatInput = hint; sendMessage(); }}>{hint}</button>
             {/each}
           </div>
@@ -344,7 +341,7 @@
             {#if isHallucinatedWait(m, msgs, msgIdx)}
               <div class="chat chat-start">
                 <div class="chat-bubble bg-warning/20 border border-warning/40 text-sm max-w-[85%]">
-                  <div class="text-warning font-semibold mb-1">⚠️ 该回复可能未实际执行操作</div>
+                  <div class="text-warning font-semibold mb-1">{$t('chat.assistant.maybeNoop')}</div>
                   <div class="text-base-content/70 md-body">{@html renderMarkdown(m.content)}</div>
                 </div>
               </div>
@@ -371,7 +368,7 @@
           <div class="chat chat-start">
             <div class="chat-bubble bg-base-300/60 text-xs font-mono max-w-[85%]">
               <details>
-                <summary class="text-info font-semibold cursor-pointer select-none">📋 工具结果</summary>
+                <summary class="text-info font-semibold cursor-pointer select-none">{$t('chat.tool.result')}</summary>
                 <div class="text-base-content/50 break-all mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap">{m.tool_result || ''}</div>
               </details>
             </div>
@@ -384,7 +381,7 @@
           <div class="chat-bubble text-xs font-mono max-w-[85%] {dangerTools.has(tc.name) ? 'bg-error/15 border border-error/30' : 'bg-base-300'}">
             {#if tc.status === 'running'}
               <div class="text-warning font-semibold mb-0.5">🔧 {toolLabel(tc.name)}</div>
-              <div class="text-warning animate-pulse">执行中...</div>
+              <div class="text-warning animate-pulse">{$t('chat.tool.running')}</div>
             {:else}
               <div class="text-success font-semibold mb-0.5">✅ {toolLabel(tc.name)}</div>
               {#if tc.result}
@@ -419,10 +416,10 @@
   <!-- 失败重试 -->
   {#if $lastFailedTask && !$taskRunning}
     <div class="border-t border-error/30 bg-error/10 px-3 py-2 flex items-center gap-2 shrink-0">
-      <span class="text-sm text-error">❌ {$lastFailedTask.taskName}失败</span>
+      <span class="text-sm text-error">❌ {$lastFailedTask.taskName}{$t('chat.failed.suffix')}</span>
       <div class="flex-1"></div>
-      <button class="btn btn-error btn-xs" on:click={retryTask}>重试</button>
-      <button class="btn btn-ghost btn-xs" on:click={() => lastFailedTask.set(null)}>忽略</button>
+      <button class="btn btn-error btn-xs" on:click={retryTask}>{$t('chat.failed.retry')}</button>
+      <button class="btn btn-ghost btn-xs" on:click={() => lastFailedTask.set(null)}>{$t('chat.failed.ignore')}</button>
     </div>
   {/if}
 
@@ -433,12 +430,12 @@
         bind:this={inputEl}
         class="textarea textarea-sm flex-1 min-h-[38px] max-h-[120px] resize-none text-base leading-relaxed"
         bind:value={chatInput}
-        placeholder={$taskRunning ? 'AI 任务进行中，请稍候...' : '输入消息... (Enter 发送, Shift+Enter 换行)'}
+        placeholder={$taskRunning ? $t('chat.input.placeholderBusy') : $t('chat.input.placeholder')}
         on:keydown={handleKeydown}
         on:input={autoGrow}
         disabled={$taskRunning}
       ></textarea>
-      <button class="btn btn-primary btn-sm" on:click={sendMessage} disabled={$taskRunning || !chatInput.trim()}>发送</button>
+      <button class="btn btn-primary btn-sm" on:click={sendMessage} disabled={$taskRunning || !chatInput.trim()}>{$t('chat.input.send')}</button>
     </div>
   {/if}
 </div>

@@ -3,6 +3,7 @@ id: writing-craft
 name: 写作技法
 description: 章节钩子、爽点密度、节奏控制等核心写作技法
 category: writing
+lang: zh
 source: builtin
 ---
 

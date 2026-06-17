@@ -5,6 +5,7 @@
     progress, taskRunning, addToast, showConfirm,
     foreshadowSuggestions, foreshadowShowSuggestions
   } from '../lib/stores.js';
+  import { t } from '../lib/i18n/index.js';
 
   let viewMode = 'list'; // list | timeline | markdown
   let roadmapMarkdown = '';
@@ -15,11 +16,11 @@
   let editing = null;
   let form = { name: '', description: '', plant_chapter: 1, target_chapter: 0, status: 'planted', resolution: '' };
 
-  const statusMeta = {
-    planted:     { label: '已埋设', cls: 'badge-info' },
-    progressing: { label: '推进中', cls: 'badge-warning' },
-    resolved:    { label: '已回收', cls: 'badge-success' },
-    abandoned:   { label: '已放弃', cls: 'badge-ghost' },
+  $: statusMeta = {
+    planted:     { label: $t('fs.status.planted'),     cls: 'badge-info' },
+    progressing: { label: $t('fs.status.progressing'), cls: 'badge-warning' },
+    resolved:    { label: $t('fs.status.resolved'),    cls: 'badge-success' },
+    abandoned:   { label: $t('fs.status.abandoned'),   cls: 'badge-ghost' },
   };
 
   $: foreshadows = $progress?.foreshadows || [];
@@ -91,7 +92,7 @@
   async function suggestForeshadows() {
     try {
       await api('POST', '/api/foreshadows/suggest');
-      addToast('AI 正在分析大纲并设计伏笔方案…', 'info');
+      addToast($t('fs.suggestions.suggestStarted'), 'info');
     } catch (e) {
       addToast(e.message, 'error');
     }
@@ -118,7 +119,7 @@
 
   async function saveForm() {
     if (!form.name.trim() || !form.description.trim()) {
-      addToast('请填写名称和描述', 'error');
+      addToast($t('fs.form.required'), 'error');
       return;
     }
     try {
@@ -131,7 +132,7 @@
           status: form.status,
           resolution: form.resolution.trim(),
         });
-        addToast('伏笔已更新', 'success');
+        addToast($t('fs.form.saved.update'), 'success');
       } else {
         await api('POST', '/api/foreshadows', {
           name: form.name.trim(),
@@ -139,7 +140,7 @@
           plant_chapter: form.plant_chapter,
           target_chapter: form.target_chapter,
         });
-        addToast('伏笔已创建', 'success');
+        addToast($t('fs.form.saved.create'), 'success');
       }
       showForm = false;
       roadmapMarkdown = '';
@@ -150,10 +151,10 @@
   }
 
   function deleteForeshadow(fs) {
-    showConfirm(`确定删除伏笔「${fs.name}」？`, async () => {
+    showConfirm($t('fs.deleteConfirm', { name: fs.name }), async () => {
       try {
         await api('DELETE', '/api/foreshadows/' + fs.id);
-        addToast('伏笔已删除', 'success');
+        addToast($t('fs.deleted'), 'success');
         roadmapMarkdown = '';
         await refreshProgress();
       } catch (e) {
@@ -165,7 +166,7 @@
   async function confirmSuggestions() {
     const selected = $foreshadowSuggestions.filter(s => s._selected !== false);
     if (selected.length === 0) {
-      addToast('请至少选择一条建议', 'error');
+      addToast($t('fs.suggestions.pickRequired'), 'error');
       return;
     }
     try {
@@ -180,7 +181,7 @@
       foreshadowSuggestions.set([]);
       foreshadowShowSuggestions.set(false);
       roadmapMarkdown = '';
-      addToast(`已确认 ${payload.length} 条伏笔`, 'success');
+      addToast($t('fs.suggestions.confirmed', { n: payload.length }), 'success');
       await refreshProgress();
     } catch (e) {
       addToast(e.message, 'error');
@@ -196,9 +197,9 @@
     if (!roadmapMarkdown) await loadRoadmap();
     try {
       await navigator.clipboard.writeText(roadmapMarkdown);
-      addToast('路线图已复制到剪贴板', 'success');
+      addToast($t('fs.copy.done'), 'success');
     } catch (e) {
-      addToast('复制失败', 'error');
+      addToast($t('fs.copy.failed'), 'error');
     }
   }
 
@@ -219,29 +220,29 @@
   <div class="card bg-base-200 shadow-sm">
     <div class="card-body py-4 gap-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 class="card-title text-base">伏笔系统</h2>
+        <h2 class="card-title text-base">{$t('fs.title')}</h2>
         <div class="flex flex-wrap gap-2">
           <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={suggestForeshadows}>
-            AI 设计伏笔
+            {$t('fs.designAi')}
           </button>
           <button class="btn btn-outline btn-sm" disabled={$taskRunning} on:click={openCreate}>
-            手动添加
+            {$t('fs.addManual')}
           </button>
           <button class="btn btn-ghost btn-sm" on:click={() => switchView('markdown')}>
-            查看路线图
+            {$t('fs.viewRoadmap')}
           </button>
         </div>
       </div>
       <div class="flex flex-wrap gap-2 text-sm">
-        <span class="badge badge-ghost">共 {foreshadows.length} 条</span>
-        <span class="badge badge-info badge-outline">活跃 {activeCount}</span>
-        <span class="badge badge-success badge-outline">已回收 {resolvedCount}</span>
+        <span class="badge badge-ghost">{$t('fs.stats.total', { n: foreshadows.length })}</span>
+        <span class="badge badge-info badge-outline">{$t('fs.stats.active', { n: activeCount })}</span>
+        <span class="badge badge-success badge-outline">{$t('fs.stats.resolved', { n: resolvedCount })}</span>
         {#if overdueList.length > 0}
-          <span class="badge badge-error">超期 {overdueList.length}</span>
+          <span class="badge badge-error">{$t('fs.stats.overdue', { n: overdueList.length })}</span>
         {/if}
       </div>
       <p class="text-xs text-base-content/50">
-        写作时活跃伏笔会自动注入 AI 提示词；每章生成或修订后会更新状态，并同步写入项目目录 <code class="text-xs">Foreshadows.md</code>。
+        {@html $t('fs.hint', { file: '<code class="text-xs">Foreshadows.md</code>' })}
       </p>
     </div>
   </div>
@@ -250,8 +251,8 @@
   {#if $foreshadowShowSuggestions && $foreshadowSuggestions.length > 0}
     <div class="card bg-base-200 border border-primary/30 shadow-sm">
       <div class="card-body py-4 gap-3">
-        <h3 class="font-semibold">AI 伏笔建议（{$foreshadowSuggestions.length} 条）</h3>
-        <p class="text-sm text-base-content/60">勾选要采纳的方案，确认后将写入项目并开始追踪。</p>
+        <h3 class="font-semibold">{$t('fs.suggestions.title', { n: $foreshadowSuggestions.length })}</h3>
+        <p class="text-sm text-base-content/60">{$t('fs.suggestions.hint')}</p>
         <div class="space-y-2 max-h-72 overflow-y-auto">
           {#each $foreshadowSuggestions as s, i}
             <label class="flex gap-3 p-3 rounded-lg bg-base-300/50 cursor-pointer">
@@ -260,15 +261,15 @@
                 <div class="font-medium">{s.name}</div>
                 <div class="text-sm text-base-content/70 mt-1">{s.description}</div>
                 <div class="text-xs text-base-content/50 mt-1">
-                  埋设第 {s.plant_chapter} 章 → 预计第 {s.target_chapter} 章回收
+                  {$t('fs.suggestions.line', { plant: s.plant_chapter, target: s.target_chapter })}
                 </div>
               </div>
             </label>
           {/each}
         </div>
         <div class="flex gap-2">
-          <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={confirmSuggestions}>确认采纳</button>
-          <button class="btn btn-ghost btn-sm" on:click={dismissSuggestions}>暂不采纳</button>
+          <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={confirmSuggestions}>{$t('fs.suggestions.adopt')}</button>
+          <button class="btn btn-ghost btn-sm" on:click={dismissSuggestions}>{$t('fs.suggestions.dismiss')}</button>
         </div>
       </div>
     </div>
@@ -278,10 +279,10 @@
   {#if overdueList.length > 0}
     <div class="alert alert-warning py-3 text-sm">
       <div>
-        <div class="font-medium">以下伏笔已超过预计回收章节：</div>
+        <div class="font-medium">{$t('fs.overdue.title')}</div>
         <ul class="list-disc list-inside mt-1">
           {#each overdueList as fs}
-            <li>#{fs.id} {fs.name}（预计第 {fs.target_chapter} 章）</li>
+            <li>{$t('fs.overdue.line', { id: fs.id, name: fs.name, target: fs.target_chapter })}</li>
           {/each}
         </ul>
       </div>
@@ -290,16 +291,16 @@
 
   <!-- 视图切换 -->
   <div class="tabs tabs-boxed bg-base-200 w-fit">
-    <button class="tab tab-sm" class:tab-active={viewMode === 'list'} on:click={() => viewMode = 'list'}>列表</button>
-    <button class="tab tab-sm" class:tab-active={viewMode === 'timeline'} on:click={() => viewMode = 'timeline'}>章节时间线</button>
-    <button class="tab tab-sm" class:tab-active={viewMode === 'markdown'} on:click={() => switchView('markdown')}>路线图文档</button>
+    <button class="tab tab-sm" class:tab-active={viewMode === 'list'} on:click={() => viewMode = 'list'}>{$t('fs.tabs.list')}</button>
+    <button class="tab tab-sm" class:tab-active={viewMode === 'timeline'} on:click={() => viewMode = 'timeline'}>{$t('fs.tabs.timeline')}</button>
+    <button class="tab tab-sm" class:tab-active={viewMode === 'markdown'} on:click={() => switchView('markdown')}>{$t('fs.tabs.markdown')}</button>
   </div>
 
   {#if foreshadows.length === 0}
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body items-center text-center py-12 text-base-content/50">
-        <p>尚无伏笔记录</p>
-        <p class="text-sm">点击「AI 设计伏笔」根据大纲自动生成方案，或手动添加。</p>
+        <p>{$t('fs.empty.title')}</p>
+        <p class="text-sm">{$t('fs.empty.hint')}</p>
       </div>
     </div>
   {:else if viewMode === 'list'}
@@ -316,29 +317,29 @@
                 </span>
               </div>
               <div class="flex gap-1">
-                <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => openEdit(fs)}>编辑</button>
-                <button class="btn btn-ghost btn-xs text-error" disabled={$taskRunning} on:click={() => deleteForeshadow(fs)}>删除</button>
+                <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => openEdit(fs)}>{$t('common.edit')}</button>
+                <button class="btn btn-ghost btn-xs text-error" disabled={$taskRunning} on:click={() => deleteForeshadow(fs)}>{$t('common.delete')}</button>
               </div>
             </div>
             <p class="text-sm text-base-content/70">{fs.description}</p>
             <div class="text-xs text-base-content/50 flex flex-wrap gap-x-4 gap-y-1">
-              <span>埋设：第 {fs.plant_chapter} 章</span>
+              <span>{$t('fs.plant', { n: fs.plant_chapter })}</span>
               {#if fs.target_chapter > 0}
-                <span>预计回收：第 {fs.target_chapter} 章</span>
+                <span>{$t('fs.target', { n: fs.target_chapter })}</span>
               {/if}
             </div>
             {#if fs.events?.length}
               <div class="text-xs mt-1">
-                <div class="text-base-content/50 mb-1">进展记录</div>
+                <div class="text-base-content/50 mb-1">{$t('fs.events.title')}</div>
                 <ul class="space-y-0.5">
                   {#each fs.events as ev}
-                    <li class="text-base-content/70">第 {ev.chapter} 章：{ev.note}</li>
+                    <li class="text-base-content/70">{$t('fs.events.line', { chapter: ev.chapter, note: ev.note })}</li>
                   {/each}
                 </ul>
               </div>
             {/if}
             {#if fs.resolution}
-              <div class="text-xs text-success/80">回收方式：{fs.resolution}</div>
+              <div class="text-xs text-success/80">{$t('fs.resolution', { text: fs.resolution })}</div>
             {/if}
           </div>
         </div>
@@ -349,10 +350,10 @@
       {#each timelineChapters as row}
         <div class="card bg-base-200 shadow-sm">
           <div class="card-body py-3 gap-2">
-            <h3 class="font-medium text-sm">第 {row.num} 章</h3>
+            <h3 class="font-medium text-sm">{$t('fs.timeline.chapter', { num: row.num })}</h3>
             {#if row.plant.length}
               <div class="text-xs">
-                <span class="text-info">🔵 埋设</span>
+                <span class="text-info">{$t('fs.timeline.plant')}</span>
                 {#each row.plant as f}
                   <span class="badge badge-sm badge-outline ml-1">#{f.id} {f.name}</span>
                 {/each}
@@ -360,7 +361,7 @@
             {/if}
             {#if row.target.length}
               <div class="text-xs">
-                <span class="text-warning">🎯 预计回收</span>
+                <span class="text-warning">{$t('fs.timeline.target')}</span>
                 {#each row.target as f}
                   <span class="badge badge-sm badge-outline ml-1">#{f.id} {f.name}</span>
                 {/each}
@@ -368,9 +369,9 @@
             {/if}
             {#if row.events.length}
               <div class="text-xs space-y-1">
-                <span class="text-base-content/50">📌 进展</span>
+                <span class="text-base-content/50">{$t('fs.timeline.events')}</span>
                 {#each row.events as item}
-                  <div class="pl-2 text-base-content/70">#{item.foreshadow.id} {item.foreshadow.name}：{item.event.note}</div>
+                  <div class="pl-2 text-base-content/70">{$t('fs.timeline.eventLine', { id: item.foreshadow.id, name: item.foreshadow.name, note: item.event.note })}</div>
                 {/each}
               </div>
             {/if}
@@ -383,18 +384,18 @@
       <div class="card-body py-4 gap-3">
         <div class="flex flex-wrap gap-2 justify-between items-center">
           <span class="text-sm text-base-content/60">
-            {#if roadmapPath}文件：{roadmapPath.split('/').pop()}{/if}
+            {#if roadmapPath}{$t('fs.markdown.file', { name: roadmapPath.split('/').pop() })}{/if}
           </span>
           <div class="flex gap-2">
-            <button class="btn btn-ghost btn-xs" disabled={loadingRoadmap} on:click={loadRoadmap}>刷新</button>
-            <button class="btn btn-ghost btn-xs" disabled={!roadmapMarkdown} on:click={copyRoadmap}>复制</button>
-            <button class="btn btn-ghost btn-xs" disabled={!roadmapMarkdown} on:click={downloadRoadmap}>下载</button>
+            <button class="btn btn-ghost btn-xs" disabled={loadingRoadmap} on:click={loadRoadmap}>{$t('common.refresh')}</button>
+            <button class="btn btn-ghost btn-xs" disabled={!roadmapMarkdown} on:click={copyRoadmap}>{$t('common.copy')}</button>
+            <button class="btn btn-ghost btn-xs" disabled={!roadmapMarkdown} on:click={downloadRoadmap}>{$t('common.download')}</button>
           </div>
         </div>
         {#if loadingRoadmap}
           <div class="flex justify-center py-8"><span class="loading loading-spinner loading-md"></span></div>
         {:else}
-          <pre class="text-xs whitespace-pre-wrap bg-base-300/50 rounded-lg p-4 max-h-[480px] overflow-y-auto">{roadmapMarkdown || '暂无内容'}</pre>
+          <pre class="text-xs whitespace-pre-wrap bg-base-300/50 rounded-lg p-4 max-h-[480px] overflow-y-auto">{roadmapMarkdown || $t('fs.markdown.empty')}</pre>
         {/if}
       </div>
     </div>
@@ -405,25 +406,25 @@
 {#if showForm}
   <div class="modal modal-open">
     <div class="modal-box max-w-lg">
-      <h3 class="font-bold text-lg">{editing ? '编辑伏笔' : '添加伏笔'}</h3>
+      <h3 class="font-bold text-lg">{editing ? $t('fs.form.edit') : $t('fs.form.create')}</h3>
       <div class="form-control gap-3 mt-4">
-        <label class="label py-0"><span class="label-text">名称</span></label>
+        <label class="label py-0"><span class="label-text">{$t('fs.form.name')}</span></label>
         <input class="input input-bordered input-sm" bind:value={form.name} disabled={$taskRunning} />
-        <label class="label py-0"><span class="label-text">描述</span></label>
+        <label class="label py-0"><span class="label-text">{$t('fs.form.description')}</span></label>
         <textarea class="textarea textarea-bordered text-sm" rows="3" bind:value={form.description} disabled={$taskRunning}></textarea>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="label py-0"><span class="label-text">埋设章节</span></label>
+            <label class="label py-0"><span class="label-text">{$t('fs.form.plant')}</span></label>
             <input type="number" min="1" class="input input-bordered input-sm w-full" bind:value={form.plant_chapter} disabled={$taskRunning} />
           </div>
           <div>
-            <label class="label py-0"><span class="label-text">预计回收章节</span></label>
+            <label class="label py-0"><span class="label-text">{$t('fs.form.target')}</span></label>
             <input type="number" min="0" class="input input-bordered input-sm w-full" bind:value={form.target_chapter} disabled={$taskRunning} />
           </div>
         </div>
         {#if editing}
           <div>
-            <label class="label py-0"><span class="label-text">状态</span></label>
+            <label class="label py-0"><span class="label-text">{$t('fs.form.status')}</span></label>
             <select class="select select-bordered select-sm w-full" bind:value={form.status} disabled={$taskRunning}>
               {#each Object.entries(statusMeta) as [val, meta]}
                 <option value={val}>{meta.label}</option>
@@ -431,14 +432,14 @@
             </select>
           </div>
           <div>
-            <label class="label py-0"><span class="label-text">回收方式</span></label>
+            <label class="label py-0"><span class="label-text">{$t('fs.form.resolution')}</span></label>
             <input class="input input-bordered input-sm w-full" bind:value={form.resolution} disabled={$taskRunning} />
           </div>
         {/if}
       </div>
       <div class="modal-action">
-        <button class="btn btn-ghost btn-sm" on:click={() => showForm = false}>取消</button>
-        <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={saveForm}>保存</button>
+        <button class="btn btn-ghost btn-sm" on:click={() => showForm = false}>{$t('common.cancel')}</button>
+        <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={saveForm}>{$t('common.save')}</button>
       </div>
     </div>
     <div class="modal-backdrop" on:click={() => showForm = false} on:keydown={() => {}} role="presentation"></div>

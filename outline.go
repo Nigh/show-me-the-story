@@ -32,7 +32,7 @@ func generateOutline(ctx context.Context, apiCfg *APIConfig, cfg *Config) (*Outl
 		"StorySynopsis":    cfg.Story.StorySynopsis,
 	})
 
-	systemPrompt := "你是一位专业的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
+	systemPrompt := SystemPromptFor(cfg.Language, "outline_editor_json")
 
 	rawResp := CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
 	if rawResp == "" {
@@ -50,19 +50,26 @@ func generateOutline(ctx context.Context, apiCfg *APIConfig, cfg *Config) (*Outl
 }
 
 func reviseOutline(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, userFeedback string) error {
+	lang := cfg.Language
+	en := NormalizeLanguage(lang) == LangEN
+
 	lockedChapters := ""
 	for _, ch := range state.Chapters {
 		if ch.Status == StatusAccepted {
-			lockedChapters += fmt.Sprintf("第%d章《%s》: %s\n", ch.Num, ch.Title, ch.Outline)
+			lockedChapters += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
 		}
 	}
 	if lockedChapters == "" {
-		lockedChapters = "无已锁定章节。"
+		if en {
+			lockedChapters = "(no locked chapters)"
+		} else {
+			lockedChapters = "无已锁定章节。"
+		}
 	}
 
 	currentOutline := ""
 	for _, ch := range state.Chapters {
-		currentOutline += fmt.Sprintf("第%d章《%s》: %s\n", ch.Num, ch.Title, ch.Outline)
+		currentOutline += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
 	}
 
 	userPrompt := RenderPrompt(cfg.Prompts.OutlineRevision, map[string]string{
@@ -71,7 +78,7 @@ func reviseOutline(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *P
 		"LockedChapters": lockedChapters,
 	})
 
-	systemPrompt := "你是一位小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。已锁定的章节内容不可修改。"
+	systemPrompt := SystemPromptFor(lang, "outline_editor_locked_json")
 
 	rawResp := CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
 	if rawResp == "" {

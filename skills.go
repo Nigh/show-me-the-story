@@ -16,6 +16,7 @@ type Skill struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Category    string `json:"category"`
+	Lang        string `json:"lang,omitempty"` // "zh", "en", or "" (language-agnostic)
 	Content     string `json:"content"`
 	Enabled     bool   `json:"enabled"`
 	Source      string `json:"source"`
@@ -128,6 +129,8 @@ func parseSkillFile(content string, source string) (Skill, error) {
 			skill.Description = value
 		case "category":
 			skill.Category = value
+		case "lang":
+			skill.Lang = NormalizeLanguage(value)
 		case "source":
 			if source == "" {
 				skill.Source = value
@@ -154,7 +157,24 @@ func MergeSkills(builtin, project []Skill) []Skill {
 func LoadAllSkills(cfg *Config, projectDir string) []Skill {
 	builtin := LoadBuiltinSkills()
 	project := LoadProjectSkills(projectDir)
-	return MergeSkills(builtin, project)
+	merged := MergeSkills(builtin, project)
+	if cfg == nil {
+		return merged
+	}
+	return FilterSkillsByLang(merged, cfg.Language)
+}
+
+// FilterSkillsByLang returns skills matching the project language.
+// Skills with empty `lang` are language-agnostic and always returned.
+func FilterSkillsByLang(skills []Skill, projectLang string) []Skill {
+	projectLang = NormalizeLanguage(projectLang)
+	out := make([]Skill, 0, len(skills))
+	for _, s := range skills {
+		if s.Lang == "" || s.Lang == projectLang {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func GetEnabledSkills(skills []Skill, sc *SkillConfig) []Skill {
@@ -191,7 +211,19 @@ func FormatSkillsContent(skills []Skill) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("以下技能规则在创作时必须严格遵守：\n\n")
+	// Detect language from skill set: if any skill is explicitly EN, use EN header.
+	en := false
+	for _, s := range skills {
+		if s.Lang == LangEN {
+			en = true
+			break
+		}
+	}
+	if en {
+		sb.WriteString("Strictly follow the skill rules below while writing:\n\n")
+	} else {
+		sb.WriteString("以下技能规则在创作时必须严格遵守：\n\n")
+	}
 	for _, s := range skills {
 		sb.WriteString(fmt.Sprintf("## %s\n\n%s\n\n", s.Name, s.Content))
 	}

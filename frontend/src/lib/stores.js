@@ -11,6 +11,10 @@ export const currentTaskName = writable(null);
 export const currentProject = writable(null);
 export const projects = writable([]);
 
+// Language of the currently loaded novel project (immutable per project).
+// Drives AI prompt language, generated prose language and built-in skill filter.
+export const projectLanguage = writable('zh');
+
 export const currentPage = writable('config');
 export const contextPage = writable('config');
 export const selectedChapter = writable(-1);

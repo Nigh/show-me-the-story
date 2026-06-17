@@ -1,5 +1,6 @@
 <script>
   import { confirmModal } from '../lib/stores.js';
+  import { t } from '../lib/i18n/index.js';
 
   function confirm() {
     if ($confirmModal?.onConfirm) $confirmModal.onConfirm();
@@ -18,8 +19,8 @@
     <div class="bg-base-200 rounded-xl shadow-2xl p-6 max-w-sm mx-4 border border-base-content/10" on:click|stopPropagation>
       <p class="text-base mb-6">{$confirmModal.message}</p>
       <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost btn-sm" on:click={cancel}>取消</button>
-        <button class="btn btn-error btn-sm" on:click={confirm}>确认</button>
+        <button class="btn btn-ghost btn-sm" on:click={cancel}>{$t('common.cancel')}</button>
+        <button class="btn btn-error btn-sm" on:click={confirm}>{$t('common.confirm')}</button>
       </div>
     </div>
   </div>

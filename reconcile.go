@@ -17,25 +17,35 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 	newSettings StoryConfig, progressPath string, cfgPath string, logger *LogBroadcaster) error {
 
 	logger.StepInfo(1, 3, "正在分析已有章节与新设定的兼容性...")
+	lang := cfg.Language
+	en := NormalizeLanguage(lang) == LangEN
 
 	acceptedSummaries := ""
 	for _, ch := range state.Chapters {
 		if ch.Status == StatusAccepted && ch.Summary != "" {
-			acceptedSummaries += fmt.Sprintf("第%d章《%s》摘要: %s\n", ch.Num, ch.Title, ch.Summary)
+			if en {
+				acceptedSummaries += fmt.Sprintf("Chapter %d \"%s\" summary: %s\n", ch.Num, ch.Title, ch.Summary)
+			} else {
+				acceptedSummaries += fmt.Sprintf("第%d章《%s》摘要: %s\n", ch.Num, ch.Title, ch.Summary)
+			}
 		}
 	}
 	if acceptedSummaries == "" {
-		acceptedSummaries = "尚无已确认章节。"
+		if en {
+			acceptedSummaries = "(no confirmed chapters yet)"
+		} else {
+			acceptedSummaries = "尚无已确认章节。"
+		}
 	}
 
 	userPrompt := RenderPrompt(cfg.Prompts.SettingsReconciliation, map[string]string{
-		"NewType":          newSettings.Type,
-		"NewWritingStyle":  newSettings.WritingStyle,
-		"NewStorySynopsis": newSettings.StorySynopsis,
+		"NewType":           newSettings.Type,
+		"NewWritingStyle":   newSettings.WritingStyle,
+		"NewStorySynopsis":  newSettings.StorySynopsis,
 		"ExistingSummaries": acceptedSummaries,
 	})
 
-	systemPrompt := "你是一位专业的小说一致性审查编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
+	systemPrompt := SystemPromptFor(lang, "consistency_reviewer_json")
 
 	rawResp := CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
 	if rawResp == "" {
@@ -107,25 +117,42 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 }
 
 func regeneratePendingOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, logger *LogBroadcaster) error {
+	lang := cfg.Language
+	en := NormalizeLanguage(lang) == LangEN
+
 	pendingChapters := ""
 	for _, ch := range state.Chapters {
 		if ch.Status == StatusPending {
-			pendingChapters += fmt.Sprintf("第%d章《%s》: %s\n", ch.Num, ch.Title, ch.Outline)
+			pendingChapters += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
 		}
 	}
 
 	lockedChapters := ""
 	for _, ch := range state.Chapters {
 		if ch.Status == StatusAccepted {
-			lockedChapters += fmt.Sprintf("第%d章《%s》（摘要）: %s\n", ch.Num, ch.Title, ch.Summary)
+			if en {
+				lockedChapters += fmt.Sprintf("Chapter %d \"%s\" (summary): %s\n", ch.Num, ch.Title, ch.Summary)
+			} else {
+				lockedChapters += fmt.Sprintf("第%d章《%s》（摘要）: %s\n", ch.Num, ch.Title, ch.Summary)
+			}
 		}
 	}
 	if lockedChapters == "" {
-		lockedChapters = "无已锁定章节。"
+		if en {
+			lockedChapters = "(no locked chapters)"
+		} else {
+			lockedChapters = "无已锁定章节。"
+		}
 	}
 
-	feedback := fmt.Sprintf("故事设定已更新为：类型=%s，写作风格=%s，故事梗概=%s。请根据新设定调整待定章节大纲，使其与新设定和已有章节保持一致。",
-		cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.StorySynopsis)
+	var feedback string
+	if en {
+		feedback = fmt.Sprintf("Story settings updated to: type=%s, writing_style=%s, synopsis=%s. Adjust the pending chapter outlines so they stay consistent with the new settings and the existing chapters.",
+			cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.StorySynopsis)
+	} else {
+		feedback = fmt.Sprintf("故事设定已更新为：类型=%s，写作风格=%s，故事梗概=%s。请根据新设定调整待定章节大纲，使其与新设定和已有章节保持一致。",
+			cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.StorySynopsis)
+	}
 
 	userPrompt := RenderPrompt(cfg.Prompts.OutlineRevision, map[string]string{
 		"CurrentOutline": pendingChapters,
@@ -133,7 +160,7 @@ func regeneratePendingOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Conf
 		"LockedChapters": lockedChapters,
 	})
 
-	systemPrompt := "你是一位小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。已锁定的章节内容不可修改。"
+	systemPrompt := SystemPromptFor(lang, "outline_editor_locked_json")
 
 	rawResp := CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
 	if rawResp == "" {

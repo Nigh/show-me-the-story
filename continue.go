@@ -30,7 +30,7 @@ func AnalyzeExistingContent(ctx context.Context, apiCfg *APIConfig, cfg *Config,
 		"ExistingContent": content,
 	})
 
-	systemPrompt := "你是一位专业的小说分析编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
+	systemPrompt := SystemPromptFor(cfg.Language, "content_analyst_json")
 
 	rawResp := CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
 	if rawResp == "" {
@@ -137,13 +137,19 @@ func ImportContinueAction(cfg *Config, state *Progress, analysis *ContinueAnalys
 func GenerateContinuationOutline(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, newChapterCount int, progressPath string, logger *LogBroadcaster) error {
 	logger.StepInfo(1, 2, "正在构建已有章节上下文...")
 
+	lang := cfg.Language
+	en := NormalizeLanguage(lang) == LangEN
 	existingOutline := ""
 	for _, ch := range state.Chapters {
 		status := ""
 		if ch.Status == StatusAccepted {
 			status = "✅"
 		}
-		existingOutline += fmt.Sprintf("第%d章《%s》%s: %s\n", ch.Num, ch.Title, status, ch.Outline)
+		if en {
+			existingOutline += fmt.Sprintf("Chapter %d \"%s\"%s: %s\n", ch.Num, ch.Title, status, ch.Outline)
+		} else {
+			existingOutline += fmt.Sprintf("第%d章《%s》%s: %s\n", ch.Num, ch.Title, status, ch.Outline)
+		}
 	}
 
 	snapshot := state.StoryConfigSnapshot
@@ -164,7 +170,7 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *APIConfig, cfg *Co
 		"StartNum":         fmt.Sprintf("%d", startNum),
 	})
 
-	systemPrompt := "你是一位专业的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
+	systemPrompt := SystemPromptFor(lang, "outline_editor_json")
 
 	rawResp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 	if rawResp == "" {
