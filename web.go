@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -123,6 +125,10 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	fileServer := http.FileServer(http.FS(staticFS))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		r = r.WithContext(ctx)
+
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			data, err := staticFiles.ReadFile("frontend/dist/index.html")
@@ -136,7 +142,7 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 		fileServer.ServeHTTP(w, r)
 	})
 
-	handler := corsMiddleware(loggingMiddleware(mux))
+	handler := recoveryMiddleware(corsMiddleware(loggingMiddleware(mux)))
 
 	srv := &http.Server{
 		Addr:         port,
@@ -189,10 +195,22 @@ func (h *Handlers) GetProjects(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Project language: read config.json's "language" field; default zh for old projects.
+		lang := LangZH
+		if data, err := os.ReadFile(filepath.Join(projectDir, "config.json")); err == nil {
+			var probe struct {
+				Language string `json:"language"`
+			}
+			if json.Unmarshal(data, &probe) == nil && probe.Language != "" {
+				lang = NormalizeLanguage(probe.Language)
+			}
+		}
+
 		info := map[string]string{
-			"name":  name,
-			"phase": phase,
-			"title": title,
+			"name":     name,
+			"phase":    phase,
+			"title":    title,
+			"language": lang,
 		}
 
 		// Get mod time for sorting
@@ -213,53 +231,59 @@ func (h *Handlers) GetProjects(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) PostProject(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		Language string `json:"language"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
-		h.writeError(w, http.StatusBadRequest, "缺少项目名称")
+		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_project_name")
 		return
 	}
 
 	name := strings.TrimSpace(req.Name)
+	lang := NormalizeLanguage(req.Language)
 
-	// Validate project name
 	for _, c := range name {
 		if c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' {
-			h.writeError(w, http.StatusBadRequest, "项目名称包含非法字符")
+			h.writeErrorReq(w, r, http.StatusBadRequest, "project_name_invalid_chars")
 			return
 		}
 	}
 
 	projectDir := filepath.Join(h.storysDir(), name)
 	if _, err := os.Stat(projectDir); err == nil {
-		h.writeError(w, http.StatusConflict, "项目已存在")
+		h.writeErrorReq(w, r, http.StatusConflict, "project_exists")
 		return
 	}
 
-	// Create project directory and initialize
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
-		h.writeError(w, http.StatusInternalServerError, "创建项目目录失败: "+err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "create_project_dir_failed", err.Error())
 		return
 	}
 
 	sessionsDir := filepath.Join(projectDir, "sessions")
 	os.MkdirAll(sessionsDir, 0755)
 
-	// Initialize default config
-	cfg := DefaultConfig()
+	cfg := DefaultConfigForLang(lang)
 	if err := saveConfig(filepath.Join(projectDir, "config.json"), cfg); err != nil {
-		h.writeError(w, http.StatusInternalServerError, "初始化项目配置失败: "+err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "init_project_config_failed", err.Error())
 		return
 	}
 
-	h.logger.Info(fmt.Sprintf("项目「%s」创建成功", name))
-	h.writeJSON(w, http.StatusOK, map[string]string{"name": name})
+	h.logger.InfoBilingual(
+		fmt.Sprintf("项目「%s」创建成功", name),
+		fmt.Sprintf("Project \"%s\" created", name),
+	)
+	h.writeJSON(w, http.StatusOK, map[string]string{"name": name, "language": lang})
 }
 
 func (h *Handlers) GetProjectCurrent(w http.ResponseWriter, r *http.Request) {
 	h.projectMu.RLock()
 	defer h.projectMu.RUnlock()
-	h.writeJSON(w, http.StatusOK, map[string]string{"name": h.projectName})
+	resp := map[string]string{"name": h.projectName}
+	if h.projectName != "" && h.cfg != nil {
+		resp["language"] = NormalizeLanguage(h.cfg.Language)
+	}
+	h.writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handlers) PostProjectSelect(w http.ResponseWriter, r *http.Request) {
@@ -336,8 +360,23 @@ func corsMiddleware(next http.Handler) http.Handler {
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/events" {
-			log.Printf(" %s %s", r.Method, r.URL.Path)
+			start := time.Now()
+			next.ServeHTTP(w, r)
+			log.Printf(" %s %s (%v)", r.Method, r.URL.Path, time.Since(start))
+		} else {
+			next.ServeHTTP(w, r)
 		}
+	})
+}
+
+func recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("[PANIC] %s %s: %v\n%s", r.Method, r.URL.Path, err, debug.Stack())
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}()
 		next.ServeHTTP(w, r)
 	})
 }

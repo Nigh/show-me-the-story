@@ -2,10 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import { api } from '../lib/api.js';
   import { settings } from '../lib/stores.js';
+  import { t, uiLocale } from '../lib/i18n/index.js';
 
   let canvas;
   let container;
   let graph = null;
+  let memberEdgeLabel = '';
 
   class ForceGraph {
     constructor(canvas, data) {
@@ -47,7 +49,7 @@
       });
       orgs.forEach(o => {
         (o.members || []).forEach(mid => {
-          this.edges.push({ source: o.id, target: mid, label: '成员' });
+          this.edges.push({ source: o.id, target: mid, label: memberEdgeLabel });
         });
       });
     }
@@ -200,10 +202,20 @@
   }
 
   onMount(async () => {
+    memberEdgeLabel = $t('config.rel.memberEdge');
     try { settings.set(await api('GET', '/api/settings')); } catch (e) {}
     initGraph();
     window.addEventListener('resize', handleResize);
   });
+
+  // Refresh graph when UI locale changes so the embedded "member of" edge label tracks language.
+  $: if ($uiLocale) {
+    const next = $t('config.rel.memberEdge');
+    if (next !== memberEdgeLabel) {
+      memberEdgeLabel = next;
+      if (graph && $settings) graph.updateData($settings);
+    }
+  }
 
   onDestroy(() => {
     if (graph) graph.destroy();
@@ -238,8 +250,8 @@
 <div bind:this={container} class="relative w-full bg-base-200 border border-base-content/10 rounded-lg overflow-hidden" style="height:calc(100vh - 180px)">
   <canvas bind:this={canvas}></canvas>
   <div class="absolute bottom-3 right-3 bg-base-300 border border-base-content/10 rounded-lg p-2 text-xs flex gap-4">
-    <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#5b8af5] mr-1 align-middle"></span>角色</span>
-    <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#4caf50] mr-1 align-middle"></span>世界观</span>
-    <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#ff9800] mr-1 align-middle"></span>组织</span>
+    <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#5b8af5] mr-1 align-middle"></span>{$t('relations.legend.character')}</span>
+    <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#4caf50] mr-1 align-middle"></span>{$t('relations.legend.worldview')}</span>
+    <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#ff9800] mr-1 align-middle"></span>{$t('relations.legend.organization')}</span>
   </div>
 </div>

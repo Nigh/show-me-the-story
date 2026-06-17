@@ -13,9 +13,10 @@ type SSEMessage struct {
 }
 
 type LogEntry struct {
-	Level   string `json:"level"`
-	Msg     string `json:"msg"`
-	Time    string `json:"time"`
+	Level string `json:"level"`
+	Msg   string `json:"msg"`            // Chinese text (default fallback)
+	MsgEN string `json:"msg_en,omitempty"` // optional English text; if empty, frontend uses dictionary fallback or shows Msg
+	Time  string `json:"time"`
 }
 
 type LogBroadcaster struct {
@@ -60,9 +61,14 @@ func (lb *LogBroadcaster) broadcast(msg SSEMessage) {
 }
 
 func (lb *LogBroadcaster) Log(level, msg string) {
+	lb.logBilingual(level, msg, "")
+}
+
+func (lb *LogBroadcaster) logBilingual(level, msg, msgEN string) {
 	entry := LogEntry{
 		Level: level,
 		Msg:   msg,
+		MsgEN: msgEN,
 		Time:  time.Now().Format("15:04:05"),
 	}
 	lb.broadcast(SSEMessage{Event: "log", Data: entry})
@@ -73,6 +79,12 @@ func (lb *LogBroadcaster) Info(msg string)    { lb.Log("info", msg) }
 func (lb *LogBroadcaster) Error(msg string)   { lb.Log("error", msg) }
 func (lb *LogBroadcaster) Warn(msg string)    { lb.Log("warn", msg) }
 func (lb *LogBroadcaster) Success(msg string) { lb.Log("success", msg) }
+
+// *Bilingual variants supply both zh and en text; frontend picks based on UI locale.
+func (lb *LogBroadcaster) InfoBilingual(zh, en string)    { lb.logBilingual("info", zh, en) }
+func (lb *LogBroadcaster) ErrorBilingual(zh, en string)   { lb.logBilingual("error", zh, en) }
+func (lb *LogBroadcaster) WarnBilingual(zh, en string)    { lb.logBilingual("warn", zh, en) }
+func (lb *LogBroadcaster) SuccessBilingual(zh, en string) { lb.logBilingual("success", zh, en) }
 
 func (lb *LogBroadcaster) StepInfo(step, total int, msg string) {
 	lb.Log("info", fmt.Sprintf("[%d/%d] %s", step, total, msg))

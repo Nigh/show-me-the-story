@@ -404,7 +404,7 @@ func DiagnoseBookAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, set
 		"FullText":     fullTextBlock,
 		"ModeNote":     modeNote,
 	})
-	systemPrompt := "你是一位资深网文总编辑，擅长长篇完稿后的通读审阅。请严格按要求输出诊断报告，不要改写正文。"
+	systemPrompt := SystemPromptFor(cfg.Language, "book_diagnosis")
 
 	resp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 	if resp == "" {
@@ -457,7 +457,7 @@ func runConsistencyCheckVolume(ctx context.Context, apiCfg *APIConfig, cfg *Conf
 		"FullText":     volumeText,
 		"VolumeNote":   volNote,
 	})
-	systemPrompt := "你是一位严谨的小说事实核查员。请输出结构化核查报告，不要改写正文。"
+	systemPrompt := SystemPromptFor(cfg.Language, "book_consistency_check")
 
 	resp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 	if resp == "" {
@@ -479,7 +479,7 @@ func BuildRoadmapAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, dia
 		"DiagnosisReport":   diagnosisReport,
 		"ConsistencyReport": consistencyReport,
 	})
-	systemPrompt := "你是一位资深小说编辑。请根据报告生成可执行的修改工单 JSON，不要输出正文改写。"
+	systemPrompt := SystemPromptFor(cfg.Language, "book_roadmap")
 
 	resp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 	if resp == "" {

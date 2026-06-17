@@ -3,6 +3,7 @@ id: humanizer-zh
 name: 中文去AI味
 description: 消除AI生成文本的典型痕迹，替换为自然中文表达
 category: polish
+lang: zh
 source: builtin
 ---
 

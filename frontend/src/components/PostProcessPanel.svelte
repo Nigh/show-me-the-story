@@ -3,6 +3,7 @@
   import { api } from '../lib/api.js';
   import { postprocess, taskRunning, addToast, confirmModal, progress } from '../lib/stores.js';
   import { renderMarkdown } from '../lib/markdown.js';
+  import { t } from '../lib/i18n/index.js';
 
   $: bookComplete = (() => {
     const chs = $progress?.chapters || [];
@@ -18,13 +19,20 @@
   let optsLocal = { run_smooth_transitions_first: true, include_polish: false };
   let dirty = false;
 
-  const typeLabels = {
-    logic: '逻辑', transition: '衔接', style: '文风', rhythm: '节奏',
-    dialogue: '对话', polish: '润色',
+  $: typeLabels = {
+    logic: $t('pp.type.logic'),
+    transition: $t('pp.type.transition'),
+    style: $t('pp.type.style'),
+    rhythm: $t('pp.type.rhythm'),
+    dialogue: $t('pp.type.dialogue'),
+    polish: $t('pp.type.polish'),
   };
-  const statusLabels = {
-    pending: '待执行', running: '执行中', done: '已完成',
-    failed: '失败', skipped: '无变化',
+  $: statusLabels = {
+    pending: $t('pp.status.pending'),
+    running: $t('pp.status.running'),
+    done: $t('pp.status.done'),
+    failed: $t('pp.status.failed'),
+    skipped: $t('pp.status.skipped'),
   };
   const statusCls = {
     pending: 'badge-ghost', running: 'badge-warning', done: 'badge-success',
@@ -70,17 +78,17 @@
       });
       postprocess.set(res);
       dirty = false;
-      addToast('工单已保存', 'success');
+      addToast($t('pp.toast.saved'), 'success');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
   function runDiagnose() {
     confirmModal.set({
-      message: '将依次运行：全书诊断 → 一致性核查 → 生成优化路线图。耗时取决于全书篇幅与模型速度，是否开始？',
+      message: $t('pp.confirm.diagnose'),
       onConfirm: async () => {
         try {
           await api('POST', '/api/postprocess/diagnose');
-          addToast('全书优化分析已启动', 'info');
+          addToast($t('pp.toast.diagnoseStarted'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
       },
     });
@@ -89,14 +97,14 @@
   async function runConsistency() {
     try {
       await api('POST', '/api/postprocess/consistency');
-      addToast('全书一致性核查已启动', 'info');
+      addToast($t('pp.toast.consistencyStarted'), 'info');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
   async function runRoadmap() {
     try {
       await api('POST', '/api/postprocess/roadmap');
-      addToast('路线图重新生成已启动', 'info');
+      addToast($t('pp.toast.roadmapStarted'), 'info');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -104,19 +112,19 @@
     const pending = roadmapLocal.filter(r => r.selected && r.status === 'pending');
     const chapterCount = new Set(pending.map(r => r.chapter_num)).size;
     if (pending.length === 0) {
-      addToast('请至少勾选一条待执行的工单', 'error');
+      addToast($t('pp.toast.pickRequired'), 'error');
       return;
     }
     const mergeHint = pending.length > chapterCount
-      ? `（${pending.length} 条工单将按章合并为 ${chapterCount} 次编辑）`
+      ? $t('pp.confirm.execute.merge', { items: pending.length, chapters: chapterCount })
       : '';
     confirmModal.set({
-      message: `将处理 ${chapterCount} 章${mergeHint}，每章一次性完成全部修改意见，可随时停止。是否开始？`,
+      message: $t('pp.confirm.execute', { chapters: chapterCount, merge: mergeHint }),
       onConfirm: async () => {
         try {
           if (dirty) await saveRoadmap();
           await api('POST', '/api/postprocess/execute', { execute_options: optsLocal });
-          addToast('全书优化执行已启动', 'info');
+          addToast($t('pp.toast.executeStarted'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
       },
     });
@@ -124,12 +132,12 @@
 
   function clearAll() {
     confirmModal.set({
-      message: '将清空诊断报告、核查报告和优化工单，是否继续？',
+      message: $t('pp.confirm.clear'),
       onConfirm: async () => {
         try {
           const res = await api('DELETE', '/api/postprocess');
           postprocess.set(res);
-          addToast('已清空全书优化数据', 'info');
+          addToast($t('pp.toast.cleared'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
       },
     });
@@ -148,35 +156,33 @@
   <div class="card bg-base-200 shadow-sm">
     <div class="card-body p-4 gap-3">
       <div class="flex items-center gap-2 flex-wrap">
-        <h2 class="card-title text-base flex-1">全书优化</h2>
+        <h2 class="card-title text-base flex-1">{$t('pp.title')}</h2>
         {#if pp?.bundle_mode}
-          <span class="badge badge-sm badge-ghost" title="诊断时使用的材料模式">
-            {pp.bundle_mode === 'summary_only' ? '摘要模式' : '全文模式'}
+          <span class="badge badge-sm badge-ghost" title={$t('pp.mode.tooltip')}>
+            {pp.bundle_mode === 'summary_only' ? $t('pp.mode.summary') : $t('pp.mode.full')}
           </span>
         {/if}
         {#if pp?.estimated_tokens}
-          <span class="text-xs text-base-content/40">约 {pp.estimated_tokens.toLocaleString()} tokens</span>
+          <span class="text-xs text-base-content/40">{$t('pp.tokens', { n: pp.estimated_tokens.toLocaleString() })}</span>
         {/if}
         {#if pp?.volume_count > 1}
-          <span class="text-xs text-base-content/40">{pp.volume_count} 卷核查</span>
+          <span class="text-xs text-base-content/40">{$t('pp.volumes', { n: pp.volume_count })}</span>
         {/if}
       </div>
 
-      <p class="text-xs text-base-content/50">
-        完稿后通读诊断 → 一致性核查 → 生成可执行工单 → 逐章最小化修订。建议使用大上下文模型（配置页可设上下文预算）。
-      </p>
+      <p class="text-xs text-base-content/50">{$t('pp.intro')}</p>
 
       <div class="flex gap-2 flex-wrap">
-        <button class="btn btn-primary btn-sm" on:click={runDiagnose} disabled={$taskRunning}>🔍 开始全书分析</button>
-        <button class="btn btn-ghost btn-sm" on:click={runConsistency} disabled={$taskRunning || !pp?.diagnosis_report}>🧪 重新核查</button>
-        <button class="btn btn-ghost btn-sm" on:click={runRoadmap} disabled={$taskRunning || (!pp?.diagnosis_report && !pp?.consistency_report)}>📋 重新生成路线图</button>
-        <button class="btn btn-ghost btn-sm btn-error" on:click={clearAll} disabled={$taskRunning}>清空</button>
+        <button class="btn btn-primary btn-sm" on:click={runDiagnose} disabled={$taskRunning}>{$t('pp.btn.diagnose')}</button>
+        <button class="btn btn-ghost btn-sm" on:click={runConsistency} disabled={$taskRunning || !pp?.diagnosis_report}>{$t('pp.btn.consistency')}</button>
+        <button class="btn btn-ghost btn-sm" on:click={runRoadmap} disabled={$taskRunning || (!pp?.diagnosis_report && !pp?.consistency_report)}>{$t('pp.btn.roadmap')}</button>
+        <button class="btn btn-ghost btn-sm btn-error" on:click={clearAll} disabled={$taskRunning}>{$t('pp.btn.clear')}</button>
       </div>
 
       {#if pp?.diagnosis_report || pp?.consistency_report}
         <div class="tabs tabs-boxed tabs-sm w-fit">
-          <button class="tab {reportTab === 'diagnosis' ? 'tab-active' : ''}" on:click={() => reportTab = 'diagnosis'}>诊断报告</button>
-          <button class="tab {reportTab === 'consistency' ? 'tab-active' : ''}" on:click={() => reportTab = 'consistency'}>核查报告</button>
+          <button class="tab {reportTab === 'diagnosis' ? 'tab-active' : ''}" on:click={() => reportTab = 'diagnosis'}>{$t('pp.tab.diagnosis')}</button>
+          <button class="tab {reportTab === 'consistency' ? 'tab-active' : ''}" on:click={() => reportTab = 'consistency'}>{$t('pp.tab.consistency')}</button>
         </div>
         <div class="bg-base-300 rounded-lg p-3 max-h-64 overflow-y-auto text-sm">
           {#if reportTab === 'diagnosis' && diagnosisHtml}
@@ -184,32 +190,32 @@
           {:else if reportTab === 'consistency' && consistencyHtml}
             <div class="md-body">{@html consistencyHtml}</div>
           {:else}
-            <p class="text-base-content/40 text-center py-4">暂无报告</p>
+            <p class="text-base-content/40 text-center py-4">{$t('pp.report.empty')}</p>
           {/if}
         </div>
       {/if}
 
       {#if roadmapLocal.length > 0}
-        <div class="divider my-0 text-xs">优化工单（{roadmapLocal.length} 条，待执行 {pendingCount}）</div>
+        <div class="divider my-0 text-xs">{$t('pp.roadmap.title', { total: roadmapLocal.length, pending: pendingCount })}</div>
 
         <div class="flex gap-3 flex-wrap items-center text-xs">
           <label class="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" class="checkbox checkbox-xs" bind:checked={optsLocal.run_smooth_transitions_first} on:change={markDirty} />
-            执行前先优化章节衔接
+            {$t('pp.opts.smoothFirst')}
           </label>
           <label class="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" class="checkbox checkbox-xs" bind:checked={optsLocal.include_polish} on:change={markDirty} />
-            修订时附加去 AI 味
+            {$t('pp.opts.includePolish')}
           </label>
           <div class="flex-1"></div>
-          <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(true)} disabled={$taskRunning}>全选待执行</button>
-          <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(false)} disabled={$taskRunning}>全不选</button>
-          <button class="btn btn-ghost btn-xs" on:click={resetFailed} disabled={$taskRunning}>重置失败项</button>
+          <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(true)} disabled={$taskRunning}>{$t('pp.btn.selectAll')}</button>
+          <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(false)} disabled={$taskRunning}>{$t('pp.btn.selectNone')}</button>
+          <button class="btn btn-ghost btn-xs" on:click={resetFailed} disabled={$taskRunning}>{$t('pp.btn.resetFailed')}</button>
           {#if dirty}
-            <button class="btn btn-primary btn-xs" on:click={saveRoadmap} disabled={$taskRunning}>保存工单</button>
+            <button class="btn btn-primary btn-xs" on:click={saveRoadmap} disabled={$taskRunning}>{$t('pp.btn.saveRoadmap')}</button>
           {/if}
           <button class="btn btn-success btn-sm" on:click={runExecute} disabled={$taskRunning || selectedPending === 0}>
-            ▶ 执行选中（{selectedChapterCount} 章 / {selectedPending} 条）
+            {$t('pp.btn.execute', { chapters: selectedChapterCount, items: selectedPending })}
           </button>
         </div>
 
@@ -218,11 +224,11 @@
             <thead class="sticky top-0 bg-base-200 z-10">
               <tr>
                 <th class="w-8"></th>
-                <th>章</th>
-                <th>类型</th>
-                <th>优先级</th>
-                <th class="min-w-[200px]">修改意见</th>
-                <th class="min-w-[5.5rem] w-28">状态</th>
+                <th>{$t('pp.col.chapter')}</th>
+                <th>{$t('pp.col.type')}</th>
+                <th>{$t('pp.col.priority')}</th>
+                <th class="min-w-[200px]">{$t('pp.col.feedback')}</th>
+                <th class="min-w-[5.5rem] w-28">{$t('pp.col.status')}</th>
                 <th class="w-14 shrink-0"></th>
               </tr>
             </thead>
@@ -234,7 +240,7 @@
                       <input type="checkbox" class="checkbox checkbox-xs" bind:checked={item.selected} on:change={() => { roadmapLocal[i] = item; markDirty(); }} disabled={$taskRunning} />
                     {/if}
                   </td>
-                  <td class="whitespace-nowrap">第{item.chapter_num}章</td>
+                  <td class="whitespace-nowrap">{$t('pp.chapter.label', { n: item.chapter_num })}</td>
                   <td>{typeLabels[item.type] || item.type}</td>
                   <td><span class="badge badge-xs {item.priority === 'P0' ? 'badge-error' : item.priority === 'P1' ? 'badge-warning' : 'badge-ghost'}">{item.priority}</span></td>
                   <td>
@@ -254,7 +260,7 @@
                   </td>
                   <td>
                     {#if item.diff_original || item.diff_revised}
-                      <button class="btn btn-ghost btn-xs" on:click={() => diffItem = item}>对比</button>
+                      <button class="btn btn-ghost btn-xs" on:click={() => diffItem = item}>{$t('pp.diff.btn')}</button>
                     {/if}
                   </td>
                 </tr>
@@ -270,19 +276,19 @@
 {#if diffItem}
   <dialog class="modal modal-open">
     <div class="modal-box max-w-4xl">
-      <h3 class="font-bold text-base mb-2">第 {diffItem.chapter_num} 章修改对比（节选前 500 字）</h3>
+      <h3 class="font-bold text-base mb-2">{$t('pp.diff.title', { n: diffItem.chapter_num })}</h3>
       <div class="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <div class="text-xs text-base-content/50 mb-1">修改前</div>
+          <div class="text-xs text-base-content/50 mb-1">{$t('pp.diff.before')}</div>
           <div class="bg-base-300 rounded p-3 whitespace-pre-wrap max-h-64 overflow-y-auto font-serif">{diffItem.diff_original || '—'}</div>
         </div>
         <div>
-          <div class="text-xs text-base-content/50 mb-1">修改后</div>
+          <div class="text-xs text-base-content/50 mb-1">{$t('pp.diff.after')}</div>
           <div class="bg-base-300 rounded p-3 whitespace-pre-wrap max-h-64 overflow-y-auto font-serif">{diffItem.diff_revised || '—'}</div>
         </div>
       </div>
       <div class="modal-action">
-        <button class="btn btn-sm" on:click={() => diffItem = null}>关闭</button>
+        <button class="btn btn-sm" on:click={() => diffItem = null}>{$t('common.close')}</button>
       </div>
     </div>
     <form method="dialog" class="modal-backdrop"><button on:click={() => diffItem = null}>close</button></form>

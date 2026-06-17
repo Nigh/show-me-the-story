@@ -15,9 +15,25 @@ type APIConfig struct {
 }
 
 type Config struct {
+	Language    string        `json:"language"` // "zh" 或 "en"，影响 AI 提示词与生成内容；旧项目缺省视为 "zh"
 	Story       StoryConfig   `json:"story"`
 	Prompts     PromptsConfig `json:"prompts"`
 	SkillConfig *SkillConfig  `json:"skill_config,omitempty"`
+}
+
+const (
+	LangZH = "zh"
+	LangEN = "en"
+)
+
+// NormalizeLanguage returns "zh" / "en"; unknown values fall back to "zh".
+func NormalizeLanguage(lang string) string {
+	switch lang {
+	case LangEN, "en-US", "en-GB":
+		return LangEN
+	default:
+		return LangZH
+	}
 }
 
 type StoryConfig struct {
@@ -56,7 +72,13 @@ func DefaultAPIConfig() *APIConfig {
 }
 
 func DefaultConfig() *Config {
+	return DefaultConfigForLang(LangZH)
+}
+
+func DefaultConfigForLang(lang string) *Config {
+	lang = NormalizeLanguage(lang)
 	cfg := &Config{
+		Language: lang,
 		Story: StoryConfig{
 			ChapterCount:          30,
 			TargetWordsPerChapter: 2500,
@@ -65,7 +87,7 @@ func DefaultConfig() *Config {
 			EnabledSkills: make(map[string]bool),
 		},
 	}
-	cfg.Prompts.applyDefaults()
+	cfg.Prompts.applyDefaults(lang)
 	return cfg
 }
 
@@ -130,7 +152,8 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.Story.TargetWordsPerChapter = 2500
 	}
 
-	cfg.Prompts.applyDefaults()
+	cfg.Language = NormalizeLanguage(cfg.Language)
+	cfg.Prompts.applyDefaults(cfg.Language)
 
 	if cfg.SkillConfig == nil {
 		cfg.SkillConfig = &SkillConfig{
@@ -151,53 +174,64 @@ func saveConfig(path string, cfg *Config) error {
 	return writeFileAtomic(path, data)
 }
 
-func (p *PromptsConfig) applyDefaults() {
+// applyDefaults fills empty fields with the language-specific defaults.
+// Existing non-empty fields are NEVER overwritten — this is what makes
+// old projects (with persisted Chinese prompts) keep working after upgrade.
+func (p *PromptsConfig) applyDefaults(lang string) {
+	defaults := DefaultPromptsForLang(lang)
 	if p.OutlineGeneration == "" {
-		p.OutlineGeneration = DefaultPrompts.OutlineGeneration
+		p.OutlineGeneration = defaults.OutlineGeneration
 	}
 	if p.ChapterWriting == "" {
-		p.ChapterWriting = DefaultPrompts.ChapterWriting
+		p.ChapterWriting = defaults.ChapterWriting
 	}
 	if p.ChapterRevision == "" {
-		p.ChapterRevision = DefaultPrompts.ChapterRevision
+		p.ChapterRevision = defaults.ChapterRevision
 	}
 	if p.ChapterSummary == "" {
-		p.ChapterSummary = DefaultPrompts.ChapterSummary
+		p.ChapterSummary = defaults.ChapterSummary
 	}
 	if p.FactCheck == "" {
-		p.FactCheck = DefaultPrompts.FactCheck
+		p.FactCheck = defaults.FactCheck
 	}
 	if p.OutlineRevision == "" {
-		p.OutlineRevision = DefaultPrompts.OutlineRevision
+		p.OutlineRevision = defaults.OutlineRevision
 	}
 	if p.ForeshadowPlanning == "" {
-		p.ForeshadowPlanning = DefaultPrompts.ForeshadowPlanning
+		p.ForeshadowPlanning = defaults.ForeshadowPlanning
 	}
 	if p.ForeshadowUpdate == "" {
-		p.ForeshadowUpdate = DefaultPrompts.ForeshadowUpdate
+		p.ForeshadowUpdate = defaults.ForeshadowUpdate
 	}
 	if p.ContentAnalysis == "" {
-		p.ContentAnalysis = DefaultPrompts.ContentAnalysis
+		p.ContentAnalysis = defaults.ContentAnalysis
 	}
 	if p.ContinuationOutlineGeneration == "" {
-		p.ContinuationOutlineGeneration = DefaultPrompts.ContinuationOutlineGeneration
+		p.ContinuationOutlineGeneration = defaults.ContinuationOutlineGeneration
 	}
 	if p.SettingsReconciliation == "" {
-		p.SettingsReconciliation = DefaultPrompts.SettingsReconciliation
+		p.SettingsReconciliation = defaults.SettingsReconciliation
 	}
 	if p.TransitionSmoothing == "" {
-		p.TransitionSmoothing = DefaultPrompts.TransitionSmoothing
+		p.TransitionSmoothing = defaults.TransitionSmoothing
 	}
 	if p.OutlineConsistencyCheck == "" {
-		p.OutlineConsistencyCheck = DefaultPrompts.OutlineConsistencyCheck
+		p.OutlineConsistencyCheck = defaults.OutlineConsistencyCheck
 	}
 	if p.BookDiagnosis == "" {
-		p.BookDiagnosis = DefaultPrompts.BookDiagnosis
+		p.BookDiagnosis = defaults.BookDiagnosis
 	}
 	if p.BookConsistencyCheck == "" {
-		p.BookConsistencyCheck = DefaultPrompts.BookConsistencyCheck
+		p.BookConsistencyCheck = defaults.BookConsistencyCheck
 	}
 	if p.BookRoadmap == "" {
-		p.BookRoadmap = DefaultPrompts.BookRoadmap
+		p.BookRoadmap = defaults.BookRoadmap
 	}
+}
+
+func DefaultPromptsForLang(lang string) PromptsConfig {
+	if NormalizeLanguage(lang) == LangEN {
+		return DefaultPromptsEN
+	}
+	return DefaultPromptsZH
 }

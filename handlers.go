@@ -351,7 +351,11 @@ func (h *Handlers) PutConfig(w http.ResponseWriter, r *http.Request) {
 	if newCfg.Story.TargetWordsPerChapter <= 0 {
 		newCfg.Story.TargetWordsPerChapter = 2500
 	}
-	newCfg.Prompts.applyDefaults()
+	newCfg.Language = NormalizeLanguage(newCfg.Language)
+	if newCfg.Language == "" {
+		newCfg.Language = h.cfg.Language
+	}
+	newCfg.Prompts.applyDefaults(newCfg.Language)
 
 	data, err := json.MarshalIndent(newCfg, "", "  ")
 	if err != nil {
@@ -982,12 +986,17 @@ func (h *Handlers) broadcastProgress() {
 }
 
 func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
+	lang := LangZH
+	if h.cfg != nil {
+		lang = NormalizeLanguage(h.cfg.Language)
+	}
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
-		"phase":           h.state.Phase,
-		"title":           h.state.Title,
-		"total_chapters":  len(h.state.Chapters),
-		"is_task_running": h.isTaskRunning(),
-		"auto_confirm":    h.isAutoConfirmOn(),
+		"phase":            h.state.Phase,
+		"title":            h.state.Title,
+		"total_chapters":   len(h.state.Chapters),
+		"is_task_running":  h.isTaskRunning(),
+		"auto_confirm":     h.isAutoConfirmOn(),
+		"project_language": lang,
 	})
 }
 

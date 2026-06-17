@@ -33,9 +33,10 @@ type ForeshadowUpdateResponse struct {
 }
 
 func SuggestForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, logger *LogBroadcaster) ([]ForeshadowSuggestion, error) {
+	lang := cfg.Language
 	outline := ""
 	for _, ch := range state.Chapters {
-		outline += fmt.Sprintf("第%d章《%s》: %s\n", ch.Num, ch.Title, ch.Outline)
+		outline += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
 	}
 
 	userPrompt := RenderPrompt(cfg.Prompts.ForeshadowPlanning, map[string]string{
@@ -45,7 +46,7 @@ func SuggestForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, sta
 		"Outline":       outline,
 	})
 
-	systemPrompt := "你是一位资深的小说叙事架构师。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
+	systemPrompt := SystemPromptFor(lang, "narrative_architect_json")
 
 	rawResp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 	if rawResp == "" {
@@ -64,13 +65,14 @@ func SuggestForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, sta
 
 func UpdateForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, chapterIdx int, logger *LogBroadcaster) error {
 	ch := state.Chapters[chapterIdx]
+	lang := cfg.Language
 
-	foreshadowsText := formatForeshadowsForPrompt(state.Foreshadows)
-	if foreshadowsText == "无" {
+	foreshadowsText := formatForeshadowsForPromptLang(state.Foreshadows, lang)
+	if foreshadowsText == "无" || foreshadowsText == "(none)" {
 		return nil
 	}
 
-	historySummary := buildHistorySummary(state, chapterIdx)
+	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
 
 	userPrompt := RenderPrompt(cfg.Prompts.ForeshadowUpdate, map[string]string{
 		"Title":          state.Title,
@@ -81,7 +83,7 @@ func UpdateForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, stat
 		"Foreshadows":    foreshadowsText,
 	})
 
-	systemPrompt := "你是一位严谨的小说伏笔追踪员。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。"
+	systemPrompt := SystemPromptFor(lang, "foreshadow_tracker_json")
 
 	rawResp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 	if rawResp == "" {

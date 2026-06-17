@@ -1,5 +1,6 @@
 import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, streamCharCount, continueAnalysis, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions } from './stores.js';
 import { api } from './api.js';
+import { getLocale, translate, translateServerMessage } from './i18n/index.js';
 
 let eventSource = null;
 let reconnectTimer = null;
@@ -80,10 +81,16 @@ function clearChatBuf() {
 
 export function connectSSE() {
   if (eventSource) eventSource.close();
-  eventSource = new EventSource('/api/events');
+  const locale = getLocale();
+  eventSource = new EventSource(`/api/events?locale=${encodeURIComponent(locale)}`);
 
   eventSource.addEventListener('log', e => {
     const d = JSON.parse(e.data);
+    // Prefer the server-supplied English text when UI is English; otherwise
+    // try the client-side dictionary; fall back to the Chinese original.
+    if (locale === 'en') {
+      d.msg = d.msg_en || translateServerMessage(d.msg, 'en');
+    }
     addLog(d);
   });
 
@@ -91,34 +98,20 @@ export function connectSSE() {
     refreshProgress();
   });
 
+  function taskLabel(task) {
+    return translate(`task.${task}`) || task;
+  }
+
   eventSource.addEventListener('task_start', e => {
     const d = JSON.parse(e.data);
     taskRunning.set(true);
     resetContentStream(-1);
     clearChatBuf();
     streamCharCount.set(0);
-    currentTaskName.set(taskNames[d.task] || d.task);
+    currentTaskName.set(taskLabel(d.task));
     logEntries.set([]);
     lastFailedTask.set(null);
   });
-
-  const taskNames = {
-    'outline_generation': '大纲生成',
-    'outline_revision': '大纲修订',
-    'chapter_generation': '章节创作',
-    'chapter_revision': '章节修订',
-    'foreshadow_suggest': '伏笔建议',
-    'continue_analysis': '内容分析',
-    'continuation_outline': '续写大纲',
-    'settings_reconciliation': '设定协调',
-    'chat_message': '助理对话',
-    'postprocess_diagnose': '全书优化分析',
-    'postprocess_consistency': '全书一致性核查',
-    'postprocess_roadmap': '优化路线图生成',
-    'postprocess_execute': '全书优化执行',
-    'chapter_polish': '章节润色',
-    'smooth_transitions': '章节衔接优化',
-  };
 
   eventSource.addEventListener('task_end', e => {
     const d = JSON.parse(e.data);
@@ -130,11 +123,11 @@ export function connectSSE() {
     refreshProgress(true);
 
     if (d.success) {
-      const name = taskNames[d.task] || d.task;
-      addToast(`✓ ${name}已完成`, 'success');
+      const name = taskLabel(d.task);
+      addToast(translate('toast.taskDone', { name }), 'success');
     } else {
       // 任务失败时记录重试信息
-      lastFailedTask.set({ task: d.task, taskName: taskNames[d.task] || d.task });
+      lastFailedTask.set({ task: d.task, taskName: taskLabel(d.task) });
     }
 
     if (d.task === 'postprocess_diagnose' || d.task === 'postprocess_consistency' || d.task === 'postprocess_roadmap' || d.task === 'postprocess_execute') {
@@ -178,7 +171,11 @@ export function connectSSE() {
 
   eventSource.addEventListener('stream_progress', e => {
     const d = JSON.parse(e.data);
-    addLog({ level: 'info', msg: `正在生成中... 已写 ${d.char_count} 字`, time: new Date().toLocaleTimeString('zh-CN', { hour12: false }) });
+    addLog({
+      level: 'info',
+      msg: translate('log.streamProgress', { chars: d.char_count }),
+      time: new Date().toLocaleTimeString(getLocale() === 'en' ? 'en-US' : 'zh-CN', { hour12: false }),
+    });
   });
 
   eventSource.addEventListener('continue_analysis', e => {
@@ -192,7 +189,7 @@ export function connectSSE() {
       config.set(c);
     }).catch(() => {});
     api('GET', '/api/progress').then(p => progress.set(p)).catch(() => {});
-    addToast('设定协调完成：' + (d.explanation || ''), 'success');
+    addToast(translate('toast.settingsReconciled', { detail: d.explanation || '' }), 'success');
   });
 
   eventSource.addEventListener('settings_updated', () => {
@@ -205,7 +202,7 @@ export function connectSSE() {
     const items = (d || []).map(s => ({ ...s, _selected: true }));
     foreshadowSuggestions.set(items);
     foreshadowShowSuggestions.set(true);
-    addToast(`伏笔建议已生成，共 ${items.length} 条 — 请前往「伏笔」页确认`, 'info');
+    addToast(translate('toast.foreshadowReady', { n: items.length }), 'info');
   });
 
   eventSource.addEventListener('chat_chunk', e => {

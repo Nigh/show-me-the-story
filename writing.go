@@ -141,10 +141,15 @@ func checkOutlineConsistency(ctx context.Context, apiCfg *APIConfig, cfg *Config
 		return false, nil
 	}
 
+	lang := cfg.Language
 	prevEnding := ""
 	if idx > 0 && state.Chapters[idx-1].Content != "" {
 		if tail := tailAtParagraph(state.Chapters[idx-1].Content, prevTailMaxRunes); tail != "" {
-			prevEnding = "【上一章结尾原文】\n" + tail + "\n\n"
+			if NormalizeLanguage(lang) == LangEN {
+				prevEnding = "[Previous chapter ending]\n" + tail + "\n\n"
+			} else {
+				prevEnding = "【上一章结尾原文】\n" + tail + "\n\n"
+			}
 		}
 	}
 
@@ -152,10 +157,10 @@ func checkOutlineConsistency(ctx context.Context, apiCfg *APIConfig, cfg *Config
 		"ChapterNum":     fmt.Sprintf("%d", ch.Num),
 		"ChapterTitle":   ch.Title,
 		"ChapterOutline": ch.Outline,
-		"HistorySummary": buildHistorySummary(state, idx),
+		"HistorySummary": buildHistorySummaryForLang(state, idx, lang),
 		"PreviousEnding": prevEnding,
 	})
-	systemPrompt := "你是一位严谨的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字。"
+	systemPrompt := SystemPromptFor(lang, "outline_editor_brief_json")
 
 	rawResp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 	if rawResp == "" {
@@ -334,19 +339,20 @@ func ConfirmChapterAction(state *Progress, progressPath string) error {
 
 func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) (string, error) {
 	ch := state.Chapters[idx]
+	lang := cfg.Language
 
-	historySummary := buildHistorySummary(state, idx)
+	historySummary := buildHistorySummaryForLang(state, idx, lang)
 
 	snapshot := state.StoryConfigSnapshot
 	if snapshot == nil {
 		snapshot = &cfg.Story
 	}
 
-	foreshadowContext := formatActiveForeshadowsForChapter(state.Foreshadows, ch.Num)
+	foreshadowContext := formatActiveForeshadowsForChapterLang(state.Foreshadows, ch.Num, lang)
 
-	characterContext := buildCharacterContext(settings, ch.Outline)
-	worldviewContext := buildWorldviewContext(settings, ch.Outline)
-	outlineConstraints := buildOutlineConstraints(state, idx)
+	characterContext := buildCharacterContextForLang(settings, ch.Outline, lang)
+	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
+	outlineConstraints := buildOutlineConstraintsForLang(state, idx, lang)
 
 	userPrompt := RenderPrompt(cfg.Prompts.ChapterWriting, map[string]string{
 		"Title":              preferUserValue(cfg.Story.Title, state.Title),
@@ -354,7 +360,7 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 		"CorePrompt":         state.CorePrompt,
 		"StorySynopsis":      preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis),
 		"HistorySummary":     historySummary,
-		"PreviousEnding":     buildPreviousChapterTail(state, idx),
+		"PreviousEnding":     buildPreviousChapterTailForLang(state, idx, lang),
 		"ChapterTitle":       ch.Title,
 		"ChapterOutline":     ch.Outline,
 		"WritingStyle":       cfg.Story.WritingStyle,
@@ -369,7 +375,7 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
-		systemPrompt = "你是一位小说作者。"
+		systemPrompt = SystemPromptFor(lang, "author_default")
 	}
 
 	totalChars := 0
@@ -419,7 +425,7 @@ func generateChapterSummary(ctx context.Context, apiCfg *APIConfig, cfg *Config,
 		"ChapterContent": content,
 	})
 
-	systemPrompt := "你是一位精准的小说叙事状态分析师。"
+	systemPrompt := SystemPromptFor(cfg.Language, "summary_analyst")
 	return CallAPI(ctx, apiCfg, systemPrompt, userPrompt)
 }
 
@@ -451,7 +457,8 @@ func generateChapterSummaryWithRetryLog(ctx context.Context, apiCfg *APIConfig, 
 
 func generateChapterFactCheck(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, content string, historySummary string) (string, error) {
 	ch := state.Chapters[idx]
-	outlineConstraints := buildOutlineConstraints(state, idx)
+	lang := cfg.Language
+	outlineConstraints := buildOutlineConstraintsForLang(state, idx, lang)
 
 	userPrompt := RenderPrompt(cfg.Prompts.FactCheck, map[string]string{
 		"ChapterContent":     content,
@@ -460,15 +467,24 @@ func generateChapterFactCheck(ctx context.Context, apiCfg *APIConfig, cfg *Confi
 		"ChapterOutline":     ch.Outline,
 		"OutlineConstraints": outlineConstraints,
 	})
-	// 旧模板兜底：缺占位符时把材料和补充核查规则追加到末尾
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.ChapterOutline}}",
-		"【本章大纲】\n"+ch.Outline)
-	if outlineConstraints != "" {
-		userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.OutlineConstraints}}",
-			outlineConstraints+"补充核查范围（同样属于必须报告的客观矛盾）：(a) 提前引入按章节脉络安排在后续章节才登场或发生的人物/事件；(b) 前文已发生的一次性事件（初次见面、身份揭示等）在本章作为新事件重复发生。")
+	// Old-template fallback: if placeholder is missing, append the material and supplementary checks at the end.
+	if NormalizeLanguage(lang) == LangEN {
+		userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.ChapterOutline}}",
+			"[Chapter outline]\n"+ch.Outline)
+		if outlineConstraints != "" {
+			userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.OutlineConstraints}}",
+				outlineConstraints+"Supplementary audit scope (also count as reportable objective contradictions): (a) premature introduction of characters/events scheduled for later chapters per the outline; (b) one-time events from prior chapters (first meetings, identity reveals, etc.) being re-enacted as new in this chapter.")
+		}
+	} else {
+		userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.ChapterOutline}}",
+			"【本章大纲】\n"+ch.Outline)
+		if outlineConstraints != "" {
+			userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.OutlineConstraints}}",
+				outlineConstraints+"补充核查范围（同样属于必须报告的客观矛盾）：(a) 提前引入按章节脉络安排在后续章节才登场或发生的人物/事件；(b) 前文已发生的一次性事件（初次见面、身份揭示等）在本章作为新事件重复发生。")
+		}
 	}
 
-	systemPrompt := "你是一位严谨的小说事实核查员。请严格按照要求的JSON格式输出。"
+	systemPrompt := SystemPromptFor(lang, "fact_checker_json")
 	return CallAPI(ctx, apiCfg, systemPrompt, userPrompt)
 }
 
@@ -501,10 +517,11 @@ func generateChapterFactCheckWithRetryLog(ctx context.Context, apiCfg *APIConfig
 // reviseChapterContentStream 基于原文做最小化修订（流式）。
 func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, chapterIdx int, userFeedback string, settings *ProjectSettings, logger *LogBroadcaster) (string, error) {
 	ch := state.Chapters[chapterIdx]
+	lang := cfg.Language
 
-	historySummary := buildHistorySummary(state, chapterIdx)
-	characterContext := buildCharacterContext(settings, ch.Outline)
-	worldviewContext := buildWorldviewContext(settings, ch.Outline)
+	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
+	characterContext := buildCharacterContextForLang(settings, ch.Outline, lang)
+	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
 
 	userPrompt := RenderPrompt(cfg.Prompts.ChapterRevision, map[string]string{
 		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
@@ -520,9 +537,9 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Con
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
-		systemPrompt = "你是一位小说作者。"
+		systemPrompt = SystemPromptFor(lang, "author_default")
 	}
-	systemPrompt += "\n你正在执行章节修订任务：只做修改意见要求的改动，其余原文保持不变，输出修改后的完整正文。"
+	systemPrompt += SystemPromptFor(lang, "chapter_revision_suffix")
 
 	totalChars := 0
 	nextReport := 500
@@ -540,11 +557,14 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Con
 }
 
 func reviseSubsequentOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, currentIdx int, userFeedback string) error {
+	lang := cfg.Language
+	en := NormalizeLanguage(lang) == LangEN
+
 	subsequentChapters := ""
 	for i := currentIdx + 1; i < len(state.Chapters); i++ {
 		ch := state.Chapters[i]
 		if ch.Status != StatusAccepted {
-			subsequentChapters += fmt.Sprintf("第%d章《%s》: %s\n", ch.Num, ch.Title, ch.Outline)
+			subsequentChapters += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
 		}
 	}
 	if subsequentChapters == "" {
@@ -554,16 +574,27 @@ func reviseSubsequentOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Confi
 	lockedChapters := ""
 	for i := 0; i <= currentIdx; i++ {
 		ch := state.Chapters[i]
-		lockedChapters += fmt.Sprintf("第%d章《%s》（摘要）: %s\n", ch.Num, ch.Title, ch.Summary)
+		if en {
+			lockedChapters += fmt.Sprintf("Chapter %d \"%s\" (summary): %s\n", ch.Num, ch.Title, ch.Summary)
+		} else {
+			lockedChapters += fmt.Sprintf("第%d章《%s》（摘要）: %s\n", ch.Num, ch.Title, ch.Summary)
+		}
+	}
+
+	var feedbackWrap string
+	if en {
+		feedbackWrap = fmt.Sprintf("The user gave revision feedback on chapter %d: %s\nOnly adjust later chapter outlines if this feedback affects downstream plot. If it is just wording detail, return the outlines verbatim.", state.Chapters[currentIdx].Num, userFeedback)
+	} else {
+		feedbackWrap = fmt.Sprintf("用户对第%d章提出了修改意见：%s\n请仅在该意见影响后续剧情时调整后续章节大纲；若意见只是文字细节修改，请原样返回大纲。", state.Chapters[currentIdx].Num, userFeedback)
 	}
 
 	userPrompt := RenderPrompt(cfg.Prompts.OutlineRevision, map[string]string{
 		"CurrentOutline": subsequentChapters,
-		"UserFeedback":   fmt.Sprintf("用户对第%d章提出了修改意见：%s\n请仅在该意见影响后续剧情时调整后续章节大纲；若意见只是文字细节修改，请原样返回大纲。", state.Chapters[currentIdx].Num, userFeedback),
+		"UserFeedback":   feedbackWrap,
 		"LockedChapters": lockedChapters,
 	})
 
-	systemPrompt := "你是一位小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。已锁定的章节内容不可修改。"
+	systemPrompt := SystemPromptFor(lang, "outline_editor_locked_json")
 
 	rawResp := CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
 	if rawResp == "" {
@@ -591,44 +622,9 @@ func reviseSubsequentOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Confi
 // futureOutlineWindow 注入后续章节大纲的窗口大小（章数）
 const futureOutlineWindow = 10
 
-// buildOutlineConstraints 构建「全书章节脉络」反向约束块：
-// 后续章节大纲防止人物/事件提前出现，前文章节大纲防止一次性事件重复发生。
-// 返回值非空时以 "\n\n" 结尾，便于直接拼入模板占位符。
+// buildOutlineConstraints — Chinese default; for English projects use the *ForLang variant.
 func buildOutlineConstraints(state *Progress, idx int) string {
-	var past, future strings.Builder
-	for i := 0; i < idx && i < len(state.Chapters); i++ {
-		ch := state.Chapters[i]
-		if strings.TrimSpace(ch.Outline) == "" {
-			continue
-		}
-		past.WriteString(fmt.Sprintf("第%d章《%s》：%s\n", ch.Num, ch.Title, ch.Outline))
-	}
-	end := idx + 1 + futureOutlineWindow
-	if end > len(state.Chapters) {
-		end = len(state.Chapters)
-	}
-	for i := idx + 1; i < end; i++ {
-		ch := state.Chapters[i]
-		if strings.TrimSpace(ch.Outline) == "" {
-			continue
-		}
-		future.WriteString(fmt.Sprintf("第%d章《%s》：%s\n", ch.Num, ch.Title, ch.Outline))
-	}
-	if past.Len() == 0 && future.Len() == 0 {
-		return ""
-	}
-	var sb strings.Builder
-	sb.WriteString("【全书章节脉络（反向约束，必须严格遵守）】\n")
-	if future.Len() > 0 {
-		sb.WriteString("◆ 后续章节安排——以下人物登场、初遇、身份揭示等事件已安排在对应章节，本章严禁提前发生，也不得以任何形式暗示或剧透：\n")
-		sb.WriteString(future.String())
-	}
-	if past.Len() > 0 {
-		sb.WriteString("◆ 前文已发生——以下事件已经发生，本章不得将其作为新事件重复发生（尤其是初次见面、身份揭示等一次性事件，只能作为既成事实延续）：\n")
-		sb.WriteString(past.String())
-	}
-	sb.WriteString("\n")
-	return sb.String()
+	return buildOutlineConstraintsForLang(state, idx, LangZH)
 }
 
 // appendIfMissingPlaceholder 旧项目兼容兜底：prompts 随 config.json 持久化，
@@ -642,20 +638,7 @@ func appendIfMissingPlaceholder(template, rendered, placeholder, block string) s
 }
 
 func buildHistorySummary(state *Progress, idx int) string {
-	startIdx := 0
-	if idx > 5 {
-		startIdx = idx - 5
-	}
-	var history string
-	for i := startIdx; i < idx; i++ {
-		if state.Chapters[i].Summary != "" {
-			history += fmt.Sprintf("[第%d章摘要]: %s\n", state.Chapters[i].Num, state.Chapters[i].Summary)
-		}
-	}
-	if history == "" {
-		history = "当前为故事开端，无历史前情。"
-	}
-	return history
+	return buildHistorySummaryForLang(state, idx, LangZH)
 }
 
 const (
@@ -677,20 +660,9 @@ func tailAtParagraph(content string, maxRunes int) string {
 	return strings.TrimSpace(tail)
 }
 
-// buildPreviousChapterTail 返回上一章结尾原文片段（含说明包装），无上一章或内容为空时返回空字符串。
+// buildPreviousChapterTail — Chinese default; for English projects use the *ForLang variant.
 func buildPreviousChapterTail(state *Progress, idx int) string {
-	if idx <= 0 || idx >= len(state.Chapters) {
-		return ""
-	}
-	prev := state.Chapters[idx-1]
-	if prev.Content == "" {
-		return ""
-	}
-	tail := tailAtParagraph(prev.Content, prevTailMaxRunes)
-	if tail == "" {
-		return ""
-	}
-	return fmt.Sprintf("【上一章结尾原文（仅供无缝承接场景与情绪，禁止复述或改写）】\n%s\n\n", tail)
+	return buildPreviousChapterTailForLang(state, idx, LangZH)
 }
 
 // splitChapterOpening 把章节正文切分为开头片段与剩余部分，切点向前对齐到段落边界。
@@ -748,7 +720,7 @@ func SmoothTransitionsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 			"PrevTail":       prevTail,
 			"Opening":        opening,
 		})
-		systemPrompt := "你是一位资深小说编辑，擅长打磨章节之间的衔接。请严格按要求输出。"
+		systemPrompt := SystemPromptFor(cfg.Language, "transition_editor")
 
 		resp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 		if resp == "" {
@@ -797,7 +769,19 @@ func PolishChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 		return fmt.Errorf("没有启用的润色技能，请先在技能管理页启用")
 	}
 
-	userPrompt := fmt.Sprintf(`请根据以下规则对下面的章节正文进行去AI味处理，输出修改后的完整正文。
+	var userPrompt string
+	if NormalizeLanguage(cfg.Language) == LangEN {
+		userPrompt = fmt.Sprintf(`Polish the chapter below according to the rules. Output the full revised chapter prose.
+
+## Polish rules
+
+%s
+
+## Chapter to polish
+
+%s`, skillsContent, ch.Content)
+	} else {
+		userPrompt = fmt.Sprintf(`请根据以下规则对下面的章节正文进行去AI味处理，输出修改后的完整正文。
 
 ## 润色规则
 
@@ -806,8 +790,9 @@ func PolishChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 ## 待处理正文
 
 %s`, skillsContent, ch.Content)
+	}
 
-	systemPrompt := "你是一位专业的中文小说润色编辑。请严格按照规则修改文本，输出修改后的完整章节正文。不要添加任何解释或标记。"
+	systemPrompt := SystemPromptFor(cfg.Language, "polish_editor")
 
 	totalChars := 0
 	nextReport := 500
