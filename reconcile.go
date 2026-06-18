@@ -9,6 +9,7 @@ import (
 type ReconciliationResult struct {
 	Type          string `json:"type"`
 	WritingStyle  string `json:"writing_style"`
+	WritingPOV    string `json:"writing_pov"`
 	StorySynopsis string `json:"story_synopsis"`
 	Explanation   string `json:"explanation"`
 }
@@ -41,6 +42,7 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 	userPrompt := RenderPrompt(cfg.Prompts.SettingsReconciliation, map[string]string{
 		"NewType":           newSettings.Type,
 		"NewWritingStyle":   newSettings.WritingStyle,
+		"NewWritingPOV":     newSettings.WritingPOV,
 		"NewStorySynopsis":  newSettings.StorySynopsis,
 		"ExistingSummaries": acceptedSummaries,
 	})
@@ -63,6 +65,7 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 	adjustedStory := cfg.Story
 	adjustedStory.Type = result.Type
 	adjustedStory.WritingStyle = result.WritingStyle
+	adjustedStory.WritingPOV = result.WritingPOV
 	adjustedStory.StorySynopsis = result.StorySynopsis
 
 	state.StoryConfigSnapshot = &adjustedStory
@@ -95,6 +98,8 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 		return fmt.Errorf("保存进度失败: %w", err)
 	}
 
+	RunForeshadowOutlineCheckAndSave(ctx, apiCfg, cfg, state, progressPath, logger)
+
 	logger.Success("设定协调完成。" + result.Explanation)
 
 	changedFields := []string{}
@@ -103,6 +108,9 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 	}
 	if result.WritingStyle != newSettings.WritingStyle {
 		changedFields = append(changedFields, "writing_style")
+	}
+	if result.WritingPOV != newSettings.WritingPOV {
+		changedFields = append(changedFields, "writing_pov")
 	}
 	if result.StorySynopsis != newSettings.StorySynopsis {
 		changedFields = append(changedFields, "story_synopsis")
@@ -147,11 +155,11 @@ func regeneratePendingOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Conf
 
 	var feedback string
 	if en {
-		feedback = fmt.Sprintf("Story settings updated to: type=%s, writing_style=%s, synopsis=%s. Adjust the pending chapter outlines so they stay consistent with the new settings and the existing chapters.",
-			cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.StorySynopsis)
+		feedback = fmt.Sprintf("Story settings updated to: type=%s, writing_style=%s, writing_pov=%s, synopsis=%s. Adjust the pending chapter outlines so they stay consistent with the new settings and the existing chapters.",
+			cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.WritingPOV, cfg.Story.StorySynopsis)
 	} else {
-		feedback = fmt.Sprintf("故事设定已更新为：类型=%s，写作风格=%s，故事梗概=%s。请根据新设定调整待定章节大纲，使其与新设定和已有章节保持一致。",
-			cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.StorySynopsis)
+		feedback = fmt.Sprintf("故事设定已更新为：类型=%s，写作风格=%s，叙述视角=%s，故事梗概=%s。请根据新设定调整待定章节大纲，使其与新设定和已有章节保持一致。",
+			cfg.Story.Type, cfg.Story.WritingStyle, cfg.Story.WritingPOV, cfg.Story.StorySynopsis)
 	}
 
 	userPrompt := RenderPrompt(cfg.Prompts.OutlineRevision, map[string]string{

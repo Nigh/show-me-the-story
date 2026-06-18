@@ -14,6 +14,7 @@ type ContinueAnalysis struct {
 	CorePrompt    string            `json:"core_prompt"`
 	StorySynopsis string            `json:"story_synopsis"`
 	WritingStyle  string            `json:"writing_style"`
+	WritingPOV    string            `json:"writing_pov"`
 	Chapters      []ContinueChapter `json:"chapters"`
 }
 
@@ -110,6 +111,7 @@ func ImportContinueAction(cfg *Config, state *Progress, analysis *ContinueAnalys
 		ChapterCount:          len(state.Chapters),
 		TargetWordsPerChapter: cfg.Story.TargetWordsPerChapter,
 		WritingStyle:          analysis.WritingStyle,
+		WritingPOV:            analysis.WritingPOV,
 		StorySynopsis:         analysis.StorySynopsis,
 	}
 	state.StoryConfigSnapshot = &snapshot
@@ -119,6 +121,7 @@ func ImportContinueAction(cfg *Config, state *Progress, analysis *ContinueAnalys
 	cfg.Story.Type = analysis.StoryType
 	cfg.Story.Title = analysis.Title
 	cfg.Story.WritingStyle = analysis.WritingStyle
+	cfg.Story.WritingPOV = analysis.WritingPOV
 	cfg.Story.StorySynopsis = analysis.StorySynopsis
 
 	if err := SaveProgress(progressPath, state); err != nil {
@@ -165,6 +168,7 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *APIConfig, cfg *Co
 		"CorePrompt":       state.CorePrompt,
 		"StorySynopsis":    state.StorySynopsis,
 		"WritingStyle":     snapshot.WritingStyle,
+		"WritingPOV":       snapshot.WritingPOV,
 		"ExistingOutline":  existingOutline,
 		"NewChapterCount":  fmt.Sprintf("%d", newChapterCount),
 		"StartNum":         fmt.Sprintf("%d", startNum),
@@ -207,6 +211,8 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *APIConfig, cfg *Co
 	if err := SaveProgress(progressPath, state); err != nil {
 		return fmt.Errorf("保存进度失败: %w", err)
 	}
+
+	RunForeshadowOutlineCheckAndSave(ctx, apiCfg, cfg, state, progressPath, logger)
 
 	logger.Info(fmt.Sprintf("续写大纲生成完成，新增 %d 章，总计 %d 章", len(resp.Chapters), len(state.Chapters)))
 	return nil

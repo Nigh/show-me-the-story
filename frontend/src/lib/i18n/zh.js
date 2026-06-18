@@ -67,6 +67,8 @@ export default {
   // Toasts (translated from server-side Chinese messages)
   'toast.taskDone': '✓ {name}已完成',
   'toast.foreshadowReady': '伏笔建议已生成，共 {n} 条 — 请前往「伏笔」页确认',
+  'toast.foreshadowOutlineConflict': '检测到 {n} 条伏笔与大纲冲突，请查看伏笔页',
+  'toast.writingConflict': '事实核查多次失败，请选择处理方向',
   'toast.settingsReconciled': '设定协调完成：{detail}',
 
   // Task names (used by SSE for "task_start"/"task_end")
@@ -75,6 +77,7 @@ export default {
   'task.chapter_generation': '章节创作',
   'task.chapter_revision': '章节修订',
   'task.foreshadow_suggest': '伏笔建议',
+  'task.foreshadow_outline_check': '伏笔大纲一致性检查',
   'task.continue_analysis': '内容分析',
   'task.continuation_outline': '续写大纲',
   'task.settings_reconciliation': '设定协调',
@@ -114,8 +117,11 @@ export default {
   'config.story.reconcileAsk': '检测到关键设定有变化，且已有已确认章节。是否让 AI 协调新设定与已有内容的一致性？（推荐）',
   'config.story.reconcileStarted': '设定协调任务已启动',
 
-  'config.style.title': '写作风格',
-  'config.style.placeholder': '描述你期望的写作风格...',
+  'config.style.title': '写作风格与视角',
+  'config.style.label': '写作风格',
+  'config.style.placeholder': '描述你期望的写作风格，如：简洁明快、古风典雅、轻松幽默...',
+  'config.pov.label': '叙述视角',
+  'config.pov.placeholder': '如：第三人称全知、第三人称限知（跟随女主）、第一人称女主视角、第一人称交替男女主视角...',
   'config.synopsis.title': '故事梗概',
   'config.synopsis.placeholder': '可包含：故事主线走向、核心冲突、关键转折点...',
 
@@ -215,6 +221,7 @@ export default {
   'outline.analysis.fields.type': '故事类型',
   'outline.analysis.fields.synopsis': '故事梗概',
   'outline.analysis.fields.style': '写作风格',
+  'outline.analysis.fields.pov': '叙述视角',
   'outline.analysis.detected': '识别到 {n} 章',
   'outline.analysis.abandon': '放弃',
   'outline.analysis.confirm': '确认导入',
@@ -264,6 +271,14 @@ export default {
   'writing.btn.smoothTransitions.tip': '逐章检查并修补已确认章节之间的衔接，适合修补旧项目',
   'writing.btn.exportTxt': '📤 导出 TXT',
   'writing.fs.title': '伏笔追踪',
+  'writing.conflict.title': '事实核查冲突 — 需你选择处理方向',
+  'writing.conflict.summary': '分析结论',
+  'writing.conflict.issues': '核查失败项',
+  'writing.conflict.gotoOutline': '去改大纲',
+  'writing.conflict.gotoForeshadows': '去改伏笔',
+  'writing.conflict.retry': '修改后重试',
+  'writing.conflict.forceReview': '保留当前稿进入审核',
+  'writing.conflict.dismiss': '稍后处理',
   'writing.fs.goto': '查看路线图 →',
   'writing.fs.total': '共 {n} 条',
   'writing.fs.active': '活跃 {n}',
@@ -316,6 +331,11 @@ export default {
 
   // ---- Foreshadows page ----
   'fs.title': '伏笔系统',
+  'fs.outlineConflict.title': '伏笔与大纲一致性',
+  'fs.outlineConflict.summary': '检查结论',
+  'fs.outlineConflict.recheck': '重新检查',
+  'fs.outlineConflict.gotoOutline': '去改大纲',
+  'fs.outlineConflict.suggestedFix': '建议',
   'fs.designAi': 'AI 设计伏笔',
   'fs.addManual': '手动添加',
   'fs.viewRoadmap': '查看路线图',

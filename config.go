@@ -42,6 +42,7 @@ type StoryConfig struct {
 	ChapterCount          int    `json:"chapter_count"`
 	TargetWordsPerChapter int    `json:"target_words_per_chapter"`
 	WritingStyle          string `json:"writing_style"`
+	WritingPOV            string `json:"writing_pov"` // 叙述视角，如第一人称女主、第三人称限知等
 	StorySynopsis         string `json:"story_synopsis"`
 }
 
@@ -59,6 +60,8 @@ type PromptsConfig struct {
 	SettingsReconciliation        string `json:"settings_reconciliation"`
 	TransitionSmoothing           string `json:"transition_smoothing"`
 	OutlineConsistencyCheck       string `json:"outline_consistency_check"`
+	ForeshadowOutlineConsistency  string `json:"foreshadow_outline_consistency"`
+	WritingConflictAnalysis       string `json:"writing_conflict_analysis"`
 	BookDiagnosis                 string `json:"book_diagnosis"`
 	BookConsistencyCheck          string `json:"book_consistency_check"`
 	BookRoadmap                   string `json:"book_roadmap"`
@@ -217,6 +220,12 @@ func (p *PromptsConfig) applyDefaults(lang string) {
 	}
 	if p.OutlineConsistencyCheck == "" {
 		p.OutlineConsistencyCheck = defaults.OutlineConsistencyCheck
+	}
+	if p.ForeshadowOutlineConsistency == "" {
+		p.ForeshadowOutlineConsistency = defaults.ForeshadowOutlineConsistency
+	}
+	if p.WritingConflictAnalysis == "" {
+		p.WritingConflictAnalysis = defaults.WritingConflictAnalysis
 	}
 	if p.BookDiagnosis == "" {
 		p.BookDiagnosis = defaults.BookDiagnosis
