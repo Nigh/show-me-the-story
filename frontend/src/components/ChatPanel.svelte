@@ -241,8 +241,15 @@
 <div class="flex flex-col h-full">
   <!-- 会话栏 -->
   <div class="border-b border-base-content/10 px-3 py-2 flex items-center gap-2 shrink-0">
-    <button class="btn btn-ghost btn-xs" on:click={() => showSessionList = !showSessionList}>
-      {showSessionList ? $t('chat.session.collapse') : $t('chat.session.menu')}
+    <button
+      class="btn btn-sm gap-1 border border-base-content/20 hover:border-primary/50 hover:bg-base-300 transition-colors"
+      class:border-primary={showSessionList}
+      class:bg-base-300={showSessionList}
+      on:click={() => showSessionList = !showSessionList}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+      {$t('chat.session.menu')}
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform" class:rotate-180={showSessionList} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
     </button>
     <span class="text-sm text-base-content/50 truncate flex-1">
       {$currentChatSession?.title || $t('chat.session.placeholder')}
@@ -352,14 +359,16 @@
             {:else}
               {#each parseContentSegments(m.content) as seg}
                 {#if seg.type === 'tool_call'}
-                  <div class="chat chat-start">
-                    <div class="chat-bubble bg-base-300 text-xs font-mono max-w-[85%]">
-                      <div class="text-warning font-semibold mb-0.5">🔧 {toolLabel(seg.name)}</div>
-                      {#if fmtArgs(seg.args)}
-                        <div class="text-base-content/50 break-all">{fmtArgs(seg.args)}</div>
-                      {/if}
+                  {#if !m.tool_calls?.length}
+                    <div class="chat chat-start">
+                      <div class="chat-bubble bg-base-300 text-xs font-mono max-w-[85%]">
+                        <div class="text-warning font-semibold mb-0.5">🔧 {toolLabel(seg.name)}</div>
+                        {#if fmtArgs(seg.args)}
+                          <div class="text-base-content/50 break-all">{fmtArgs(seg.args)}</div>
+                        {/if}
+                      </div>
                     </div>
-                  </div>
+                  {/if}
                 {:else if seg.content.trim()}
                   <div class="chat chat-start">
                     <div class="chat-bubble bg-base-300 text-sm max-w-[85%] md-body">{@html renderMarkdown(seg.content.trim())}</div>

@@ -20,6 +20,9 @@ func preferUserValue(userVal, fallback string) string {
 var (
 	chapterMetaStartZH = regexp.MustCompile(`^[（(]?第\s*\d+\s*章`)
 	chapterMetaStartEN = regexp.MustCompile(`(?i)^(?:chapter\s+\d+|part\s+\d+)`)
+	// 匹配 AI 常见的元信息前缀行
+	chapterMetaPreambleZH = regexp.MustCompile(`(?i)^(以下是|下面是|以上是|这是)?(以下为|以下是)?(修订后|修改后|润色后|重写后)?(的)?(完整)?(全文)?(第\s*\d+\s*章)?(正文|全文|完整正文|修订后正文)?[：:。.]?\s*$`)
+	chapterMetaPreambleEN = regexp.MustCompile(`(?i)^(here\s+(?:is|are)|below\s+is|the\s+following\s+is|revised|full)\b.*(?:chapter|text|prose|content|version)`)
 )
 
 // stripChapterMetaProse trims common AI-emitted chapter framing lines from prose boundaries.
@@ -59,12 +62,25 @@ func isChapterMetaLine(line string, lang string) bool {
 		if matched, _ := regexp.MatchString(`(?i)^\(chapter\s+\d+.*\)$`, line); matched {
 			return true
 		}
+		if chapterMetaPreambleEN.MatchString(line) {
+			return true
+		}
 		return false
 	}
 	if chapterMetaStartZH.MatchString(line) {
 		return true
 	}
 	if matched, _ := regexp.MatchString(`^[（(]第\s*\d+\s*章[^）)]*[）)]$`, line); matched {
+		return true
+	}
+	if chapterMetaPreambleZH.MatchString(line) {
+		return true
+	}
+	// 匹配 "以下为修订后的第X章完整正文" 等含章节号的元信息行
+	if matched, _ := regexp.MatchString(`^.{0,10}(修订|修改|润色|重写).{0,5}第\s*\d+\s*章`, line); matched {
+		return true
+	}
+	if matched, _ := regexp.MatchString(`^.{0,10}(完整|全部)?(正文|全文|内容).{0,5}(如下|如下方|如下所示)[：:。.]?\s*$`, line); matched {
 		return true
 	}
 	return false

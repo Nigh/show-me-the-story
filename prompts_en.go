@@ -61,7 +61,7 @@ Writing rules:
 8. Close on a natural cliffhanger or emotional hook. Do not write meta lines like "to be continued".
 9. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
 10. Target length: about {{.TargetWords}} words.
-11. Output ONLY the chapter prose — no chapter title, chapter number, outline recap, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", or "To be continued".`,
+11. Output ONLY the chapter prose — no chapter title, chapter number, outline recap, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", "To be continued", "Here is the revised chapter", "Below is the full text". Do not add any preamble before the prose or any summary after it.`,
 
 	ChapterRevision: `You are the author of this novel. Revise chapter {{.ChapterNum}} "{{.ChapterTitle}}" according to the feedback below.
 
@@ -86,7 +86,7 @@ Revision rules (strict):
 2. The revised chapter must remain consistent with the story-so-far and the unchanged portions (names, timeline, established facts).
 3. Do not alter the chapter's overall plot direction unless the feedback explicitly requests it.
 4. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
-5. Output the full revised chapter prose (including the unchanged portions). No chapter title, chapter number, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", or "To be continued".`,
+5. Output the full revised chapter prose (including the unchanged portions). No chapter title, chapter number, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", "To be continued", "Here is the revised chapter", "Below is the full text". Do not add any preamble before the prose or any summary after it.`,
 
 	ChapterSummary: `You are a precise novel narrative-state analyst. You distil literary text into the narrative elements and psychological beats that downstream chapters need.
 

@@ -17,6 +17,7 @@ type ChatRequest struct {
 	Messages      []Message      `json:"messages"`
 	Stream        bool           `json:"stream,omitempty"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+	MaxTokens     int            `json:"max_tokens,omitempty"`
 }
 
 type streamOptions struct {
@@ -52,6 +53,52 @@ func normalizeURL(base string) string {
 	}
 
 	return base + "/chat/completions"
+}
+
+// FetchModelContextWindow 从 API 的 /models 端点获取指定模型的上下文窗口大小。
+// 成功返回 context_window > 0，失败返回 0（调用方应使用默认值）。
+func FetchModelContextWindow(apiCfg *APIConfig) int {
+	if apiCfg == nil || strings.TrimSpace(apiCfg.BaseURL) == "" || strings.TrimSpace(apiCfg.Model) == "" {
+		return 0
+	}
+	base := strings.TrimSpace(apiCfg.BaseURL)
+	base = strings.TrimSuffix(base, "/")
+	if !strings.HasSuffix(base, "/v1") && !strings.Contains(base, "/v1/") {
+		if !strings.Contains(base, "11434") {
+			base = base + "/v1"
+		}
+	}
+	modelsURL := base + "/models/" + apiCfg.Model
+
+	req, err := http.NewRequest("GET", modelsURL, nil)
+	if err != nil {
+		return 0
+	}
+	if apiCfg.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiCfg.APIKey)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return 0
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0
+	}
+
+	var result struct {
+		ContextWindow int `json:"context_window"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || result.ContextWindow <= 0 {
+		return 0
+	}
+	return result.ContextWindow
 }
 
 func validateAPIConfig(apiCfg *APIConfig) error {
@@ -123,8 +170,9 @@ func callAPIMessagesSync(ctx context.Context, apiCfg *APIConfig, messages []Mess
 	tracker.beginCall(messages)
 
 	reqBody := ChatRequest{
-		Model:    apiCfg.Model,
-		Messages: messages,
+		Model:     apiCfg.Model,
+		Messages:  messages,
+		MaxTokens: apiCfg.MaxTokens,
 	}
 
 	bts, err := json.Marshal(reqBody)
@@ -264,6 +312,7 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Me
 		Messages: messages,
 		Stream:   true,
 		StreamOptions: &streamOptions{IncludeUsage: true},
+		MaxTokens: apiCfg.MaxTokens,
 	}
 
 	bts, err := json.Marshal(reqBody)

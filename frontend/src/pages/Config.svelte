@@ -30,7 +30,7 @@
   $: cfgKey = $apiConfig?.api_key || '';
   $: cfgTimeout = $apiConfig?.http_timeout_seconds || 300;
 
-  let localApiCfg = { base_url: '', model: '', api_key: '', http_timeout_seconds: 300, context_budget_tokens: 900000 };
+  let localApiCfg = { base_url: '', model: '', api_key: '', http_timeout_seconds: 300, max_tokens: 0, context_budget_tokens: 900000 };
   let localStoryCfg = { type: '', title: '', chapter_count: 30, target_words_per_chapter: 2500, writing_style: '', writing_pov: '', story_synopsis: '' };
   let testingApi = false;
 
@@ -374,6 +374,10 @@
           <div>
             <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.timeout')}</label>
             <input type="number" class="input input-sm w-full" bind:value={localApiCfg.http_timeout_seconds} disabled={$taskRunning || testingApi} />
+          </div>
+          <div>
+            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.maxTokens')}</label>
+            <input type="number" class="input input-sm w-full" bind:value={localApiCfg.max_tokens} placeholder="{$t('config.api.maxTokens.placeholder')}" disabled={$taskRunning || testingApi} title={$t('config.api.maxTokens.tooltip')} />
           </div>
           <div class="col-span-2">
             <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.budget')}</label>

@@ -28,7 +28,7 @@ type AgentContext struct {
 	CfgPath      string
 	SessionsDir  string
 	ProjectDir   string
-	StartAsync   func(taskName string, fn func(goCtx context.Context))
+	StartAsync   func(taskName string, fn func(goCtx context.Context) error)
 	toolMsgKey   string
 	toolMsgArgs  []string
 }
@@ -61,8 +61,24 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 		toolResultLabel = "[Tool result]"
 	}
 
-	for _, step := range history {
-		if step.Role == "assistant" {
+	// 找到最后一个 user 步骤的索引（即当前轮用户消息），用于去重。
+	// handlers.go 在 agent loop 启动前就把当前用户消息追加到了 session.Messages，
+	// 所以 history 中最后一条 user 步骤与 userMessage 相同，需跳过避免重复。
+	lastUserIdx := -1
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			lastUserIdx = i
+			break
+		}
+	}
+
+	for i, step := range history {
+		if step.Role == "user" {
+			if i == lastUserIdx {
+				continue
+			}
+			messages = append(messages, Message{Role: "user", Content: step.Content})
+		} else if step.Role == "assistant" {
 			if step.ToolCall != nil {
 				tcJSON, _ := json.Marshal(step.ToolCall)
 				messages = append(messages, Message{Role: "assistant", Content: fmt.Sprintf("<tool_call>\n%s\n</tool_call>", string(tcJSON))})
@@ -81,28 +97,65 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 			return "", history, agentErr(ctx, "agent.task_cancelled")
 		}
 
+		if ctx.Logger != nil {
+			var roleSeq []string
+			for _, m := range messages {
+				roleSeq = append(roleSeq, fmt.Sprintf("%s(%d)", m.Role, len([]rune(m.Content))))
+			}
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d/%d: 消息 %d 条: %v", step+1, maxSteps, len(messages), roleSeq))
+		}
+
 		fullResp := ""
 		err := callAgentAPI(goCtx, ctx.APICfg, messages, func(chunk string) {
 			fullResp += chunk
 		})
 		if err != nil {
+			if ctx.Logger != nil {
+				ctx.Logger.Error(fmt.Sprintf("[Agent] 步骤 %d: API 调用失败: %v", step+1, err))
+			}
 			return "", history, agentErr(ctx, "agent.api_failed", err)
+		}
+
+		if ctx.Logger != nil {
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: API 响应 %d 字符", step+1, len(fullResp)))
 		}
 
 		toolCall := parseToolCall(fullResp)
 
 		if toolCall == nil {
+			if ctx.Logger != nil {
+				preview := fullResp
+				if len([]rune(preview)) > 200 {
+					preview = string([]rune(preview)[:200]) + "..."
+				}
+				ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 未检测到工具调用，作为最终回复返回。内容预览: %s", step+1, preview))
+			}
 			history = append(history, AgentStep{Role: "assistant", Content: fullResp})
 			return fullResp, history, nil
 		}
 
-		history = append(history, AgentStep{Role: "assistant", Content: fullResp, ToolCall: toolCall})
+		if ctx.Logger != nil {
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 检测到工具调用 → %s", step+1, toolCall.Name))
+		}
+
+		// 保存到历史时，剥离 <tool_call> 标签，只保留工具调用结构。
+		// 避免前端同时从 m.tool_calls 和 m.content 渲染导致重复显示。
+		strippedContent := stripToolCallTags(fullResp)
+		history = append(history, AgentStep{Role: "assistant", Content: strippedContent, ToolCall: toolCall})
 
 		if ctx.Logger != nil {
 			ctx.Logger.ToolCallStart("", toolCall.Name, string(toolCall.Arguments))
 		}
 
 		result, resultKey, resultArgs := executeTool(toolCall, tools, ctx)
+
+		if ctx.Logger != nil {
+			resultPreview := result
+			if len([]rune(resultPreview)) > 100 {
+				resultPreview = string([]rune(resultPreview)[:100]) + "..."
+			}
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 工具 %s 执行完成，结果: %s", step+1, toolCall.Name, resultPreview))
+		}
 
 		history = append(history, AgentStep{
 			Role:           "tool",
@@ -126,13 +179,19 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 }
 
 func callAgentAPI(ctx context.Context, apiCfg *APIConfig, messages []Message, onChunk func(string)) error {
-	// 以真实的多轮消息结构调用，保留对话角色信息
-	_, err := CallAPIStreamMessages(ctx, apiCfg, messages, onChunk)
+	// Agent 调用需要足够的输出 token 来生成工具调用 JSON。
+	// 如果用户未设置或设置过低，使用 8192 作为下限。
+	agentCfg := *apiCfg
+	if agentCfg.MaxTokens < 8192 {
+		agentCfg.MaxTokens = 8192
+	}
+
+	_, err := CallAPIStreamMessages(ctx, &agentCfg, messages, onChunk)
 	if err != nil {
 		if ctx.Err() != nil {
 			return err
 		}
-		result, err2 := CallAPIMessages(ctx, apiCfg, messages)
+		result, err2 := CallAPIMessages(ctx, &agentCfg, messages)
 		if err2 != nil {
 			return err
 		}
@@ -212,12 +271,13 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("## 安全规则（最高优先级，违反将造成用户数据永久丢失）\n")
 	sb.WriteString("1. **修改 ≠ 删除**。当用户要求「修改/调整/润色/修正某一章」时，必须且只能使用 revise_chapter 工具（通过 num 参数指定章节号）。绝对禁止通过 delete_chapter / delete_chapters_from / delete_outline / reset_progress 来实现任何形式的「修改」需求。\n")
 	sb.WriteString("2. revise_chapter 支持修订任意已有内容的章节（包括已确认的早期章节），它只改动目标章节本身，不影响其他章节。修改第 6 章的细节就调用 revise_chapter(num=6, feedback=具体意见)，仅此而已。\n")
-	sb.WriteString("3. 删除类工具（delete_chapter、delete_chapters_from、delete_outline、reset_progress）是不可逆的危险操作，仅当用户**明确使用「删除/清空/重置」等字眼**并指明范围时才可使用。使用前必须：先用一条纯文本回复向用户复述将被删除的确切范围（如「将删除第 6~30 章共 25 章内容及其正文文件」），等用户明确回复确认后，才在下一轮调用工具并传入 confirm=true。\n")
+	sb.WriteString("3. 删除类工具（delete_chapter、delete_chapters_from、delete_outline、reset_progress）是不可逆的危险操作，仅当用户**明确使用「删除/清空/重置」等字眼**并指明范围时才可使用。使用前必须：先用一条纯文本回复向用户复述将被删除的确切范围（如「将清除第 6~30 章共 25 章的正文内容（大纲保留）」），等用户明确回复确认后，才在下一轮调用工具并传入 confirm=true。注意：delete_chapter / delete_chapters_from 只清除正文（Content、Summary、markdown 文件），保留大纲，章节状态重置为 pending；delete_outline / reset_progress 才会删除大纲和全部数据。\n")
 	sb.WriteString("4. 任何情况下都不要为了「让操作更彻底」「方便重新生成」而扩大删除范围。宁可少做，不可多删。\n")
 	sb.WriteString("5. 拿不准用户意图时，先提问澄清，不要猜测着执行写操作。\n\n")
 
 	sb.WriteString("## 工具选择指南\n")
-	sb.WriteString("- 修改某章内容细节 → revise_chapter(num, feedback)\n")
+	sb.WriteString("- 修改某章内容细节 → revise_chapter(num, feedback)（AI 重写整章）\n")
+	sb.WriteString("- 局部编辑某章（替换行/替换文本/插入/追加）→ edit_chapter_content(num, operation, ...)（精确编辑，不重写整章，适合微调个别段落或修正错误）\n")
 	sb.WriteString("- 修改某章的大纲（未写作的 pending 章节）→ edit_chapter_outline(num, title, outline)\n")
 	sb.WriteString("- 对整体大纲提修改意见 → revise_outline(feedback)（只会改动未确认章节）\n")
 	sb.WriteString("- 生成下一章正文 → generate_chapter\n")
@@ -225,6 +285,7 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 
 	sb.WriteString("## 重要规则\n")
 	sb.WriteString("- 异步工具（如 generate_outline、generate_chapter 等）会立即返回「任务已启动」，任务结果通过日志推送到界面。你必须先调用工具，收到工具结果后才能告知用户任务已启动。绝对不要在没有调用工具的情况下输出「请等待」「请耐心等待」「请稍等」「正在生成」等文字——如果用户请求的操作你无法完成，直接说明原因即可。\n")
+	sb.WriteString("- 调用工具时，**不要输出任何解释文字**，直接输出 <tool_call> 标签。解释放在收到工具结果之后。\n")
 	sb.WriteString("- 当用户提交故事配置时（如「请更新以下故事配置」），使用 update_project_config 工具。\n")
 	sb.WriteString("- 当用户提交写作风格或故事梗概的更新时（如「请更新写作风格:」或「请更新故事梗概:」），使用 update_project_config 工具保存对应字段。\n")
 	sb.WriteString("- 当用户要求创建/修改角色、世界观等设定时，直接使用对应的工具完成操作。\n")
@@ -232,6 +293,7 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("- 在生成大纲之前，提醒用户检查配置页面中的各项设定（故事类型、写作风格、故事梗概、角色、世界观），确认无误后再进行。\n")
 	sb.WriteString("- 在正式开始写作（确认大纲）之前，再次提醒用户确认所有设定，包括角色详情和世界观条目。\n")
 	sb.WriteString("- 执行写操作前，优先用读工具（read_outline、read_chapter 等）确认目标存在且状态符合预期。\n")
+	sb.WriteString("- 对话中的 [工具结果] 是你之前调用工具的返回值，代表你已经完成的操作。如果你已通过工具修复了某个问题，后续不需要再次检查同一问题。需要验证修复结果时，直接基于工具返回值判断，不要重新读取数据来「确认」。\n")
 	sb.WriteString("- 所有操作完成后，简要告知用户结果，并在末尾建议接下来可以进行的 1-2 个操作（如：检查角色设定、生成大纲、确认章节等），帮助用户推进项目。\n")
 
 	return sb.String()
@@ -299,12 +361,13 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("## Safety rules (highest priority — violating them causes permanent user-data loss)\n")
 	sb.WriteString("1. **Edit != Delete**. When the user asks to \"revise/adjust/polish/fix chapter N\", you MUST use the revise_chapter tool (pass the chapter number via the num argument). NEVER use delete_chapter / delete_chapters_from / delete_outline / reset_progress to satisfy any kind of \"edit\" request.\n")
 	sb.WriteString("2. revise_chapter can revise any chapter that has content (including confirmed early chapters); it only modifies the target chapter and never touches the others. To tweak chapter 6, call revise_chapter(num=6, feedback=specific instructions). That's it.\n")
-	sb.WriteString("3. Delete tools (delete_chapter, delete_chapters_from, delete_outline, reset_progress) are irreversible. Only use them when the user explicitly says \"delete/clear/reset\" and specifies the range. Before using one, first reply in plain text restating the exact range that will be deleted (e.g. \"will delete chapters 6-30, 25 chapters and their text files\") and wait for the user's explicit confirmation; then on the next turn call the tool with confirm=true.\n")
+	sb.WriteString("3. Delete tools (delete_chapter, delete_chapters_from, delete_outline, reset_progress) are irreversible. Only use them when the user explicitly says \"delete/clear/reset\" and specifies the range. Before using one, first reply in plain text restating the exact range that will be affected (e.g. \"will clear content of chapters 6-30, 25 chapters — outlines will be preserved\") and wait for the user's explicit confirmation; then on the next turn call the tool with confirm=true. Note: delete_chapter / delete_chapters_from only clear content (Content, Summary, markdown file), keeping outlines and resetting chapter status to pending; delete_outline / reset_progress delete outlines and all data.\n")
 	sb.WriteString("4. Never widen the delete range \"for cleanliness\" or \"to make regeneration easier\". Prefer doing less to doing too much.\n")
 	sb.WriteString("5. When user intent is ambiguous, ask a clarifying question instead of guessing into a write operation.\n\n")
 
 	sb.WriteString("## Tool-selection guidance\n")
-	sb.WriteString("- Tweak chapter content -> revise_chapter(num, feedback)\n")
+	sb.WriteString("- Tweak chapter content -> revise_chapter(num, feedback) (AI rewrites the whole chapter)\n")
+	sb.WriteString("- Surgical edit of a chapter (replace lines/replace text/insert/append) -> edit_chapter_content(num, operation, ...) (precise edit without full rewrite; ideal for tweaking a paragraph or fixing a typo)\n")
 	sb.WriteString("- Edit a pending chapter's outline -> edit_chapter_outline(num, title, outline)\n")
 	sb.WriteString("- Give feedback on the overall outline -> revise_outline(feedback) (only touches unconfirmed chapters)\n")
 	sb.WriteString("- Generate the next chapter's prose -> generate_chapter\n")
@@ -312,6 +375,7 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 
 	sb.WriteString("## Important rules\n")
 	sb.WriteString("- Async tools (generate_outline, generate_chapter, etc.) return \"task started\" immediately; results are pushed to the UI via logs. You MUST call the tool first and tell the user it has started only after receiving the tool result. Never output \"please wait\", \"hold on\", \"generating now\", or similar text without actually calling a tool — if you cannot fulfil the request, just explain why.\n")
+	sb.WriteString("- When calling a tool, **output NO explanatory text** — emit the <tool_call> tag directly. Explain after you receive the tool result.\n")
 	sb.WriteString("- When the user submits a story-config update (e.g. \"please update the following story config\"), use update_project_config.\n")
 	sb.WriteString("- When the user submits a writing-style or synopsis update (e.g. \"please update writing style:\" or \"please update synopsis:\"), use update_project_config to save the corresponding field.\n")
 	sb.WriteString("- When the user asks you to create/edit characters, worldview, etc., use the corresponding tool directly.\n")
@@ -319,6 +383,7 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("- Before generating the outline, remind the user to check the Config page (story type, writing style, synopsis, characters, worldview) and confirm everything looks right.\n")
 	sb.WriteString("- Before kicking off actual writing (confirming the outline), remind the user once more to confirm all settings, including character details and worldview entries.\n")
 	sb.WriteString("- Before a write operation, prefer reading first (read_outline, read_chapter, etc.) to confirm the target exists and is in the expected state.\n")
+	sb.WriteString("- [Tool result] messages in the conversation are the return values of your own prior tool calls — they represent operations you have already completed. If you have already fixed an issue via a tool call, do NOT re-check the same issue afterward. To verify a fix, rely on the tool's return value directly; do not re-read data to \"confirm\" what you already changed.\n")
 	sb.WriteString("- After any operation, briefly report the result and suggest 1-2 next actions (e.g. check character settings, generate the outline, confirm the chapter) to help the user advance the project.\n")
 
 	return sb.String()
@@ -330,6 +395,28 @@ func buildToolDescriptions(tools []Tool) string {
 		sb.WriteString(fmt.Sprintf("- **%s**: %s\n  参数: %s\n", t.Name, t.Description, t.Parameters))
 	}
 	return sb.String()
+}
+
+// stripToolCallTags removes <tool_call>...</tool_call> blocks from content,
+// leaving only the surrounding text. Prevents duplicate rendering in the
+// chat UI (which renders tool calls from both m.tool_calls and m.content).
+func stripToolCallTags(content string) string {
+	var result strings.Builder
+	remaining := content
+	for {
+		start := strings.Index(remaining, "<tool_call>")
+		if start == -1 {
+			result.WriteString(remaining)
+			break
+		}
+		result.WriteString(remaining[:start])
+		end := strings.Index(remaining[start:], "</tool_call>")
+		if end == -1 {
+			break
+		}
+		remaining = remaining[start+end+len("</tool_call>"):]
+	}
+	return strings.TrimSpace(result.String())
 }
 
 func parseToolCall(content string) *ToolCall {
@@ -345,7 +432,15 @@ func parseToolCall(content string) *ToolCall {
 
 	endIdx := strings.Index(content[idx:], "</tool_call>")
 	if endIdx == -1 {
-		// 标签未闭合，fallback 到全局搜索
+		// 标签未闭合（响应被截断），尝试从标签内解析不完整的 JSON
+		inner := strings.TrimSpace(content[idx+len("<tool_call>"):])
+		if tc := parseToolCallFromJSON(inner); tc != nil {
+			return tc
+		}
+		if tc := parseToolCallJSON(inner); tc != nil {
+			return tc
+		}
+		// 最后 fallback
 		if tc := parseToolCallFunctionName(content); tc != nil {
 			return tc
 		}
@@ -1057,13 +1152,12 @@ func getBuiltinTools() []Tool {
 
 				if hasAccepted && ctx.StartAsync != nil {
 					newSettings := ctx.Config.Story
-					ctx.StartAsync("settings_reconciliation", func(goCtx context.Context) {
+					ctx.StartAsync("settings_reconciliation", func(goCtx context.Context) error {
 						err := ReconcileSettingsAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, newSettings, ctx.ProgressPath, ctx.CfgPath, ctx.Logger)
 						if err != nil {
 							ctx.Logger.Error(fmt.Sprintf("设定协调失败: %v", err))
-							return
 						}
-						ctx.Logger.SuccessKey("log.settings_reconcile_done")
+						return err
 					})
 					return agentMsg(ctx, "agent.config_saved_reconciling"), nil
 				}
@@ -1090,13 +1184,12 @@ func getBuiltinTools() []Tool {
 						return "", agentErr(ctx, "writing_chapter_present")
 					}
 				}
-				ctx.StartAsync("outline_generation", func(goCtx context.Context) {
+				ctx.StartAsync("outline_generation", func(goCtx context.Context) error {
 					err := GenerateOutlineAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("大纲生成失败: %v", err))
-						return
 					}
-					ctx.Logger.SuccessKey("log.outline_generate_done")
+					return err
 				})
 				return agentMsg(ctx, "agent.outline_task_started"), nil
 			},
@@ -1134,13 +1227,12 @@ func getBuiltinTools() []Tool {
 					return "", agentErr(ctx, "task_running_wait")
 				}
 				feedback := params.Feedback
-				ctx.StartAsync("outline_revision", func(goCtx context.Context) {
+				ctx.StartAsync("outline_revision", func(goCtx context.Context) error {
 					err := ReviseOutlineAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, feedback, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("大纲修订失败: %v", err))
-						return
 					}
-					ctx.Logger.SuccessKey("log.outline_revised")
+					return err
 				})
 				return agentMsg(ctx, "agent.outline_revise_started"), nil
 			},
@@ -1206,17 +1298,12 @@ func getBuiltinTools() []Tool {
 					return "", agentErr(ctx, "task_running_wait")
 				}
 				chIdx := ctx.State.CurrentChapterIndex
-				chTitle := ""
-				if chIdx < len(ctx.State.Chapters) {
-					chTitle = ctx.State.Chapters[chIdx].Title
-				}
-				ctx.StartAsync("chapter_generation", func(goCtx context.Context) {
+				ctx.StartAsync("chapter_generation", func(goCtx context.Context) error {
 					err := GenerateChapterAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, ctx.Settings, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("章节创作失败: %v", err))
-						return
 					}
-					ctx.Logger.SuccessKey("log.chapter_write_done", chIdx+1, chTitle)
+					return err
 				})
 				return agentMsg(ctx, "agent.chapter_task_started", chIdx+1), nil
 			},
@@ -1235,6 +1322,40 @@ func getBuiltinTools() []Tool {
 				ch := ctx.State.Chapters[ctx.State.CurrentChapterIndex-1]
 				ctx.Logger.SuccessKey("log.chapter_confirmed", ch.Num)
 				return agentMsg(ctx, "agent.chapter_confirmed", ch.Num, ch.Title), nil
+			},
+		},
+		{
+			Name:        "edit_chapter_content",
+			Description: "对章节正文进行局部编辑（同步），无需重写整章。支持 4 种操作：replace_lines（替换行范围）、replace_text（查找替换文本片段）、insert_after_line（在指定行后插入）、append（末尾追加）。适合微调个别段落、修正错误、追加场景等。",
+			Parameters:  `{"num": 1, "operation": "replace_lines|replace_text|insert_after_line|append", "start_line": 1, "end_line": 5, "old_text": "要查找的原文", "line": 10, "new_text": "新内容"}`,
+			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
+				var req EditChapterContentRequest
+				if err := json.Unmarshal(args, &req); err != nil {
+					return "", agentErr(ctx, "invalid_json", err)
+				}
+				if req.Operation == "" {
+					return "", agentErr(ctx, "chapter_edit_op_required")
+				}
+				if req.NewText == "" && req.Operation != EditOpReplaceText {
+					return "", agentErr(ctx, "chapter_edit_text_required")
+				}
+
+				totalLines, err := EditChapterContent(ctx.State, req)
+				if err != nil {
+					return "", agentErr(ctx, "chapter_edit_failed", err)
+				}
+
+				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
+					return "", agentErr(ctx, "save_progress_failed", err)
+				}
+
+				SaveChapterMarkdown(ctx.ProjectDir, ChapterState{
+					Num:     req.ChapterNum,
+					Title:   ctx.State.Chapters[findChapterIdx(ctx.State, req.ChapterNum)].Title,
+					Content: ctx.State.Chapters[findChapterIdx(ctx.State, req.ChapterNum)].Content,
+				}, "")
+
+				return agentMsg(ctx, "agent.chapter_content_edited", req.ChapterNum, string(req.Operation), totalLines), nil
 			},
 		},
 		{
@@ -1286,7 +1407,7 @@ func getBuiltinTools() []Tool {
 					(target.Status == StatusReview || target.Status == StatusWriting)
 
 				chNum := num
-				ctx.StartAsync("chapter_revision", func(goCtx context.Context) {
+				ctx.StartAsync("chapter_revision", func(goCtx context.Context) error {
 					var err error
 					if isCurrent {
 						err = ReviseChapterAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, feedback, ctx.Settings, ctx.Logger)
@@ -1295,37 +1416,34 @@ func getBuiltinTools() []Tool {
 					}
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("章节修订失败: %v", err))
-						return
 					}
+					return err
 				})
 				return agentMsg(ctx, "agent.chapter_revise_started", num), nil
 			},
 		},
 		{
 			Name:        "delete_chapter",
-			Description: "【危险·不可逆】删除最后一个章节。仅当用户明确要求删除时使用，且必须先向用户确认。",
+			Description: "【危险·不可逆】清除最后一个章节的正文内容（保留大纲）。仅当用户明确要求删除时使用，且必须先向用户确认。",
 			Parameters:  `{"confirm": true}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
-				if msg := requireConfirm(ctx, args, "删除最后一个章节"); msg != "" {
+				if msg := requireConfirm(ctx, args, "清除最后一个章节的正文"); msg != "" {
 					return msg, nil
 				}
 				if len(ctx.State.Chapters) == 0 {
 					return "", agentErr(ctx, "no_chapters_to_delete")
 				}
 				lastIdx := len(ctx.State.Chapters) - 1
-				ch := ctx.State.Chapters[lastIdx]
+				ch := &ctx.State.Chapters[lastIdx]
 				if ch.Status == StatusWriting {
 					return "", agentErr(ctx, "writing_chapter_cannot_delete")
 				}
 				deleteFile(ChapterMarkdownPath(ctx.ProjectDir, ch.Num))
-				ctx.State.Chapters = ctx.State.Chapters[:lastIdx]
-				if ctx.State.CurrentChapterIndex > len(ctx.State.Chapters) {
-					ctx.State.CurrentChapterIndex = len(ctx.State.Chapters)
-				}
-				if len(ctx.State.Chapters) == 0 {
-					ctx.State.Phase = "outline"
-					ctx.State.CurrentChapterIndex = 0
-					ctx.State.StoryConfigSnapshot = nil
+				ch.Content = ""
+				ch.Summary = ""
+				ch.Status = StatusPending
+				if ctx.State.CurrentChapterIndex > lastIdx {
+					ctx.State.CurrentChapterIndex = lastIdx
 				}
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
 					return "", agentErr(ctx, "save_progress_failed", err)
@@ -1336,7 +1454,7 @@ func getBuiltinTools() []Tool {
 		},
 		{
 			Name:        "delete_chapters_from",
-			Description: "【危险·不可逆】从指定章节删除到末尾，将永久删除范围内所有章节的大纲和正文。仅当用户明确要求批量删除时使用，且必须先向用户复述删除范围并获得确认。严禁用于实现「修改某章」的需求——修改请用 revise_chapter。",
+			Description: "【危险·不可逆】从指定章节到末尾清除正文内容（保留大纲）。仅当用户明确要求批量删除正文时使用，且必须先向用户复述删除范围并获得确认。严禁用于实现「修改某章」的需求——修改请用 revise_chapter。",
 			Parameters:  `{"num": 6, "confirm": true}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var params struct {
@@ -1372,16 +1490,14 @@ func getBuiltinTools() []Tool {
 				}
 				deletedCount := len(ctx.State.Chapters) - startIdx
 				for i := startIdx; i < len(ctx.State.Chapters); i++ {
-					deleteFile(ChapterMarkdownPath(ctx.ProjectDir, ctx.State.Chapters[i].Num))
+					ch := &ctx.State.Chapters[i]
+					deleteFile(ChapterMarkdownPath(ctx.ProjectDir, ch.Num))
+					ch.Content = ""
+					ch.Summary = ""
+					ch.Status = StatusPending
 				}
-				ctx.State.Chapters = ctx.State.Chapters[:startIdx]
-				if ctx.State.CurrentChapterIndex > len(ctx.State.Chapters) {
-					ctx.State.CurrentChapterIndex = len(ctx.State.Chapters)
-				}
-				if len(ctx.State.Chapters) == 0 {
-					ctx.State.Phase = "outline"
-					ctx.State.CurrentChapterIndex = 0
-					ctx.State.StoryConfigSnapshot = nil
+				if ctx.State.CurrentChapterIndex >= startIdx {
+					ctx.State.CurrentChapterIndex = startIdx
 				}
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
 					return "", agentErr(ctx, "save_progress_failed", err)
@@ -1581,14 +1697,15 @@ func getBuiltinTools() []Tool {
 				if ctx.StartAsync == nil {
 					return "", agentErr(ctx, "task_running_wait")
 				}
-				ctx.StartAsync("foreshadow_suggest", func(goCtx context.Context) {
+				ctx.StartAsync("foreshadow_suggest", func(goCtx context.Context) error {
 					suggestions, err := SuggestForeshadows(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("伏笔建议生成失败: %v", err))
-						return
+						return err
 					}
 					ctx.Logger.Success(fmt.Sprintf("伏笔建议生成完成，共 %d 条", len(suggestions)))
 					ctx.Logger.ForeshadowSuggestions(suggestions)
+					return nil
 				})
 				return agentMsg(ctx, "agent.foreshadow_suggest_started"), nil
 			},

@@ -644,6 +644,18 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "已删除第 %d 章。",
 		LangEN: "Deleted chapter %d.",
 	},
+	"agent.chapter_content_edited": {
+		LangZH: "第 %d 章正文已编辑（操作: %s，共 %d 行）。",
+		LangEN: "Chapter %d content edited (op: %s, %d lines total).",
+	},
+	"agent.chapter_edit_op_required": {
+		LangZH: "缺少 operation 参数，必须为 replace_lines / replace_text / insert_after_line / append 之一",
+		LangEN: "Missing operation parameter; must be one of: replace_lines / replace_text / insert_after_line / append",
+	},
+	"agent.chapter_edit_text_required": {
+		LangZH: "new_text 不能为空",
+		LangEN: "new_text must not be empty",
+	},
 	"agent.chapters_bulk_delete_confirm": {
 		LangZH: "⚠️ 操作未执行：这将永久删除第 %d 章到末尾共 %d 章的全部内容。请先向用户复述此影响范围并获得明确同意，确认后携带 confirm=true 重新调用。如果用户的本意是修改章节内容，请改用 revise_chapter。",
 		LangEN: "⚠️ Not executed: this would permanently delete chapters %d through end (%d chapters). Restate the impact and get consent, then retry with confirm=true. To edit content, use revise_chapter.",
