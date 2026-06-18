@@ -359,14 +359,16 @@
             {:else}
               {#each parseContentSegments(m.content) as seg}
                 {#if seg.type === 'tool_call'}
-                  <div class="chat chat-start">
-                    <div class="chat-bubble bg-base-300 text-xs font-mono max-w-[85%]">
-                      <div class="text-warning font-semibold mb-0.5">🔧 {toolLabel(seg.name)}</div>
-                      {#if fmtArgs(seg.args)}
-                        <div class="text-base-content/50 break-all">{fmtArgs(seg.args)}</div>
-                      {/if}
+                  {#if !m.tool_calls?.length}
+                    <div class="chat chat-start">
+                      <div class="chat-bubble bg-base-300 text-xs font-mono max-w-[85%]">
+                        <div class="text-warning font-semibold mb-0.5">🔧 {toolLabel(seg.name)}</div>
+                        {#if fmtArgs(seg.args)}
+                          <div class="text-base-content/50 break-all">{fmtArgs(seg.args)}</div>
+                        {/if}
+                      </div>
                     </div>
-                  </div>
+                  {/if}
                 {:else if seg.content.trim()}
                   <div class="chat chat-start">
                     <div class="chat-bubble bg-base-300 text-sm max-w-[85%] md-body">{@html renderMarkdown(seg.content.trim())}</div>
