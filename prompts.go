@@ -30,6 +30,7 @@ var DefaultPromptsZH = PromptsConfig{
 【章节数量】{{.ChapterCount}}
 【每章字数】{{.TargetWords}}
 【写作风格】{{.WritingStyle}}
+【叙述视角】{{.WritingPOV}}
 【故事梗概】{{.StorySynopsis}}
 
 注意：
@@ -37,7 +38,7 @@ var DefaultPromptsZH = PromptsConfig{
 2. 每章大纲应包含具体的情节发展，而非笼统的描述
 3. 每章大纲需明确列出本章出场人物；新人物在其首次出现的章节标注「首次登场」，并确保该人物不会出现在更早的章节中
 4. 初遇、身份揭示等一次性事件只能安排在一个章节中发生，避免重复
-5. core_prompt 应包含指导整部小说写作的核心提示词，包括写作风格等
+5. core_prompt 应包含指导整部小说写作的核心提示词，包括写作风格与叙述视角，并明确要求全书视角统一
 6. 请严格以JSON格式输出，不要添加任何额外文字`,
 
 	ChapterWriting: `请为小说《{{.Title}}》创作第 {{.ChapterNum}} 章的正文。
@@ -56,6 +57,7 @@ var DefaultPromptsZH = PromptsConfig{
 核心大纲：{{.ChapterOutline}}
 
 【写作风格】{{.WritingStyle}}
+【叙述视角】{{.WritingPOV}}
 {{.CharacterContext}}
 {{.WorldviewContext}}
 创作要求：
@@ -67,8 +69,9 @@ var DefaultPromptsZH = PromptsConfig{
 6. 人物对话要符合各自的性格设定，避免所有角色说话腔调雷同
 7. 多用具体的动作、感官细节和对话推进情节，少用抽象的总结性叙述
 8. 章节结尾留出自然的悬念或情绪钩子，但不要写"欲知后事如何"之类的套话
-9. 字数 {{.TargetWords}} 字左右
-10. 只输出小说正文，不要输出标题、章节号、大纲复述或任何解释说明`,
+9. 全书叙述视角必须严格统一：按【叙述视角】要求写作，不得擅自切换人称或视角主体（若设定为交替视角，须按既定规则切换）
+10. 字数 {{.TargetWords}} 字左右
+11. 只输出小说正文：禁止出现章节标题、章节号、大纲复述、作者说明、分隔线，以及「第X章」「（第X章正文）」「本章完」「待续」等任何元信息或说明性文字`,
 
 	ChapterRevision: `你是这部小说的作者，现在需要根据修改意见修订第 {{.ChapterNum}} 章《{{.ChapterTitle}}》。
 
@@ -79,6 +82,7 @@ var DefaultPromptsZH = PromptsConfig{
 {{.HistorySummary}}
 
 【写作风格】{{.WritingStyle}}
+【叙述视角】{{.WritingPOV}}
 {{.CharacterContext}}
 {{.WorldviewContext}}
 【本章原文】
@@ -91,7 +95,8 @@ var DefaultPromptsZH = PromptsConfig{
 1. 这是"修订"而不是"重写"：仅针对修改意见涉及的部分做必要修改，其余内容保持原文不变（包括措辞、段落结构）
 2. 修改后必须与前情提要及未修改部分保持事实一致（人名、时间线、设定）
 3. 不要改变本章的整体情节走向，除非修改意见明确要求
-4. 输出修改后的完整章节正文（包含未修改的部分），不要输出标题、解释、修改说明或差异标记`,
+4. 全书叙述视角必须严格统一：按【叙述视角】要求写作，不得擅自切换人称或视角主体
+5. 输出修改后的完整章节正文（包含未修改的部分）：禁止出现章节标题、章节号、作者说明、分隔线，以及「第X章」「（第X章正文）」「本章完」「待续」等任何元信息或说明性文字`,
 
 	ChapterSummary: `你是一位精准的小说叙事状态分析师，擅长从文学性文本中提取关键叙事要素和人物心理轨迹。你的摘要将作为后续章节创作的前情提要，因此必须保留可延续的状态信息。
 
@@ -248,6 +253,7 @@ var DefaultPromptsZH = PromptsConfig{
   "core_prompt": "核心写作提示词（用于指导后续各章创作的系统级提示）",
   "story_synopsis": "故事梗概",
   "writing_style": "写作风格描述",
+  "writing_pov": "叙述视角描述（如：第三人称限知、第一人称女主视角、第一人称交替男女主视角等）",
   "chapters": [
     {
       "num": 1,
@@ -262,7 +268,7 @@ var DefaultPromptsZH = PromptsConfig{
 1. 从文本中识别章节边界（支持"第X章"、"# Chapter X"、空行分隔等常见格式）
 2. 为每章生成：outline（本章内容概要）和 summary（用于后续创作的结构化摘要）
 3. summary 需保留可延续的状态信息：核心事件、心理轨迹、关键细节、情绪色调
-4. 提取故事元数据：故事类型、写作风格、角色设定、世界观设定
+4. 提取故事元数据：故事类型、写作风格、叙述视角、角色设定、世界观设定
 5. 生成 core_prompt 和 story_synopsis，用于指导后续创作
 
 【已有小说文本】
@@ -277,6 +283,7 @@ var DefaultPromptsZH = PromptsConfig{
 【核心写作提示词】{{.CorePrompt}}
 【故事梗概】{{.StorySynopsis}}
 【写作风格】{{.WritingStyle}}
+【叙述视角】{{.WritingPOV}}
 
 【已有章节】
 {{.ExistingOutline}}
@@ -338,11 +345,91 @@ var DefaultPromptsZH = PromptsConfig{
 或
 {"conflict": true, "issues": ["冲突描述"], "revised_outline": "修订后的本章大纲"}`,
 
+	ForeshadowOutlineConsistency: `你是一位严谨的小说叙事一致性编辑。请检查伏笔计划与完整章节大纲是否一致。
+
+【小说标题】{{.Title}}
+【完整大纲】
+{{.Outline}}
+
+【伏笔列表】
+{{.Foreshadows}}
+
+【已确认章节摘要】
+{{.AcceptedSummaries}}
+
+检查要点（仅限客观可判定的问题）：
+1. 每条未回收、未放弃的伏笔，其 plant_chapter 是否在大纲对应章节中有合理的埋设空间
+2. target_chapter 对应章节的大纲是否包含回收该伏笔的情节空间（不要求逐字对应，但逻辑上应能承接）
+3. 伏笔描述是否与大纲主线结构性矛盾（按现有大纲不可能实现）
+4. plant_chapter / target_chapter 是否超出实际章节总数
+5. 已确认章节摘要是否与伏笔的埋设/回收计划明显冲突
+
+请以JSON格式返回（不要输出任何其他文字）：
+{
+  "has_conflicts": false,
+  "conflicts": [],
+  "summary": "一句话总结"
+}
+或
+{
+  "has_conflicts": true,
+  "conflicts": [
+    {
+      "foreshadow_id": 1,
+      "foreshadow_name": "伏笔简称",
+      "conflict_type": "missing_payoff|weak_payoff|missing_plant|structural|out_of_range",
+      "description": "具体冲突描述",
+      "suggested_fix": "revise_outline|adjust_foreshadow|abandon"
+    }
+  ],
+  "summary": "一句话总结"
+}
+
+无冲突时 has_conflicts 必须为 false 且 conflicts 为空数组。拿不准时视为无冲突。`,
+
+	WritingConflictAnalysis: `你是一位资深小说编辑。章节正文在事实核查环节已连续多次失败，请分析根本原因并给出处理建议。
+
+【本章信息】
+第{{.ChapterNum}}章《{{.ChapterTitle}}》
+
+【本章大纲】
+{{.ChapterOutline}}
+
+【前情提要】
+{{.HistorySummary}}
+
+{{.OutlineConstraints}}{{.Foreshadows}}【事实核查累计失败项】
+{{.FailedIssues}}
+
+【当前章节正文节选（供参考）】
+{{.ContentExcerpt}}
+
+分析任务：
+1. 判断失败是否由大纲、伏笔、前情之间的不可调和矛盾导致
+2. 若可在不改大纲/伏笔的前提下调和：给出一段可直接注入写作 prompt 的「补充约束」（extra_constraints），指导 AI 写出能通过事实核查的正文
+3. 若不可调和：说明原因，并建议用户应修改大纲还是调整伏笔等
+
+返回 JSON（不要输出任何其他文字）：
+{
+  "reconcilable": true,
+  "summary": "一句话总结根因",
+  "root_cause": "foreshadow_outline|outline_history|foreshadow_history|mixed|other",
+  "extra_constraints": "补充约束全文（reconcilable 为 true 时必填）",
+  "suggested_actions": [
+    {"id": "edit_outline", "label": "修改本章大纲", "description": "说明应如何改大纲"},
+    {"id": "adjust_foreshadow", "label": "调整伏笔", "description": "说明应如何改伏笔"},
+    {"id": "force_review", "label": "保留当前稿进入审核", "description": "接受当前版本，人工后续处理"}
+  ]
+}
+
+reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少包含 edit_outline、adjust_foreshadow、force_review 三项。`,
+
 	SettingsReconciliation: `你是一位专业的小说一致性审查编辑。用户修改了故事设定，但已有部分已确认章节。请检查新设定与已有内容的一致性，并自动调整设定使其兼容。
 
 【用户的新设定】
 故事类型：{{.NewType}}
 写作风格：{{.NewWritingStyle}}
+叙述视角：{{.NewWritingPOV}}
 故事梗概：{{.NewStorySynopsis}}
 
 【已有已确认章节摘要】
@@ -352,6 +439,7 @@ var DefaultPromptsZH = PromptsConfig{
 {
   "type": "...",
   "writing_style": "...",
+  "writing_pov": "...",
   "story_synopsis": "...",
   "explanation": "说明做了哪些调整及原因"
 }

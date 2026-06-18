@@ -31,7 +31,7 @@
   $: cfgTimeout = $apiConfig?.http_timeout_seconds || 300;
 
   let localApiCfg = { base_url: '', model: '', api_key: '', http_timeout_seconds: 300, context_budget_tokens: 900000 };
-  let localStoryCfg = { type: '', title: '', chapter_count: 30, target_words_per_chapter: 2500, writing_style: '', story_synopsis: '' };
+  let localStoryCfg = { type: '', title: '', chapter_count: 30, target_words_per_chapter: 2500, writing_style: '', writing_pov: '', story_synopsis: '' };
   let testingApi = false;
 
   let apiCfgSnapshot = '';
@@ -130,6 +130,7 @@
     const settingsChanged =
       story.type !== prev.type ||
       story.writing_style !== prev.writing_style ||
+      story.writing_pov !== prev.writing_pov ||
       story.story_synopsis !== prev.story_synopsis;
 
     try {
@@ -429,11 +430,18 @@
     </div>
   </div>
 
-  <!-- Writing Style -->
+  <!-- Writing Style & POV -->
   <div class="card bg-base-200 shadow-sm">
     <div class="card-body p-4 gap-2">
       <h3 class="card-title text-base">{$t('config.style.title')}</h3>
-      <textarea class="textarea w-full h-40 text-base" bind:value={localStoryCfg.writing_style} placeholder={$t('config.style.placeholder')} disabled={$taskRunning}></textarea>
+      <div>
+        <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.style.label')}</label>
+        <textarea class="textarea w-full h-28 text-base" bind:value={localStoryCfg.writing_style} placeholder={$t('config.style.placeholder')} disabled={$taskRunning}></textarea>
+      </div>
+      <div>
+        <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.pov.label')}</label>
+        <textarea class="textarea w-full h-20 text-base" bind:value={localStoryCfg.writing_pov} placeholder={$t('config.pov.placeholder')} disabled={$taskRunning}></textarea>
+      </div>
       <div class="flex justify-end">
         <button class="btn btn-primary btn-xs" on:click={saveStoryConfig} disabled={$taskRunning}>{$t('common.save')}</button>
       </div>

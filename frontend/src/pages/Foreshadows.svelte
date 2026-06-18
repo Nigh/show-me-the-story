@@ -34,6 +34,20 @@
   );
 
   $: timelineChapters = buildTimeline(foreshadows, totalChapters);
+  $: outlineReport = $progress?.last_foreshadow_outline_report;
+
+  async function runOutlineCheck() {
+    try {
+      await api('POST', '/api/foreshadows/outline-check');
+      addToast($t('fs.outlineConflict.recheck'), 'info');
+    } catch (e) {
+      addToast(e.message, 'error');
+    }
+  }
+
+  function gotoOutline() {
+    window.location.hash = '#outline';
+  }
 
   function buildTimeline(items, chapterCount) {
     const maxFromItems = items.reduce((m, f) => {
@@ -246,6 +260,32 @@
       </p>
     </div>
   </div>
+
+  {#if outlineReport?.has_conflicts}
+    <div class="card bg-warning/10 border border-warning/30 shadow-sm">
+      <div class="card-body py-4 gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="font-semibold text-warning">{$t('fs.outlineConflict.title')}</h3>
+          <div class="flex gap-2">
+            <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={runOutlineCheck}>{$t('fs.outlineConflict.recheck')}</button>
+            <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoOutline}>{$t('fs.outlineConflict.gotoOutline')}</button>
+          </div>
+        </div>
+        {#if outlineReport.summary}
+          <p class="text-sm">{$t('fs.outlineConflict.summary')}：{outlineReport.summary}</p>
+        {/if}
+        <div class="space-y-2 max-h-56 overflow-y-auto text-sm">
+          {#each (outlineReport.conflicts || []) as c}
+            <div class="rounded-lg bg-base-300/50 p-3">
+              <div class="font-medium">#{c.foreshadow_id} {c.foreshadow_name}</div>
+              <div class="text-base-content/70 mt-1">{c.description}</div>
+              <div class="text-xs text-base-content/50 mt-1">{$t('fs.outlineConflict.suggestedFix')}：{c.suggested_fix}</div>
+            </div>
+          {/each}
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <!-- AI 建议确认 -->
   {#if $foreshadowShowSuggestions && $foreshadowSuggestions.length > 0}

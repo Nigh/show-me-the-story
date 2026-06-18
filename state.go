@@ -41,15 +41,48 @@ type Foreshadow struct {
 	Resolution    string            `json:"resolution"`
 }
 
+type ForeshadowOutlineConflict struct {
+	ForeshadowID   int    `json:"foreshadow_id"`
+	ForeshadowName string `json:"foreshadow_name"`
+	ConflictType   string `json:"conflict_type"`
+	Description    string `json:"description"`
+	SuggestedFix   string `json:"suggested_fix"`
+}
+
+type ForeshadowOutlineReport struct {
+	HasConflicts bool                        `json:"has_conflicts"`
+	Conflicts    []ForeshadowOutlineConflict `json:"conflicts"`
+	Summary      string                      `json:"summary"`
+}
+
+type ConflictActionOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+type WritingConflict struct {
+	ChapterIndex     int                    `json:"chapter_index"`
+	ChapterNum       int                    `json:"chapter_num"`
+	ChapterTitle     string                 `json:"chapter_title"`
+	Issues           []string               `json:"issues"`
+	Summary          string                 `json:"summary"`
+	RootCause        string                 `json:"root_cause"`
+	Reconcilable     bool                   `json:"reconcilable"`
+	SuggestedActions []ConflictActionOption `json:"suggested_actions"`
+}
+
 type Progress struct {
-	Phase               string            `json:"phase"` // outline | writing
-	Title               string            `json:"title"`
-	CorePrompt          string            `json:"core_prompt"`
-	StorySynopsis       string            `json:"story_synopsis"`
-	Chapters            []ChapterState    `json:"chapters"`
-	CurrentChapterIndex int               `json:"current_chapter_index"`
-	StoryConfigSnapshot *StoryConfig      `json:"story_config_snapshot,omitempty"`
-	Foreshadows         []Foreshadow      `json:"foreshadows,omitempty"`
+	Phase                       string                   `json:"phase"`
+	Title                       string                   `json:"title"`
+	CorePrompt                  string                   `json:"core_prompt"`
+	StorySynopsis               string                   `json:"story_synopsis"`
+	Chapters                    []ChapterState           `json:"chapters"`
+	CurrentChapterIndex         int                      `json:"current_chapter_index"`
+	StoryConfigSnapshot         *StoryConfig             `json:"story_config_snapshot,omitempty"`
+	Foreshadows                 []Foreshadow             `json:"foreshadows,omitempty"`
+	LastForeshadowOutlineReport *ForeshadowOutlineReport `json:"last_foreshadow_outline_report,omitempty"`
+	PendingWritingConflict      *WritingConflict         `json:"pending_writing_conflict,omitempty"`
 }
 
 const (

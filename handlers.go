@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -560,9 +561,15 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 				if ctx.Err() != nil {
 					h.logger.Warn("章节创作已取消")
 				} else {
-					h.logger.Error(fmt.Sprintf("章节创作失败: %v", err))
+					var wcErr *WritingConflictError
+					if errors.As(err, &wcErr) {
+						h.logger.Warn("章节创作因事实核查冲突暂停，等待你选择处理方向")
+					} else {
+						h.logger.Error(fmt.Sprintf("章节创作失败: %v", err))
+					}
 				}
 				h.logger.TaskEnd("chapter_generation", false)
+				h.broadcastProgress()
 				return
 			}
 
@@ -591,6 +598,93 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.logger.TaskEnd("chapter_generation", true)
+		h.broadcastProgress()
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+func (h *Handlers) GetChapterConflict(w http.ResponseWriter, r *http.Request) {
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"conflict": h.state.PendingWritingConflict,
+	})
+}
+
+func (h *Handlers) PostChapterConflictResolve(w http.ResponseWriter, r *http.Request) {
+	if h.isTaskRunning() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+	if h.state.PendingWritingConflict == nil {
+		h.writeError(w, http.StatusBadRequest, "当前没有待处理的写作冲突")
+		return
+	}
+
+	var body struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Action == "" {
+		h.writeError(w, http.StatusBadRequest, "缺少 action 字段")
+		return
+	}
+
+	conflict := h.state.PendingWritingConflict
+	idx := conflict.ChapterIndex
+	if idx < 0 || idx >= len(h.state.Chapters) {
+		h.writeError(w, http.StatusBadRequest, "冲突章节索引无效")
+		return
+	}
+	ch := &h.state.Chapters[idx]
+
+	switch body.Action {
+	case "force_review":
+		ch.Status = StatusReview
+		h.state.PendingWritingConflict = nil
+		if err := SaveProgress(h.progressPath, h.state); err != nil {
+			h.writeError(w, http.StatusInternalServerError, "保存进度失败: "+err.Error())
+			return
+		}
+		h.logger.Success(fmt.Sprintf("第 %d 章已保留当前稿并进入审核。", ch.Num))
+		h.broadcastProgress()
+		h.writeJSON(w, http.StatusOK, h.state)
+	case "dismiss":
+		h.state.PendingWritingConflict = nil
+		if err := SaveProgress(h.progressPath, h.state); err != nil {
+			h.writeError(w, http.StatusInternalServerError, "保存进度失败: "+err.Error())
+			return
+		}
+		h.broadcastProgress()
+		h.writeJSON(w, http.StatusOK, h.state)
+	case "retry":
+		h.state.PendingWritingConflict = nil
+		if err := SaveProgress(h.progressPath, h.state); err != nil {
+			h.writeError(w, http.StatusInternalServerError, "保存进度失败: "+err.Error())
+			return
+		}
+		h.broadcastProgress()
+		h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "retry"})
+	default:
+		h.writeError(w, http.StatusBadRequest, "不支持的 action: "+body.Action)
+	}
+}
+
+func (h *Handlers) PostForeshadowOutlineCheck(w http.ResponseWriter, r *http.Request) {
+	if !h.tryStartTask() {
+		h.writeError(w, http.StatusConflict, "有任务正在运行，请等待完成")
+		return
+	}
+	if len(h.state.Foreshadows) == 0 {
+		h.endTask()
+		h.writeError(w, http.StatusBadRequest, "当前没有伏笔，无需检查")
+		return
+	}
+
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("foreshadow_outline_check")
+		ctx := h.taskCtx
+		RunForeshadowOutlineCheckAndSave(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
+		h.logger.TaskEnd("foreshadow_outline_check", true)
 		h.broadcastProgress()
 	}()
 
@@ -859,6 +953,8 @@ func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusInternalServerError, "保存进度失败: "+err.Error())
 		return
 	}
+
+	go RunForeshadowOutlineCheckAndSave(context.Background(), h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
 
 	h.logger.Success(fmt.Sprintf("第 %d 章大纲已更新。", num))
 	h.writeJSON(w, http.StatusOK, h.state)
@@ -1248,6 +1344,7 @@ func (h *Handlers) PostForeshadowsConfirm(w http.ResponseWriter, r *http.Request
 
 	h.persistForeshadowRoadmap()
 	h.broadcastProgress()
+	go RunForeshadowOutlineCheckAndSave(context.Background(), h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
 	h.writeJSON(w, http.StatusOK, h.state.Foreshadows)
 }
 

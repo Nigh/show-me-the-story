@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -14,6 +15,81 @@ func preferUserValue(userVal, fallback string) string {
 		return userVal
 	}
 	return fallback
+}
+
+var (
+	chapterMetaStartZH = regexp.MustCompile(`^[（(]?第\s*\d+\s*章`)
+	chapterMetaStartEN = regexp.MustCompile(`(?i)^(?:chapter\s+\d+|part\s+\d+)`)
+)
+
+// stripChapterMetaProse trims common AI-emitted chapter framing lines from prose boundaries.
+// ponytail: line-based heuristics only; won't catch inline meta. Upgrade: model instructions + structured output.
+func stripChapterMetaProse(content string, lang string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for len(lines) > 0 && isChapterMetaLine(strings.TrimSpace(lines[0]), lang) {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && isChapterMetaLine(strings.TrimSpace(lines[len(lines)-1]), lang) {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func isChapterMetaLine(line string, lang string) bool {
+	if line == "" {
+		return false
+	}
+	exact := []string{
+		"本章完", "本章终", "待续", "未完待续", "（完）", "(完)", "完", "——", "—", "***", "---", "***",
+		"End of chapter", "To be continued", "The End",
+	}
+	for _, s := range exact {
+		if line == s || strings.HasPrefix(line, s+".") || strings.HasPrefix(line, s+"。") {
+			return true
+		}
+	}
+	if NormalizeLanguage(lang) == LangEN {
+		if chapterMetaStartEN.MatchString(line) {
+			return true
+		}
+		if matched, _ := regexp.MatchString(`(?i)^\(chapter\s+\d+.*\)$`, line); matched {
+			return true
+		}
+		return false
+	}
+	if chapterMetaStartZH.MatchString(line) {
+		return true
+	}
+	if matched, _ := regexp.MatchString(`^[（(]第\s*\d+\s*章[^）)]*[）)]$`, line); matched {
+		return true
+	}
+	return false
+}
+
+func formatWritingPOVBlock(pov, lang string) string {
+	pov = strings.TrimSpace(pov)
+	if pov == "" {
+		return ""
+	}
+	if NormalizeLanguage(lang) == LangEN {
+		return "[Narrative POV] " + pov
+	}
+	return "【叙述视角】" + pov
+}
+
+func formatExtraWritingConstraintsBlock(constraints, lang string) string {
+	constraints = strings.TrimSpace(constraints)
+	if constraints == "" {
+		return ""
+	}
+	if NormalizeLanguage(lang) == LangEN {
+		return "[Extra writing constraints (fact-check reconciliation)]\n" + constraints
+	}
+	return "【补充写作约束（事实核查冲突调和）】\n" + constraints
 }
 
 func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, progressPath string, settings *ProjectSettings, logger *LogBroadcaster) error {
@@ -59,13 +135,20 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 		}
 	}
 
+	if len(state.Foreshadows) > 0 {
+		RunForeshadowOutlineCheckAndSave(ctx, apiCfg, cfg, state, progressPath, logger)
+	}
+
 	maxFactCheckRetries := 3
+	extraConstraints := ""
+	var accumulatedIssues []string
+
 	for attempt := 0; attempt <= maxFactCheckRetries; attempt++ {
 		if ctx.Err() != nil {
 			return fmt.Errorf("任务已取消")
 		}
 		logger.StepInfo(2, 5, "正在构思并撰写正文...")
-		content := generateChapterContentStreamWithRetryLog(ctx, apiCfg, cfg, state, i, settings, logger)
+		content := generateChapterContentStreamWithRetryLog(ctx, apiCfg, cfg, state, i, settings, extraConstraints, logger)
 		if content == "" {
 			return fmt.Errorf("正文生成失败或被取消")
 		}
@@ -86,17 +169,58 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 
 		failed, issues := parseFactCheckResult(factCheckResult)
 		if failed {
+			accumulatedIssues = mergeUniqueIssues(accumulatedIssues, splitFactCheckIssues(issues))
 			if attempt < maxFactCheckRetries {
 				logger.Warn(fmt.Sprintf("[事实核查] 发现问题，正在重新生成第 %d 章（第 %d 次重试）...", ch.Num, attempt+1))
 				logger.Warn(fmt.Sprintf("核查详情: %s", issues))
 				continue
 			}
-			logger.Warn("[事实核查] 已达最大重试次数，保留当前版本。")
-		} else {
-			logger.Info("[事实核查] 通过 ✓")
+
+			logger.Warn("[事实核查] 已达最大重试次数，正在分析冲突根因...")
+			analysis, err := analyzeWritingConflict(ctx, apiCfg, cfg, state, i, content, accumulatedIssues, logger)
+			if err != nil {
+				logger.Warn(fmt.Sprintf("冲突分析失败: %v，保留当前版本", err))
+				break
+			}
+
+			if analysis.Reconcilable && strings.TrimSpace(analysis.ExtraConstraints) != "" {
+				logger.Info("检测到可调和冲突，正在按补充约束进行最后一次尝试...")
+				extraConstraints = strings.TrimSpace(analysis.ExtraConstraints)
+				content = generateChapterContentStreamWithRetryLog(ctx, apiCfg, cfg, state, i, settings, extraConstraints, logger)
+				if content == "" {
+					return fmt.Errorf("正文生成失败或被取消")
+				}
+				ch.Content = content
+				summary = generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, content, logger)
+				if summary == "" {
+					return fmt.Errorf("摘要提炼失败或被取消")
+				}
+				ch.Summary = summary
+				factCheckResult = generateChapterFactCheckWithRetryLog(ctx, apiCfg, cfg, state, i, content, historySummary, logger)
+				failed, issues = parseFactCheckResult(factCheckResult)
+				if failed {
+					accumulatedIssues = mergeUniqueIssues(accumulatedIssues, splitFactCheckIssues(issues))
+				} else {
+					logger.Info("[事实核查] 补充约束尝试通过 ✓")
+					break
+				}
+			}
+
+			conflict := buildWritingConflict(state, i, accumulatedIssues, analysis)
+			lang := cfg.Language
+			conflict.SuggestedActions = ensureConflictActions(conflict.SuggestedActions, lang)
+			state.PendingWritingConflict = conflict
+			if err := SaveProgress(progressPath, state); err != nil {
+				return err
+			}
+			logger.WritingConflict(conflict)
+			return &WritingConflictError{Conflict: conflict}
 		}
+		logger.Info("[事实核查] 通过 ✓")
 		break
 	}
+
+	state.PendingWritingConflict = nil
 
 	if len(state.Foreshadows) > 0 {
 		logger.StepInfo(5, 5, "正在更新伏笔状态...")
@@ -337,7 +461,7 @@ func ConfirmChapterAction(state *Progress, progressPath string) error {
 	return SaveProgress(progressPath, state)
 }
 
-func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) (string, error) {
+func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, extraWritingConstraints string, logger *LogBroadcaster) (string, error) {
 	ch := state.Chapters[idx]
 	lang := cfg.Language
 
@@ -364,6 +488,7 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 		"ChapterTitle":       ch.Title,
 		"ChapterOutline":     ch.Outline,
 		"WritingStyle":       cfg.Story.WritingStyle,
+		"WritingPOV":         cfg.Story.WritingPOV,
 		"CharacterContext":   characterContext,
 		"WorldviewContext":   worldviewContext,
 		"TargetWords":        fmt.Sprintf("%d", snapshot.TargetWordsPerChapter),
@@ -372,6 +497,10 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 	})
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.OutlineConstraints}}", outlineConstraints)
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.Foreshadows}}", foreshadowContext)
+	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
+	if block := formatExtraWritingConstraintsBlock(extraWritingConstraints, lang); block != "" {
+		userPrompt += "\n\n" + block
+	}
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
@@ -384,16 +513,20 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 
 	// 通知前端清空流式缓冲（事实核查重试/自动连写时避免内容叠加）
 	logger.StreamStart(idx)
-	return CallAPIStream(ctx, apiCfg, systemPrompt, userPrompt, onChunk)
+	content, err := CallAPIStream(ctx, apiCfg, systemPrompt, userPrompt, onChunk)
+	if err != nil {
+		return "", err
+	}
+	return stripChapterMetaProse(content, lang), nil
 }
 
-func generateChapterContentStreamWithRetryLog(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, logger *LogBroadcaster) string {
+func generateChapterContentStreamWithRetryLog(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, extraWritingConstraints string, logger *LogBroadcaster) string {
 	retryCount := 0
 	for {
 		if ctx.Err() != nil {
 			return ""
 		}
-		content, err := generateChapterContentStream(ctx, apiCfg, cfg, state, idx, settings, logger)
+		content, err := generateChapterContentStream(ctx, apiCfg, cfg, state, idx, settings, extraWritingConstraints, logger)
 		if err == nil && content != "" {
 			return content
 		}
@@ -522,11 +655,13 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Con
 		"CorePrompt":       state.CorePrompt,
 		"HistorySummary":   historySummary,
 		"WritingStyle":     cfg.Story.WritingStyle,
+		"WritingPOV":       cfg.Story.WritingPOV,
 		"CharacterContext": characterContext,
 		"WorldviewContext": worldviewContext,
 		"OriginalContent":  ch.Content,
 		"UserFeedback":     userFeedback,
 	})
+	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
@@ -539,7 +674,11 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Con
 	}
 
 	logger.StreamStart(chapterIdx)
-	return CallAPIStream(ctx, apiCfg, systemPrompt, userPrompt, onChunk)
+	content, err := CallAPIStream(ctx, apiCfg, systemPrompt, userPrompt, onChunk)
+	if err != nil {
+		return "", err
+	}
+	return stripChapterMetaProse(content, lang), nil
 }
 
 func reviseSubsequentOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, currentIdx int, userFeedback string) error {
@@ -757,7 +896,7 @@ func PolishChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 
 	var userPrompt string
 	if NormalizeLanguage(cfg.Language) == LangEN {
-		userPrompt = fmt.Sprintf(`Polish the chapter below according to the rules. Output the full revised chapter prose.
+		userPrompt = fmt.Sprintf(`Polish the chapter below according to the rules. Output the full revised chapter prose. Do not add chapter titles, numbers, "End of chapter", or any other meta or explanatory text.
 
 ## Polish rules
 
@@ -767,7 +906,7 @@ func PolishChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 
 %s`, skillsContent, ch.Content)
 	} else {
-		userPrompt = fmt.Sprintf(`请根据以下规则对下面的章节正文进行去AI味处理，输出修改后的完整正文。
+		userPrompt = fmt.Sprintf(`请根据以下规则对下面的章节正文进行去AI味处理，输出修改后的完整正文。不要添加章节标题、章节号、「本章完」等任何元信息或说明性文字。
 
 ## 润色规则
 
@@ -790,7 +929,7 @@ func PolishChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 		return fmt.Errorf("润色失败: %w", err)
 	}
 
-	ch.Content = result
+	ch.Content = stripChapterMetaProse(result, cfg.Language)
 	ch.Status = StatusReview
 
 	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)

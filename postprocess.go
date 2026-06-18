@@ -164,6 +164,9 @@ func buildAllSettingsText(cfg *Config, settings *ProjectSettings, state *Progres
 	sb.WriteString(fmt.Sprintf("标题：%s\n", title))
 	sb.WriteString(fmt.Sprintf("类型：%s\n", cfg.Story.Type))
 	sb.WriteString(fmt.Sprintf("写作风格：%s\n", cfg.Story.WritingStyle))
+	if cfg.Story.WritingPOV != "" {
+		sb.WriteString(fmt.Sprintf("叙述视角：%s\n", cfg.Story.WritingPOV))
+	}
 	synopsis := preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
 	sb.WriteString(fmt.Sprintf("梗概：%s\n", synopsis))
 	if state.CorePrompt != "" {

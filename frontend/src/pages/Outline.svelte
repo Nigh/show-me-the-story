@@ -167,6 +167,10 @@
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.style')}</span>
             <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={$continueAnalysis.writing_style} disabled={$taskRunning}></textarea>
           </div>
+          <div>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.pov')}</span>
+            <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={$continueAnalysis.writing_pov} disabled={$taskRunning}></textarea>
+          </div>
           <div class="text-xs text-base-content/50">{$t('outline.analysis.detected', { n: $continueAnalysis.chapters?.length || 0 })}</div>
           <div class="max-h-48 overflow-y-auto space-y-1">
             {#each ($continueAnalysis.chapters || []) as ch}

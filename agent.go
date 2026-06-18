@@ -997,7 +997,7 @@ func getBuiltinTools() []Tool {
 		{
 			Name:        "update_project_config",
 			Description: "更新故事配置。如果存在已确认章节，会自动触发设定协调。",
-			Parameters:  `{"type": "故事类型", "title": "标题", "chapter_count": 30, "target_words_per_chapter": 2500, "writing_style": "写作风格", "story_synopsis": "故事梗概"}`,
+			Parameters:  `{"type": "故事类型", "title": "标题", "chapter_count": 30, "target_words_per_chapter": 2500, "writing_style": "写作风格", "writing_pov": "叙述视角", "story_synopsis": "故事梗概"}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var params struct {
 					Type                  string `json:"type"`
@@ -1005,6 +1005,7 @@ func getBuiltinTools() []Tool {
 					ChapterCount          int    `json:"chapter_count"`
 					TargetWordsPerChapter int    `json:"target_words_per_chapter"`
 					WritingStyle          string `json:"writing_style"`
+					WritingPOV            string `json:"writing_pov"`
 					StorySynopsis         string `json:"story_synopsis"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
@@ -1025,6 +1026,9 @@ func getBuiltinTools() []Tool {
 				}
 				if params.WritingStyle != "" {
 					ctx.Config.Story.WritingStyle = params.WritingStyle
+				}
+				if params.WritingPOV != "" {
+					ctx.Config.Story.WritingPOV = params.WritingPOV
 				}
 				if params.StorySynopsis != "" {
 					ctx.Config.Story.StorySynopsis = params.StorySynopsis

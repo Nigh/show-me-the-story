@@ -20,6 +20,7 @@ Return JSON in exactly this structure:
 [Chapter count] {{.ChapterCount}}
 [Words per chapter] {{.TargetWords}}
 [Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
 [Synopsis] {{.StorySynopsis}}
 
 Rules:
@@ -27,7 +28,7 @@ Rules:
 2. Each chapter outline must describe concrete plot beats, not vague summaries.
 3. Each chapter outline must list the characters who appear; mark each new character with "first appearance" in the chapter they debut, and ensure they do not appear in any earlier chapter.
 4. One-time events such as first meetings and identity reveals must happen in exactly one chapter — never repeat them.
-5. core_prompt should bundle the directives that guide the whole novel, including writing style.
+5. core_prompt should bundle the directives that guide the whole novel, including writing style and narrative POV, and must require a consistent POV throughout.
 6. Output strict JSON only. No extra prose.`,
 
 	ChapterWriting: `Write the prose for chapter {{.ChapterNum}} of the novel "{{.Title}}".
@@ -46,6 +47,7 @@ Chapter title: "{{.ChapterTitle}}"
 Outline: {{.ChapterOutline}}
 
 [Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
 {{.CharacterContext}}
 {{.WorldviewContext}}
 Writing rules:
@@ -57,8 +59,9 @@ Writing rules:
 6. Each character's dialogue must match their established voice; do not let everyone sound alike.
 7. Drive the plot with concrete action, sensory detail, and dialogue. Avoid abstract, summarising narration.
 8. Close on a natural cliffhanger or emotional hook. Do not write meta lines like "to be continued".
-9. Target length: about {{.TargetWords}} words.
-10. Output ONLY the chapter prose — no title, no chapter number, no outline recap, no explanations.`,
+9. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
+10. Target length: about {{.TargetWords}} words.
+11. Output ONLY the chapter prose — no chapter title, chapter number, outline recap, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", or "To be continued".`,
 
 	ChapterRevision: `You are the author of this novel. Revise chapter {{.ChapterNum}} "{{.ChapterTitle}}" according to the feedback below.
 
@@ -69,6 +72,7 @@ Writing rules:
 {{.HistorySummary}}
 
 [Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
 {{.CharacterContext}}
 {{.WorldviewContext}}
 [Current chapter text]
@@ -81,7 +85,8 @@ Revision rules (strict):
 1. This is a "revision", not a "rewrite". Change only what the feedback requires; leave everything else exactly as written (wording, paragraph structure).
 2. The revised chapter must remain consistent with the story-so-far and the unchanged portions (names, timeline, established facts).
 3. Do not alter the chapter's overall plot direction unless the feedback explicitly requests it.
-4. Output the full revised chapter prose (including the unchanged portions). No title, explanation, change notes, or diff markers.`,
+4. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
+5. Output the full revised chapter prose (including the unchanged portions). No chapter title, chapter number, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", or "To be continued".`,
 
 	ChapterSummary: `You are a precise novel narrative-state analyst. You distil literary text into the narrative elements and psychological beats that downstream chapters need.
 
@@ -238,6 +243,7 @@ Return JSON in this structure:
   "core_prompt": "Core writing prompt (system-level guideline for downstream chapters)",
   "story_synopsis": "Synopsis",
   "writing_style": "Writing-style description",
+  "writing_pov": "Narrative POV (e.g. third-person limited, first-person heroine, alternating first-person leads)",
   "chapters": [
     {
       "num": 1,
@@ -252,7 +258,7 @@ Requirements:
 1. Detect chapter boundaries (common formats: "Chapter X", "# Chapter X", blank-line separators, etc.).
 2. For each chapter produce: outline (what happens) and summary (structured story-so-far for downstream chapters).
 3. summary should retain continuation-relevant state: core events, psychological arc, key details, emotional palette.
-4. Extract story metadata: genre, writing style, character settings, worldview.
+4. Extract story metadata: genre, writing style, narrative POV, character settings, worldview.
 5. Generate core_prompt and story_synopsis to guide downstream writing.
 
 [Existing novel text]
@@ -267,6 +273,7 @@ Output strict JSON only.`,
 [Core writing prompt] {{.CorePrompt}}
 [Synopsis] {{.StorySynopsis}}
 [Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
 
 [Existing chapters]
 {{.ExistingOutline}}
@@ -328,11 +335,91 @@ Return JSON only (no other text):
 or
 {"conflict": true, "issues": ["conflict description"], "revised_outline": "revised outline for this chapter"}`,
 
+	ForeshadowOutlineConsistency: `You are a strict narrative-consistency editor. Check whether the foreshadow plan matches the full chapter outline.
+
+[Title] {{.Title}}
+[Full outline]
+{{.Outline}}
+
+[Foreshadow list]
+{{.Foreshadows}}
+
+[Summaries of confirmed chapters]
+{{.AcceptedSummaries}}
+
+Checklist (objective issues only):
+1. Each active foreshadow (not resolved/abandoned) has reasonable planting space in its plant_chapter outline.
+2. The target_chapter outline has plot space to pay off that foreshadow (logical fit, not word-for-word match).
+3. Foreshadow description structurally contradicts the outline (cannot be achieved on this story path).
+4. plant_chapter / target_chapter exceed the actual chapter count.
+5. Confirmed-chapter summaries clearly contradict the foreshadow plan.
+
+Return JSON only (no other text):
+{
+  "has_conflicts": false,
+  "conflicts": [],
+  "summary": "one-sentence summary"
+}
+or
+{
+  "has_conflicts": true,
+  "conflicts": [
+    {
+      "foreshadow_id": 1,
+      "foreshadow_name": "short name",
+      "conflict_type": "missing_payoff|weak_payoff|missing_plant|structural|out_of_range",
+      "description": "specific conflict",
+      "suggested_fix": "revise_outline|adjust_foreshadow|abandon"
+    }
+  ],
+  "summary": "one-sentence summary"
+}
+
+When unsure, treat as no conflict.`,
+
+	WritingConflictAnalysis: `You are a senior novel editor. Fact-checking has failed repeatedly for this chapter. Diagnose the root cause and recommend next steps.
+
+[Chapter]
+Chapter {{.ChapterNum}} "{{.ChapterTitle}}"
+
+[Chapter outline]
+{{.ChapterOutline}}
+
+[Story-so-far]
+{{.HistorySummary}}
+
+{{.OutlineConstraints}}{{.Foreshadows}}[Accumulated fact-check failures]
+{{.FailedIssues}}
+
+[Current draft excerpt (reference)]
+{{.ContentExcerpt}}
+
+Tasks:
+1. Decide whether failures come from irreconcilable contradictions among outline, foreshadows, and prior story.
+2. If reconcilable without changing outline/foreshadows: provide extra_constraints text to inject into the writing prompt so the next draft can pass fact-check.
+3. If not reconcilable: explain why and whether the user should edit the outline or adjust foreshadows.
+
+Return JSON only (no other text):
+{
+  "reconcilable": true,
+  "summary": "one-sentence root cause",
+  "root_cause": "foreshadow_outline|outline_history|foreshadow_history|mixed|other",
+  "extra_constraints": "full constraint text (required when reconcilable is true)",
+  "suggested_actions": [
+    {"id": "edit_outline", "label": "Edit chapter outline", "description": "..."},
+    {"id": "adjust_foreshadow", "label": "Adjust foreshadows", "description": "..."},
+    {"id": "force_review", "label": "Keep draft for manual review", "description": "..."}
+  ]
+}
+
+When reconcilable is false, leave extra_constraints empty. suggested_actions must include edit_outline, adjust_foreshadow, and force_review.`,
+
 	SettingsReconciliation: `You are a professional novel-consistency editor. The user changed the story settings, but some chapters are already confirmed. Check whether the new settings are consistent with the existing chapters, and auto-adjust the settings to remain compatible.
 
 [User's new settings]
 Story type: {{.NewType}}
 Writing style: {{.NewWritingStyle}}
+Narrative POV: {{.NewWritingPOV}}
 Synopsis: {{.NewStorySynopsis}}
 
 [Summaries of existing confirmed chapters]
@@ -342,6 +429,7 @@ Return the adjusted settings as JSON:
 {
   "type": "...",
   "writing_style": "...",
+  "writing_pov": "...",
   "story_synopsis": "...",
   "explanation": "Describe what was adjusted and why"
 }
