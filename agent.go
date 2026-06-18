@@ -118,7 +118,10 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 检测到工具调用 → %s", step+1, toolCall.Name))
 		}
 
-		history = append(history, AgentStep{Role: "assistant", Content: fullResp, ToolCall: toolCall})
+		// 保存到历史时，剥离 <tool_call> 标签，只保留工具调用结构。
+		// 避免前端同时从 m.tool_calls 和 m.content 渲染导致重复显示。
+		strippedContent := stripToolCallTags(fullResp)
+		history = append(history, AgentStep{Role: "assistant", Content: strippedContent, ToolCall: toolCall})
 
 		if ctx.Logger != nil {
 			ctx.Logger.ToolCallStart("", toolCall.Name, string(toolCall.Arguments))
@@ -360,6 +363,28 @@ func buildToolDescriptions(tools []Tool) string {
 		sb.WriteString(fmt.Sprintf("- **%s**: %s\n  参数: %s\n", t.Name, t.Description, t.Parameters))
 	}
 	return sb.String()
+}
+
+// stripToolCallTags removes <tool_call>...</tool_call> blocks from content,
+// leaving only the surrounding text. Prevents duplicate rendering in the
+// chat UI (which renders tool calls from both m.tool_calls and m.content).
+func stripToolCallTags(content string) string {
+	var result strings.Builder
+	remaining := content
+	for {
+		start := strings.Index(remaining, "<tool_call>")
+		if start == -1 {
+			result.WriteString(remaining)
+			break
+		}
+		result.WriteString(remaining[:start])
+		end := strings.Index(remaining[start:], "</tool_call>")
+		if end == -1 {
+			break
+		}
+		remaining = remaining[start+end+len("</tool_call>"):]
+	}
+	return strings.TrimSpace(result.String())
 }
 
 func parseToolCall(content string) *ToolCall {
