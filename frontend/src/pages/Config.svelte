@@ -364,27 +364,27 @@
         <h3 class="card-title text-base">{$t('config.api.title')}</h3>
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
           <div class="col-span-2">
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.baseUrl')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.baseUrl')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localApiCfg.base_url} placeholder="https://api.example.com/v1/" disabled={$taskRunning || testingApi} />
           </div>
           <div>
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.model')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.model')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localApiCfg.model} placeholder="gpt-4" disabled={$taskRunning || testingApi} />
           </div>
           <div>
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.timeout')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.timeout')}</span>
             <input type="number" class="input input-sm w-full" bind:value={localApiCfg.http_timeout_seconds} disabled={$taskRunning || testingApi} />
           </div>
           <div>
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.maxTokens')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.maxTokens')}</span>
             <input type="number" class="input input-sm w-full" bind:value={localApiCfg.max_tokens} placeholder="{$t('config.api.maxTokens.placeholder')}" disabled={$taskRunning || testingApi} title={$t('config.api.maxTokens.tooltip')} />
           </div>
           <div class="col-span-2">
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.budget')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.budget')}</span>
             <input type="number" class="input input-sm w-full" bind:value={localApiCfg.context_budget_tokens} placeholder="900000" disabled={$taskRunning || testingApi} title={$t('config.api.budget.tooltip')} />
           </div>
           <div class="col-span-2">
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.key')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.key')}</span>
             <input type="password" class="input input-sm w-full" bind:value={localApiCfg.api_key} placeholder="sk-..." disabled={$taskRunning || testingApi} />
           </div>
         </div>
@@ -411,19 +411,19 @@
         {/if}
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
           <div>
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.type')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.type')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localStoryCfg.type} placeholder={$t('config.story.type.placeholder')} disabled={$taskRunning} />
           </div>
           <div>
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.titleField')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.titleField')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localStoryCfg.title} placeholder={$t('config.story.title.placeholder')} disabled={$taskRunning} />
           </div>
           <div>
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.chapterCount')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.chapterCount')}</span>
             <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.chapter_count} disabled={$taskRunning} />
           </div>
           <div>
-            <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.targetWords')}</label>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.targetWords')}</span>
             <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.target_words_per_chapter} disabled={$taskRunning} />
           </div>
         </div>
@@ -439,11 +439,11 @@
     <div class="card-body p-4 gap-2">
       <h3 class="card-title text-base">{$t('config.style.title')}</h3>
       <div>
-        <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.style.label')}</label>
+        <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.style.label')}</span>
         <textarea class="textarea w-full h-28 text-base" bind:value={localStoryCfg.writing_style} placeholder={$t('config.style.placeholder')} disabled={$taskRunning}></textarea>
       </div>
       <div>
-        <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.pov.label')}</label>
+        <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.pov.label')}</span>
         <textarea class="textarea w-full h-20 text-base" bind:value={localStoryCfg.writing_pov} placeholder={$t('config.pov.placeholder')} disabled={$taskRunning}></textarea>
       </div>
       <div class="flex justify-end">
@@ -497,37 +497,37 @@
           <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
             <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.name')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.name')}</span>
                 <input type="text" class="input input-sm w-full" bind:value={charName} disabled={$taskRunning} />
               </div>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.age')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.age')}</span>
                 <input type="text" class="input input-sm w-full" bind:value={charAge} disabled={$taskRunning} />
               </div>
             </div>
             <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.appearance')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.appearance')}</span>
                 <textarea class="textarea textarea-sm w-full h-14 text-sm" bind:value={charAppearance} disabled={$taskRunning}></textarea>
               </div>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.personality')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.personality')}</span>
                 <textarea class="textarea textarea-sm w-full h-14 text-sm" bind:value={charPersonality} disabled={$taskRunning}></textarea>
               </div>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.background')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.background')}</span>
                 <textarea class="textarea textarea-sm w-full h-14 text-sm" bind:value={charBackground} disabled={$taskRunning}></textarea>
               </div>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.motivation')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.motivation')}</span>
                 <textarea class="textarea textarea-sm w-full h-14 text-sm" bind:value={charMotivation} disabled={$taskRunning}></textarea>
               </div>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.abilities')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.abilities')}</span>
                 <textarea class="textarea textarea-sm w-full h-14 text-sm" bind:value={charAbilities} disabled={$taskRunning}></textarea>
               </div>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.notes')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.notes')}</span>
                 <textarea class="textarea textarea-sm w-full h-14 text-sm" bind:value={charNotes} disabled={$taskRunning}></textarea>
               </div>
             </div>
@@ -590,11 +590,11 @@
           <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
             <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.name')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.name')}</span>
                 <input type="text" class="input input-sm w-full" bind:value={wvName} disabled={$taskRunning} />
               </div>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.category')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.category')}</span>
                 <select class="select select-sm w-full" bind:value={wvCategory} disabled={$taskRunning}>
                   <option value="geography">{$t('config.wv.cat.geography')}</option>
                   <option value="faction">{$t('config.wv.cat.faction')}</option>
@@ -605,11 +605,11 @@
               </div>
             </div>
             <div>
-              <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.description')}</label>
+              <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.description')}</span>
               <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={wvDescription} disabled={$taskRunning}></textarea>
             </div>
             <div>
-              <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.tags')}</label>
+              <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.tags')}</span>
               <input type="text" class="input input-sm w-full" bind:value={wvTags} placeholder={$t('config.wv.tags.placeholder')} disabled={$taskRunning} />
             </div>
             <div class="flex gap-1.5">
@@ -666,21 +666,21 @@
           <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
             <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.name')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.name')}</span>
                 <input type="text" class="input input-sm w-full" bind:value={orgName} disabled={$taskRunning} />
               </div>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.type')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.type')}</span>
                 <input type="text" class="input input-sm w-full" bind:value={orgType} placeholder={$t('config.org.type.placeholder')} disabled={$taskRunning} />
               </div>
             </div>
             <div>
-              <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.description')}</label>
+              <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.description')}</span>
               <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={orgDescription} disabled={$taskRunning}></textarea>
             </div>
             {#if chars.length > 0}
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.members')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.members')}</span>
                 <div class="flex flex-wrap gap-x-3 gap-y-1">
                   {#each chars as c}
                     <label class="flex items-center gap-1 cursor-pointer text-sm">
@@ -740,7 +740,7 @@
           <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
             <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.rel.source')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.rel.source')}</span>
                 <select class="select select-sm w-full" bind:value={relSource} disabled={$taskRunning}>
                   <option value="" disabled>{$t('config.rel.entityHint')}</option>
                   {#each entityOptions as opt}
@@ -750,7 +750,7 @@
               </div>
               <span class="text-base-content/40 pb-1.5">→</span>
               <div>
-                <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.rel.target')}</label>
+                <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.rel.target')}</span>
                 <select class="select select-sm w-full" bind:value={relTarget} disabled={$taskRunning}>
                   <option value="" disabled>{$t('config.rel.entityHint')}</option>
                   {#each entityOptions as opt}
@@ -760,7 +760,7 @@
               </div>
             </div>
             <div>
-              <label class="text-xs text-base-content/50 mb-0.5 block">{$t('config.rel.label')}</label>
+              <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.rel.label')}</span>
               <input type="text" class="input input-sm w-full" bind:value={relLabel} placeholder={$t('config.rel.label.placeholder')} disabled={$taskRunning} />
             </div>
             <div class="flex gap-1.5">

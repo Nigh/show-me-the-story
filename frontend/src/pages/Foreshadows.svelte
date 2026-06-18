@@ -448,23 +448,23 @@
     <div class="modal-box max-w-lg">
       <h3 class="font-bold text-lg">{editing ? $t('fs.form.edit') : $t('fs.form.create')}</h3>
       <div class="form-control gap-3 mt-4">
-        <label class="label py-0"><span class="label-text">{$t('fs.form.name')}</span></label>
+        <span class="label py-0"><span class="label-text">{$t('fs.form.name')}</span></span>
         <input class="input input-bordered input-sm" bind:value={form.name} disabled={$taskRunning} />
-        <label class="label py-0"><span class="label-text">{$t('fs.form.description')}</span></label>
+        <span class="label py-0"><span class="label-text">{$t('fs.form.description')}</span></span>
         <textarea class="textarea textarea-bordered text-sm" rows="3" bind:value={form.description} disabled={$taskRunning}></textarea>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="label py-0"><span class="label-text">{$t('fs.form.plant')}</span></label>
+            <span class="label py-0"><span class="label-text">{$t('fs.form.plant')}</span></span>
             <input type="number" min="1" class="input input-bordered input-sm w-full" bind:value={form.plant_chapter} disabled={$taskRunning} />
           </div>
           <div>
-            <label class="label py-0"><span class="label-text">{$t('fs.form.target')}</span></label>
+            <span class="label py-0"><span class="label-text">{$t('fs.form.target')}</span></span>
             <input type="number" min="0" class="input input-bordered input-sm w-full" bind:value={form.target_chapter} disabled={$taskRunning} />
           </div>
         </div>
         {#if editing}
           <div>
-            <label class="label py-0"><span class="label-text">{$t('fs.form.status')}</span></label>
+            <span class="label py-0"><span class="label-text">{$t('fs.form.status')}</span></span>
             <select class="select select-bordered select-sm w-full" bind:value={form.status} disabled={$taskRunning}>
               {#each Object.entries(statusMeta) as [val, meta]}
                 <option value={val}>{meta.label}</option>
@@ -472,7 +472,7 @@
             </select>
           </div>
           <div>
-            <label class="label py-0"><span class="label-text">{$t('fs.form.resolution')}</span></label>
+            <span class="label py-0"><span class="label-text">{$t('fs.form.resolution')}</span></span>
             <input class="input input-bordered input-sm w-full" bind:value={form.resolution} disabled={$taskRunning} />
           </div>
         {/if}
