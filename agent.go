@@ -159,13 +159,19 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 }
 
 func callAgentAPI(ctx context.Context, apiCfg *APIConfig, messages []Message, onChunk func(string)) error {
-	// 以真实的多轮消息结构调用，保留对话角色信息
-	_, err := CallAPIStreamMessages(ctx, apiCfg, messages, onChunk)
+	// Agent 调用需要足够的输出 token 来生成工具调用 JSON。
+	// 如果用户未设置或设置过低，使用 8192 作为下限。
+	agentCfg := *apiCfg
+	if agentCfg.MaxTokens < 8192 {
+		agentCfg.MaxTokens = 8192
+	}
+
+	_, err := CallAPIStreamMessages(ctx, &agentCfg, messages, onChunk)
 	if err != nil {
 		if ctx.Err() != nil {
 			return err
 		}
-		result, err2 := CallAPIMessages(ctx, apiCfg, messages)
+		result, err2 := CallAPIMessages(ctx, &agentCfg, messages)
 		if err2 != nil {
 			return err
 		}
@@ -250,7 +256,8 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("5. 拿不准用户意图时，先提问澄清，不要猜测着执行写操作。\n\n")
 
 	sb.WriteString("## 工具选择指南\n")
-	sb.WriteString("- 修改某章内容细节 → revise_chapter(num, feedback)\n")
+	sb.WriteString("- 修改某章内容细节 → revise_chapter(num, feedback)（AI 重写整章）\n")
+	sb.WriteString("- 局部编辑某章（替换行/替换文本/插入/追加）→ edit_chapter_content(num, operation, ...)（精确编辑，不重写整章，适合微调个别段落或修正错误）\n")
 	sb.WriteString("- 修改某章的大纲（未写作的 pending 章节）→ edit_chapter_outline(num, title, outline)\n")
 	sb.WriteString("- 对整体大纲提修改意见 → revise_outline(feedback)（只会改动未确认章节）\n")
 	sb.WriteString("- 生成下一章正文 → generate_chapter\n")
@@ -258,6 +265,7 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 
 	sb.WriteString("## 重要规则\n")
 	sb.WriteString("- 异步工具（如 generate_outline、generate_chapter 等）会立即返回「任务已启动」，任务结果通过日志推送到界面。你必须先调用工具，收到工具结果后才能告知用户任务已启动。绝对不要在没有调用工具的情况下输出「请等待」「请耐心等待」「请稍等」「正在生成」等文字——如果用户请求的操作你无法完成，直接说明原因即可。\n")
+	sb.WriteString("- 调用工具时，**不要输出任何解释文字**，直接输出 <tool_call> 标签。解释放在收到工具结果之后。\n")
 	sb.WriteString("- 当用户提交故事配置时（如「请更新以下故事配置」），使用 update_project_config 工具。\n")
 	sb.WriteString("- 当用户提交写作风格或故事梗概的更新时（如「请更新写作风格:」或「请更新故事梗概:」），使用 update_project_config 工具保存对应字段。\n")
 	sb.WriteString("- 当用户要求创建/修改角色、世界观等设定时，直接使用对应的工具完成操作。\n")
@@ -337,7 +345,8 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("5. When user intent is ambiguous, ask a clarifying question instead of guessing into a write operation.\n\n")
 
 	sb.WriteString("## Tool-selection guidance\n")
-	sb.WriteString("- Tweak chapter content -> revise_chapter(num, feedback)\n")
+	sb.WriteString("- Tweak chapter content -> revise_chapter(num, feedback) (AI rewrites the whole chapter)\n")
+	sb.WriteString("- Surgical edit of a chapter (replace lines/replace text/insert/append) -> edit_chapter_content(num, operation, ...) (precise edit without full rewrite; ideal for tweaking a paragraph or fixing a typo)\n")
 	sb.WriteString("- Edit a pending chapter's outline -> edit_chapter_outline(num, title, outline)\n")
 	sb.WriteString("- Give feedback on the overall outline -> revise_outline(feedback) (only touches unconfirmed chapters)\n")
 	sb.WriteString("- Generate the next chapter's prose -> generate_chapter\n")
@@ -345,6 +354,7 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 
 	sb.WriteString("## Important rules\n")
 	sb.WriteString("- Async tools (generate_outline, generate_chapter, etc.) return \"task started\" immediately; results are pushed to the UI via logs. You MUST call the tool first and tell the user it has started only after receiving the tool result. Never output \"please wait\", \"hold on\", \"generating now\", or similar text without actually calling a tool — if you cannot fulfil the request, just explain why.\n")
+	sb.WriteString("- When calling a tool, **output NO explanatory text** — emit the <tool_call> tag directly. Explain after you receive the tool result.\n")
 	sb.WriteString("- When the user submits a story-config update (e.g. \"please update the following story config\"), use update_project_config.\n")
 	sb.WriteString("- When the user submits a writing-style or synopsis update (e.g. \"please update writing style:\" or \"please update synopsis:\"), use update_project_config to save the corresponding field.\n")
 	sb.WriteString("- When the user asks you to create/edit characters, worldview, etc., use the corresponding tool directly.\n")
@@ -400,7 +410,15 @@ func parseToolCall(content string) *ToolCall {
 
 	endIdx := strings.Index(content[idx:], "</tool_call>")
 	if endIdx == -1 {
-		// 标签未闭合，fallback 到全局搜索
+		// 标签未闭合（响应被截断），尝试从标签内解析不完整的 JSON
+		inner := strings.TrimSpace(content[idx+len("<tool_call>"):])
+		if tc := parseToolCallFromJSON(inner); tc != nil {
+			return tc
+		}
+		if tc := parseToolCallJSON(inner); tc != nil {
+			return tc
+		}
+		// 最后 fallback
 		if tc := parseToolCallFunctionName(content); tc != nil {
 			return tc
 		}
@@ -1282,6 +1300,40 @@ func getBuiltinTools() []Tool {
 				ch := ctx.State.Chapters[ctx.State.CurrentChapterIndex-1]
 				ctx.Logger.SuccessKey("log.chapter_confirmed", ch.Num)
 				return agentMsg(ctx, "agent.chapter_confirmed", ch.Num, ch.Title), nil
+			},
+		},
+		{
+			Name:        "edit_chapter_content",
+			Description: "对章节正文进行局部编辑（同步），无需重写整章。支持 4 种操作：replace_lines（替换行范围）、replace_text（查找替换文本片段）、insert_after_line（在指定行后插入）、append（末尾追加）。适合微调个别段落、修正错误、追加场景等。",
+			Parameters:  `{"num": 1, "operation": "replace_lines|replace_text|insert_after_line|append", "start_line": 1, "end_line": 5, "old_text": "要查找的原文", "line": 10, "new_text": "新内容"}`,
+			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
+				var req EditChapterContentRequest
+				if err := json.Unmarshal(args, &req); err != nil {
+					return "", agentErr(ctx, "invalid_json", err)
+				}
+				if req.Operation == "" {
+					return "", agentErr(ctx, "chapter_edit_op_required")
+				}
+				if req.NewText == "" && req.Operation != EditOpReplaceText {
+					return "", agentErr(ctx, "chapter_edit_text_required")
+				}
+
+				totalLines, err := EditChapterContent(ctx.State, req)
+				if err != nil {
+					return "", agentErr(ctx, "chapter_edit_failed", err)
+				}
+
+				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
+					return "", agentErr(ctx, "save_progress_failed", err)
+				}
+
+				SaveChapterMarkdown(ctx.ProjectDir, ChapterState{
+					Num:     req.ChapterNum,
+					Title:   ctx.State.Chapters[findChapterIdx(ctx.State, req.ChapterNum)].Title,
+					Content: ctx.State.Chapters[findChapterIdx(ctx.State, req.ChapterNum)].Content,
+				}, "")
+
+				return agentMsg(ctx, "agent.chapter_content_edited", req.ChapterNum, string(req.Operation), totalLines), nil
 			},
 		},
 		{

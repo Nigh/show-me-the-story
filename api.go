@@ -17,6 +17,7 @@ type ChatRequest struct {
 	Messages      []Message      `json:"messages"`
 	Stream        bool           `json:"stream,omitempty"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+	MaxTokens     int            `json:"max_tokens,omitempty"`
 }
 
 type streamOptions struct {
@@ -169,8 +170,9 @@ func callAPIMessagesSync(ctx context.Context, apiCfg *APIConfig, messages []Mess
 	tracker.beginCall(messages)
 
 	reqBody := ChatRequest{
-		Model:    apiCfg.Model,
-		Messages: messages,
+		Model:     apiCfg.Model,
+		Messages:  messages,
+		MaxTokens: apiCfg.MaxTokens,
 	}
 
 	bts, err := json.Marshal(reqBody)
@@ -310,6 +312,7 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Me
 		Messages: messages,
 		Stream:   true,
 		StreamOptions: &streamOptions{IncludeUsage: true},
+		MaxTokens: apiCfg.MaxTokens,
 	}
 
 	bts, err := json.Marshal(reqBody)

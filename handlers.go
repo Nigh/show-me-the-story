@@ -716,6 +716,54 @@ func (h *Handlers) PostChapterConfirm(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, h.state)
 }
 
+func (h *Handlers) PostChapterEdit(w http.ResponseWriter, r *http.Request) {
+	if h.rejectIfTaskRunning(w, r) {
+		return
+	}
+
+	var req EditChapterContentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if req.Operation == "" {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "chapter_edit_op_required")
+		return
+	}
+	if req.NewText == "" && req.Operation != EditOpReplaceText {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "chapter_edit_text_required")
+		return
+	}
+
+	totalLines, err := EditChapterContent(h.state, req)
+	if err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "chapter_edit_failed", err.Error())
+		return
+	}
+
+	if err := SaveProgress(h.progressPath, h.state); err != nil {
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		return
+	}
+
+	SaveChapterMarkdown(h.projectDir(), h.getChapterByNum(req.ChapterNum), "")
+	h.broadcastProgress()
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":     true,
+		"total_lines": totalLines,
+		"chapter":     h.getChapterByNum(req.ChapterNum),
+	})
+}
+
+func (h *Handlers) getChapterByNum(num int) ChapterState {
+	for _, ch := range h.state.Chapters {
+		if ch.Num == num {
+			return ch
+		}
+	}
+	return ChapterState{}
+}
+
 func (h *Handlers) PostChapterRevise(w http.ResponseWriter, r *http.Request) {
 	if !h.tryStartTask() {
 		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")

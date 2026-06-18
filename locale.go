@@ -276,6 +276,18 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "章节内容为空，无法润色",
 		LangEN: "Chapter content is empty; cannot polish",
 	},
+	"chapter_edit_op_required": {
+		LangZH: "缺少 operation 参数，必须为 replace_lines / replace_text / insert_after_line / append 之一",
+		LangEN: "Missing operation parameter; must be one of: replace_lines / replace_text / insert_after_line / append",
+	},
+	"chapter_edit_text_required": {
+		LangZH: "new_text 不能为空",
+		LangEN: "new_text must not be empty",
+	},
+	"chapter_edit_failed": {
+		LangZH: "章节编辑失败: %s",
+		LangEN: "Chapter edit failed: %s",
+	},
 	"chapter_in_writing": {
 		LangZH: "章节正在写作中，无法润色",
 		LangEN: "Chapter is being written; cannot polish",

@@ -55,6 +55,7 @@ task dev                              # 编译并启动 Go 后端
                   ├─ settings.go    ← 结构化设定（角色/世界观/组织/关系）CRUD + 持久化
                   ├─ skills.go      ← Skill 系统（内置 + 项目级，可选启用）
                   ├─ agent.go       ← Agent Loop 引擎 + 内置工具集（全局助理用）
+                  ├─ editing.go     ← 章节正文局部编辑（替换行/替换文本/插入/追加）
                   ├─ chat.go        ← 会话管理（JSON 文件存储）
                   ├─ api.go         ← OpenAI API 调用 + 重试 + 致命错误检测 + context 支持
                   ├─ config.go      ← 配置结构体 + 加载/保存（含 SkillConfig）
@@ -82,6 +83,7 @@ task dev                              # 编译并启动 Go 后端
 | `settings.go` | `Character`、`WorldviewEntry`、`Organization`、`Relation`、`ProjectSettings` 结构体，`LoadProjectSettings`、`SaveProjectSettings`、`buildCharacterContext`、`buildWorldviewContext` |
 | `skills.go` | `Skill`、`SkillConfig` 结构体，`LoadBuiltinSkills`、`LoadProjectSkills`、`MergeSkills`、`GetEnabledSkills`、`GetEnabledSkillsByCategory`、`FormatSkillsContent`，`//go:embed embeds/skills` |
 | `agent.go` | `Tool`、`AgentContext`、`AgentStep`、`ToolCall` 结构体，`RunAgentLoop`（多轮消息历史 + 双语 tool 结果标签）、工具调用解析、内置工具集（读/写角色/世界观/章节等）、`buildAgentSystemPromptZH`/`buildAgentSystemPromptEN` 按项目语言选择系统提示、`requireConfirm`（破坏性工具需 `confirm: true`） |
+| `editing.go` | `EditChapterContent` 章节正文局部编辑（`replace_lines`/`replace_text`/`insert_after_line`/`append`），`EditChapterContentRequest` 结构体，`EditOp` 常量，`findChapterIdx` 辅助函数 |
 | `chat.go` | `ChatSession`、`ChatMessage`（含 `tool_result_key`/`tool_result_args`）、`ChatSessionIndex` 结构体，Load/Save/Delete |
 | `logger.go` | `LogBroadcaster`；`LogEntry` 含 `msg_key`/`msg_args`；`InfoKey`/`SuccessKey`/…；`ToolCallEnd` 含 `result_key`/`result_args`；其余 SSE 事件方法同前 |
 | `postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体，`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略：全文/摘要模式）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`ExecuteRoadmapAction`（可选前置衔接优化 + 逐条定向修订/润色 + diff 节选） |
@@ -227,7 +229,7 @@ API 配置（`APIConfig`）与故事配置（`Config`）完全分离，分别保
 
 ### Agent Loop
 
-独立 `agent.go` 文件，`RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, history []AgentStep, maxSteps int)` 函数实现工具调用循环，接受 `context.Context` 支持任务取消。最大工具调用步骤为 30（安全上限，AI 自然终止不受此限）。内置工具集包括：`read_characters`、`read_character`、`read_worldview`、`read_organizations`、`read_chapter`、`read_outline`、`read_foreshadows`、`search_project`、`create_character`、`update_character`、`create_worldview`、`update_worldview`、`delete_character`、`delete_worldview`、`create_organization`、`update_organization`、`delete_organization`、`create_relation`、`update_relation`、`delete_relation`、`read_project_config`、`update_project_config`、`generate_outline`、`confirm_outline`、`revise_outline`、`delete_outline`、`edit_chapter_outline`、`generate_chapter`、`confirm_chapter`、`revise_chapter`、`delete_chapter`、`delete_chapters_from`、`suggest_foreshadows`、`create_foreshadow`、`update_foreshadow`、`delete_foreshadow`、`read_skills`、`toggle_skill`、`reset_progress`。仅全局助理使用 Agent Loop。
+独立 `agent.go` 文件，`RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, history []AgentStep, maxSteps int)` 函数实现工具调用循环，接受 `context.Context` 支持任务取消。最大工具调用步骤为 30（安全上限，AI 自然终止不受此限）。内置工具集包括：`read_characters`、`read_character`、`read_worldview`、`read_organizations`、`read_chapter`、`read_outline`、`read_foreshadows`、`search_project`、`create_character`、`update_character`、`create_worldview`、`update_worldview`、`delete_character`、`delete_worldview`、`create_organization`、`update_organization`、`delete_organization`、`create_relation`、`update_relation`、`delete_relation`、`read_project_config`、`update_project_config`、`generate_outline`、`confirm_outline`、`revise_outline`、`delete_outline`、`edit_chapter_outline`、`generate_chapter`、`confirm_chapter`、`edit_chapter_content`、`revise_chapter`、`delete_chapter`、`delete_chapters_from`、`suggest_foreshadows`、`create_foreshadow`、`update_foreshadow`、`delete_foreshadow`、`read_skills`、`toggle_skill`、`reset_progress`。仅全局助理使用 Agent Loop。
 
 工具调用解析支持：`<tool_call>` XML 标签（含 JSON 或 XML 内容）、JSON 代码块、裸 JSON 对象（含 `name`/`tool` 键）。解析具有多级 fallback：`<tool_call>` 内 JSON → `<tool_call>` 内 XML 格式 → `</tool_call>` 之后的 JSON → 全文 JSON → `function.name()` 格式。`parseToolCallJSON` 遍历内容中所有 JSON 对象而非仅第一个。
 
@@ -388,6 +390,7 @@ pending → writing → review → accepted
 | POST | `/api/chapter/conflict-resolve` | 同步 | 处理写作冲突（`retry`/`force_review`/`dismiss`） |
 | POST | `/api/foreshadows/outline-check` | 异步 | 手动触发伏笔-大纲一致性检查 |
 | POST | `/api/chapter/confirm` | 同步 | 确认章节 |
+| POST | `/api/chapter/edit` | 同步 | 局部编辑章节正文（`replace_lines`/`replace_text`/`insert_after_line`/`append`） |
 | POST | `/api/chapter/revise` | 异步 | 修订当前审核中章节 |
 | POST | `/api/chapter/revise/{num}` | 异步 | 定向最小化修订指定章节（含已确认章节，不影响其他章节） |
 | POST | `/api/chapter/polish` | 异步 | 单章去AI味（`{"num":N}` 可选，需启用 polish 类技能；已确认章节润色后保持 accepted 状态） |
