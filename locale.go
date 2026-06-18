@@ -336,6 +336,26 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "此功能已移至 LLM 对话中，请通过聊天让 AI 帮你润色",
 		LangEN: "This action has moved into the LLM chat; ask the assistant to polish for you",
 	},
+	"writing_conflict_none": {
+		LangZH: "当前没有待处理的写作冲突",
+		LangEN: "No pending writing conflict to resolve",
+	},
+	"missing_action": {
+		LangZH: "缺少 action 字段",
+		LangEN: "action field is required",
+	},
+	"invalid_conflict_chapter_idx": {
+		LangZH: "冲突章节索引无效",
+		LangEN: "Invalid conflict chapter index",
+	},
+	"unsupported_action": {
+		LangZH: "不支持的 action: %s",
+		LangEN: "Unsupported action: %s",
+	},
+	"no_foreshadows_to_check": {
+		LangZH: "当前没有伏笔，无需检查",
+		LangEN: "No foreshadows to check",
+	},
 }
 
 // systemPrompts maps a stable AI-system-prompt key to per-language text.
@@ -429,24 +449,45 @@ func SystemPromptFor(lang, key string) string {
 	return entry[LangZH]
 }
 
+func lookupCatalog(lang, key string) (string, bool) {
+	lang = NormalizeLanguage(lang)
+	for _, catalog := range []map[string]map[string]string{messageCatalog, errorCatalog} {
+		entry, ok := catalog[key]
+		if !ok {
+			continue
+		}
+		tpl := entry[lang]
+		if tpl == "" {
+			tpl = entry[LangZH]
+		}
+		if tpl != "" {
+			return tpl, true
+		}
+	}
+	return "", false
+}
+
 // T returns a localized message for the given key and args; falls back to zh, then key.
 func T(lang, key string, args ...any) string {
-	lang = NormalizeLanguage(lang)
-	entry, ok := errorCatalog[key]
+	tpl, ok := lookupCatalog(lang, key)
 	if !ok {
-		return key
-	}
-	tpl := entry[lang]
-	if tpl == "" {
-		tpl = entry[LangZH]
-	}
-	if tpl == "" {
 		return key
 	}
 	if len(args) == 0 {
 		return tpl
 	}
 	return fmt.Sprintf(tpl, args...)
+}
+
+func msgArgsToStrings(args ...any) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = fmt.Sprint(a)
+	}
+	return out
 }
 
 // writeErrorReq writes a JSON error response, picking message language from the request.

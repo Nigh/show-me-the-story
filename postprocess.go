@@ -391,8 +391,8 @@ func DiagnoseBookAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, set
 	}
 
 	bundle := buildPostProcessBundle(apiCfg, cfg, settings, state)
-	logger.Info(fmt.Sprintf("全书材料：约 %d 字，预估 %d tokens，诊断模式：%s",
-		bundle.TotalRunes, bundle.EstimatedTokens, bundle.Mode))
+	logger.InfoKey("log.postprocess_material",
+		bundle.TotalRunes, bundle.EstimatedTokens, bundle.Mode)
 
 	fullTextBlock := bundle.FullText
 	modeNote := ""
@@ -429,11 +429,11 @@ func ConsistencyCheckBookAction(ctx context.Context, apiCfg *APIConfig, cfg *Con
 	volumes := splitTextByRunes(bundle.FullText, postprocessVolumeSplitRunes)
 
 	if len(volumes) == 1 {
-		logger.Info("开始全书一致性核查（单卷）...")
+		logger.InfoKey("log.postprocess_consistency_single")
 		return runConsistencyCheckVolume(ctx, apiCfg, cfg, bundle.SettingsText, bundle.SummaryIndex, volumes[0], 1, 1, logger)
 	}
 
-	logger.Info(fmt.Sprintf("正文较长，分 %d 卷进行一致性核查...", len(volumes)))
+	logger.InfoKey("log.postprocess_consistency_multi", len(volumes))
 	var reports []string
 	for i, vol := range volumes {
 		if ctx.Err() != nil {
@@ -497,7 +497,7 @@ func BuildRoadmapAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, dia
 		return nil, fmt.Errorf("路线图解析结果为空，请检查 AI 输出格式")
 	}
 	sortRoadmapItems(items)
-	logger.Success(fmt.Sprintf("已生成 %d 条优化工单", len(items)))
+	logger.SuccessKey("log.postprocess_roadmap_items", len(items))
 	return items, nil
 }
 
@@ -658,12 +658,12 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, s
 	}
 
 	if opts.RunSmoothTransitionsFirst {
-		logger.Info("前置步骤：优化章节衔接...")
+		logger.InfoKey("log.postprocess_smooth_preface")
 		if err := SmoothTransitionsAction(ctx, apiCfg, cfg, state, progressPath, logger); err != nil {
 			if ctx.Err() != nil {
 				return fmt.Errorf("任务已取消")
 			}
-			logger.Warn(fmt.Sprintf("章节衔接优化跳过或失败: %v", err))
+			logger.WarnKey("log.postprocess_smooth_skip", err)
 		}
 	}
 
@@ -752,12 +752,12 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, s
 			if ctx.Err() != nil {
 				return fmt.Errorf("任务已取消")
 			}
-			logger.Warn(fmt.Sprintf("第 %d 章工单失败: %v", batch.ChapterNum, execErr))
+			logger.WarnKey("log.postprocess_batch_failed", batch.ChapterNum, execErr)
 		} else if diffOriginal != diffRevised {
 			executed++
-			logger.Success(fmt.Sprintf("第 %d 章已完成（合并 %d 条意见）", batch.ChapterNum, len(batch.Indices)))
+			logger.SuccessKey("log.postprocess_batch_done", batch.ChapterNum, len(batch.Indices))
 		} else {
-			logger.Info(fmt.Sprintf("第 %d 章内容无变化，已跳过", batch.ChapterNum))
+			logger.InfoKey("log.postprocess_batch_skip", batch.ChapterNum)
 		}
 
 		for _, idx := range batch.Indices {
@@ -767,6 +767,6 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, s
 	}
 
 	pp.LastExecuteAt = time.Now().Format(time.RFC3339)
-	logger.Success(fmt.Sprintf("全书优化执行完成：处理 %d 章（共 %d 条工单），有效修改 %d 章", len(batches), selectedCount, executed))
+	logger.SuccessKey("log.postprocess_execute_summary", len(batches), selectedCount, executed)
 	return SavePostProcess(postprocessPath, pp)
 }

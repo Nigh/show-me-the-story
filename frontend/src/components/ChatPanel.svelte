@@ -3,7 +3,7 @@
   import { api } from '../lib/api.js';
   import { renderMarkdown } from '../lib/markdown.js';
   import { chatSessions, currentChatSession, addToast, showConfirm, taskRunning, lastFailedTask, logEntries, currentTaskName } from '../lib/stores.js';
-  import { t, uiLocale } from '../lib/i18n/index.js';
+  import { t, uiLocale, formatToolResult } from '../lib/i18n/index.js';
   import TaskTokenBadge from './TaskTokenBadge.svelte';
 
   export let contextPage = 'config';
@@ -28,6 +28,9 @@
     const key = 'chat.toolNames.' + name;
     const label = $t(key);
     return label === key ? name : label;
+  }
+  function toolResultText(msg, key, args) {
+    return formatToolResult(msg, key, args, $uiLocale);
   }
   function fmtArgs(args) {
     const s = typeof args === 'string' ? args : JSON.stringify(args);
@@ -370,7 +373,7 @@
             <div class="chat-bubble bg-base-300/60 text-xs font-mono max-w-[85%]">
               <details>
                 <summary class="text-info font-semibold cursor-pointer select-none">{$t('chat.tool.result')}</summary>
-                <div class="text-base-content/50 break-all mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap">{m.tool_result || ''}</div>
+                <div class="text-base-content/50 break-all mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap">{toolResultText(m.tool_result, m.tool_result_key, m.tool_result_args)}</div>
               </details>
             </div>
           </div>
@@ -386,7 +389,7 @@
             {:else}
               <div class="text-success font-semibold mb-0.5">✅ {toolLabel(tc.name)}</div>
               {#if tc.result}
-                <div class="text-base-content/50 break-all max-h-20 overflow-y-auto">{tc.result.length > 200 ? tc.result.slice(0, 200) + '...' : tc.result}</div>
+                <div class="text-base-content/50 break-all max-h-20 overflow-y-auto">{tc.result ? (tc.result.length > 200 ? tc.result.slice(0, 200) + '...' : tc.result) : ''}</div>
               {/if}
             {/if}
           </div>

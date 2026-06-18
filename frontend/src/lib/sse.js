@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, taskTokenUsage, continueAnalysis, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions } from './stores.js';
 import { api } from './api.js';
-import { getLocale, translate, translateServerMessage } from './i18n/index.js';
+import { getLocale, translate, formatLogEntry, formatToolResult } from './i18n/index.js';
 
 let eventSource = null;
 let reconnectTimer = null;
@@ -95,9 +95,7 @@ export function connectSSE() {
 
   eventSource.addEventListener('log', e => {
     const d = JSON.parse(e.data);
-    if (locale === 'en') {
-      d.msg = d.msg_en || translateServerMessage(d.msg, 'en');
-    }
+    d.msg = formatLogEntry(d, locale);
     addLog(d);
   });
 
@@ -271,9 +269,10 @@ export function connectSSE() {
     const d = JSON.parse(e.data);
     currentChatSession.update(s => {
       if (!s) return s;
+      const display = formatToolResult(d.result, d.result_key, d.result_args, locale);
       const toolCalls = (s.pending_tool_calls || []).map(tc =>
         tc.name === d.tool_name && tc.status === 'running'
-          ? { ...tc, status: 'done', result: d.result }
+          ? { ...tc, status: 'done', result: display, result_key: d.result_key, result_args: d.result_args }
           : tc
       );
       return { ...s, pending_tool_calls: toolCalls };

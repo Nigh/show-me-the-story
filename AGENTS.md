@@ -82,15 +82,17 @@ task dev                              # 编译并启动 Go 后端
 | `settings.go` | `Character`、`WorldviewEntry`、`Organization`、`Relation`、`ProjectSettings` 结构体，`LoadProjectSettings`、`SaveProjectSettings`、`buildCharacterContext`、`buildWorldviewContext` |
 | `skills.go` | `Skill`、`SkillConfig` 结构体，`LoadBuiltinSkills`、`LoadProjectSkills`、`MergeSkills`、`GetEnabledSkills`、`GetEnabledSkillsByCategory`、`FormatSkillsContent`，`//go:embed embeds/skills` |
 | `agent.go` | `Tool`、`AgentContext`、`AgentStep`、`ToolCall` 结构体，`RunAgentLoop`（多轮消息历史 + 双语 tool 结果标签）、工具调用解析、内置工具集（读/写角色/世界观/章节等）、`buildAgentSystemPromptZH`/`buildAgentSystemPromptEN` 按项目语言选择系统提示、`requireConfirm`（破坏性工具需 `confirm: true`） |
-| `chat.go` | `ChatSession`、`ChatMessage`、`ChatSessionIndex` 结构体，`LoadChatSessions`、`LoadChatSession`、`SaveChatSession`、`DeleteChatSession` |
+| `chat.go` | `ChatSession`、`ChatMessage`（含 `tool_result_key`/`tool_result_args`）、`ChatSessionIndex` 结构体，Load/Save/Delete |
+| `logger.go` | `LogBroadcaster`；`LogEntry` 含 `msg_key`/`msg_args`；`InfoKey`/`SuccessKey`/…；`ToolCallEnd` 含 `result_key`/`result_args`；其余 SSE 事件方法同前 |
 | `postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体，`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略：全文/摘要模式）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`ExecuteRoadmapAction`（可选前置衔接优化 + 逐条定向修订/润色 + diff 节选） |
 | `handlers.go` | `Handlers` 结构体（含项目管理字段 `progDir`/`projectName`/`projectMu`、自动确认开关 `autoConfirm`、`postprocess`/`postprocessPath`）、`projectDir()` 帮助函数、项目切换 `switchProject()`、`ensureProject()` 检查、`rejectIfTaskRunning()`（任务运行期间编辑类端点返回 409）、所有 HTTP handler（含 `PostChapterPolish` 单章去AI味、`PostChapterReviseSpecific` 定向修订、`PostChaptersSmoothTransitions` 批量衔接优化、全书优化 `GetPostProcess`/`PostPostProcessDiagnose`/`PostPostProcessConsistency`/`PostPostProcessRoadmap`/`PutPostProcessRoadmap`/`PostPostProcessExecute`/`DeletePostProcess`、`GetAutoConfirm`/`PutAutoConfirm`）、`PostChapterGenerate` 自动确认循环（开启时每章生成后自动确认并继续下一章）、`tryStartTask`/`endTask`/`startChildWork` 互斥、项目管理 handler（`GetProjects`/`PostProject`/`PostProjectSelect`/`GetProjectCurrent`/`DeleteProject`） |
 | `web.go` | 路由注册（含项目管理端点、`/api/autoconfirm`）、CORS/日志中间件、静态文件服务、`startWebServer`、项目管理 handler（`GetProjects`/`PostProject`/`GetProjectCurrent`/`PostProjectSelect`/`DeleteProject`） |
-| `logger.go` | `LogBroadcaster`（SSE 广播）、所有日志/事件方法（含 `ChatChunk`、`ToolCallStart`、`ToolCallEnd`、`StreamStart`、`TokenUsage`、`PolishResult`、`PostProcessReport`、`PostProcessRoadmap`、`PostProcessItemDone`、`PostProcessUpdate`）、`LogEntry.MsgEN` 可选英文版、`logBilingual` 与 `InfoBilingual`/`ErrorBilingual`/`WarnBilingual`/`SuccessBilingual` |
 | `tokens.go` | `TaskTokenUsage` 任务级 token 累计器（context 挂载）、`withTaskTokens`/`taskTokensFromContext`、throttled SSE 推送 |
 | `prompts.go` | `RenderPrompt`（`{{.KeyName}}` 替换）、`DefaultPromptsZH` 变量（所有内置中文提示词模板）、`DefaultPromptsForLang(lang)` |
 | `prompts_en.go` | `DefaultPromptsEN`：16 个 prompt 字段全量英文模板（与中文一一对应） |
-| `locale.go` | `LangZH`/`LangEN` 常量、`localeFromRequest` 从 `X-UI-Locale`/`Accept-Language`/`?locale=` 解析、`errorCatalog` 双语错误表、`T(lang, key, args)`、`systemPrompts` 内联 system prompt 集中表、`SystemPromptFor(lang, key)`、`Handlers.writeErrorReq` 本地化错误响应 |
+| `locale.go` | `LangZH`/`LangEN` 常量、`localeFromRequest` 从 `X-UI-Locale`/`Accept-Language`/`?locale=` 解析、`errorCatalog` 双语错误表、`T(lang, key, args)`（同时查 `messageCatalog` + `errorCatalog`）、`systemPrompts` 内联 system prompt 集中表、`SystemPromptFor(lang, key)`、`Handlers.writeErrorReq` 本地化错误响应 |
+| `messages.go` | `messageCatalog`：`log.*` SSE 日志 + `agent.*` 工具状态消息双语表（Go 侧 `%s`/`%d` 模板） |
+| `agent_i18n.go` | Agent 工具 i18n 辅助：`agentMsg(ctx, key, args…)`（按项目语言生成 AI 可读文本并记录 key）、`agentErr`、`AgentContext` 临时 toolMsgKey/Args |
 | `i18n_inject.go` | 注入块的双语版本：`buildOutlineConstraintsForLang`、`buildPreviousChapterTailForLang`、`buildHistorySummaryForLang`、`buildCharacterContextForLang`、`buildWorldviewContextForLang`、`formatActiveForeshadowsForChapterLang`、`formatChapterLine`、`formatForeshadowsForPromptLang` |
 | `filesys.go` | `writeFileImpl`、`deleteFileImpl`、`renameFileImpl` |
 | `skills.go` | `Skill`（含 `Lang` 字段）、`SkillConfig` 结构体，`LoadBuiltinSkills`、`LoadProjectSkills`、`MergeSkills`、`GetEnabledSkills`、`GetEnabledSkillsByCategory`、`FilterSkillsByLang(skills, projectLang)`、`FormatSkillsContent`（按 skill 语言选择双语 header）、`//go:embed embeds/skills` |
@@ -111,9 +113,8 @@ task dev                              # 编译并启动 Go 后端
 | `src/lib/api.js` | `api(method, url, body)` — fetch 封装，自动带 `X-UI-Locale`/`Accept-Language` 头，错误消息走 `translateServerMessage` |
 | `src/lib/router.js` | `currentPage` store + hash 路由监听 |
 | `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、postprocess、taskRunning、taskTokenUsage、autoConfirm、lastFailedTask、`projectLanguage` 等）+ toast/log 管理 |
-| `src/lib/sse.js` | `connectSSE()` — EventSource 连接 URL 拼 `?locale=` + 多种事件处理 → 更新 stores；content_chunk/chat_chunk 按 150ms 节流缓冲批量刷入；章节流式全文只存模块级变量，`streamingContent` store 仅保留尾部窗口（约 3000 字符）；`refreshProgress()` 对 progress_update 拉取做 500ms 去抖（task_end 立即刷新）；stream_start 事件清空流式缓冲；`log` 事件优先用 `msg_en` 字段，否则 `translateServerMessage`；任务名通过 i18n `task.<name>` 翻译；全书优化 `postprocess_update`/`postprocess_roadmap`/`postprocess_item_done` 事件 |
-| `src/lib/markdown.js` | `renderMarkdown(text)` — marked 解析 + DOMPurify 清洗，供聊天气泡渲染 markdown |
-| `src/lib/i18n/index.js` | i18n 核心：`uiLocale` store（持久化到 `localStorage`）、`setLocale`/`getLocale`、`t` 派生 store（`$t('key', params)`，插值 `{name}`）、`translate` 命令式、`translateServerMessage(msg, lang)` 把后端中文映射到英文（含 errorCatalog 镜像 + 常见 log + 动态前缀） |
+| `src/lib/sse.js` | `connectSSE()` — EventSource `?locale=`；`log` → `formatLogEntry`；`tool_call_end` → `formatToolResult`；任务名 `task.<name>`；流式节流/尾部窗口等同前 |
+| `src/lib/i18n/index.js` | `uiLocale`、`t`/`translate`（`{name}`）、`formatKeyedMessage`/`formatLogEntry`/`formatToolResult`（服务端 key + `{0}`）、`translateServerMessage` legacy 兜底 |
 | `src/lib/i18n/zh.js`, `en.js` | 扁平 key 字典；新增可见文案必须同时在两个文件加 key |
 | `src/pages/Projects.svelte` | 项目选择页：新建项目（名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`）+ 项目列表（每项显示语言 badge，可选择/删除）；选中项目后 `setLocale(project.language)` |
 | `src/pages/Config.svelte` | 配置页：API 配置（含上下文预算 tokens）、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、写作风格与叙述视角、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；任务运行时所有输入控件禁用 |
@@ -125,7 +126,7 @@ task dev                              # 编译并启动 Go 后端
 | `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph 类），支持拖拽、滚轮缩放（以光标为中心，0.3x–3x）、hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
 | `src/pages/Assistant.svelte` | 助理页：聊天会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
 | `src/pages/Skills.svelte` | 技能页：技能表格 + toggle 开关 |
-| `src/components/ChatPanel.svelte` | 右侧聊天面板：会话列表 + 停止按钮 + 任务状态/日志区（含「已生成 N 字」实时字数 badge）+ 消息区（assistant 消息 markdown 渲染）+ 工具调用卡片（中文工具名映射、危险工具红色高亮、区分 running/done）+ 流式回复 + 智能自动滚动（afterUpdate 滚动守卫：仅消息区内容实际变化时写 scrollTop）+ 输入框自动增高 + 失败重试 banner |
+| `src/components/ChatPanel.svelte` | 右侧聊天面板；任务日志走 `formatLogEntry`；工具结果走 `formatToolResult`；其余同前 |
 | `src/components/ConfirmModal.svelte` | 全局确认弹窗组件（替代浏览器 confirm） |
 | `src/components/LogPanel.svelte` | 底部可折叠实时日志面板 |
 
@@ -537,20 +538,19 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 - [`config.go`](config.go)：`Config.Language` 字段、`DefaultConfigForLang(lang)`、`NormalizeLanguage(lang)`、`PromptsConfig.applyDefaults(lang)` 按语言回填空字段
 - [`prompts.go`](prompts.go)：`DefaultPromptsZH`（原默认值改名）
 - [`prompts_en.go`](prompts_en.go)：`DefaultPromptsEN` 全量英文模板（16 个字段，与中文一一对应）
-- [`locale.go`](locale.go)：`LangZH`/`LangEN` 常量、`localeFromRequest(r)` 从 `X-UI-Locale` 头或 `Accept-Language` 解析、`errorCatalog` 双语错误消息表、`T(lang, key, args)` 翻译函数、`systemPrompts` map + `SystemPromptFor(lang, key)`（生成大纲/写章节/事实核查/伏笔/Agent 等内联 system prompt 集中管理）、`Handlers.writeErrorReq(w, r, code, key, args)` 写本地化错误响应
-- [`i18n_inject.go`](i18n_inject.go)：`buildOutlineConstraintsForLang` / `buildPreviousChapterTailForLang` / `buildHistorySummaryForLang` / `buildCharacterContextForLang` / `buildWorldviewContextForLang` / `formatActiveForeshadowsForChapterLang` / `formatChapterLine` / `formatForeshadowsForPromptLang`；老的同名 helper 已改为按 `LangZH` 委托
-- [`agent.go`](agent.go)：`buildAgentSystemPromptZH` / `buildAgentSystemPromptEN`；`RunAgentLoop` 工具结果标签按 `ctx.Config.Language` 双语
-- [`skills.go`](skills.go)：`Skill.Lang` 字段，`FilterSkillsByLang(skills, projectLang)`（同语言或无标签的技能可用），`FormatSkillsContent` header 按 skill 语言双语
-- [`embeds/skills/`](embeds/skills/)：`humanizer-zh.md` / `story-deslop.md` / `writing-craft.md`（中文，frontmatter 加 `lang: zh`）+ `humanizer-en.md` / `story-deslop-en.md` / `writing-craft-en.md`（英文，`lang: en`）
-- [`logger.go`](logger.go)：`LogEntry.MsgEN` 可选字段，`logBilingual(level, msg, msgEN)` + `InfoBilingual`/`ErrorBilingual`/`WarnBilingual`/`SuccessBilingual`，关键路径推送中英双语
-- [`web.go`](web.go)：`PostProject` 请求体接受 `language`（缺省 `"zh"`），`GetProjects` / `GetProjectCurrent` / `GetStatus` 返回项目语言
+- [`messages.go`](messages.go)：`messageCatalog`（`log.*` / `agent.*`）；新增后端日志或 Agent 状态消息时在此加 key，并同步 `frontend/src/lib/i18n/zh.js` + `en.js`（位置占位 `{0}`/`{1}`）
+- [`locale.go`](locale.go)：`errorCatalog` + `T()`；所有 API 错误走 `writeErrorReq(w, r, code, key, args…)`
+- [`logger.go`](logger.go)：`InfoKey`/`SuccessKey`/… 替代硬编码中文；SSE `LogEntry.msg_key` + `msg_args`
+- [`agent_i18n.go`](agent_i18n.go) + [`agent.go`](agent.go)：工具状态返回用 `agentMsg(ctx, "agent.xxx", …)`；读工具的数据型返回仍按项目语言格式化，不带 key
+- [`chat.go`](chat.go)：`ChatMessage.tool_result_key`/`tool_result_args` 持久化；`AgentStep` 同字段
+- [`frontend/src/lib/i18n/index.js`](frontend/src/lib/i18n/index.js)：`formatLogEntry` / `formatToolResult` 按 `uiLocale` 渲染服务端 key
+- [`frontend/src/components/ChatPanel.svelte`](frontend/src/components/ChatPanel.svelte)：任务日志与工具结果走 key 化渲染
 
 ### 前端关键文件
 
-- [`frontend/src/lib/i18n/index.js`](frontend/src/lib/i18n/index.js)：`uiLocale` store、`setLocale`/`getLocale`、`t` 派生 store（`$t('key', params)`）、`translate` 命令式、`translateServerMessage(msg, lang)` 把后端中文消息映射到英文（含 errorCatalog 镜像 + 常见 log 行 + 动态前缀回退）
-- [`frontend/src/lib/i18n/zh.js`](frontend/src/lib/i18n/zh.js) / [`frontend/src/lib/i18n/en.js`](frontend/src/lib/i18n/en.js)：扁平 key 字典；新增可见文案需同时在两个文件加 key
-- [`frontend/src/lib/api.js`](frontend/src/lib/api.js)：所有请求自动带 `X-UI-Locale` / `Accept-Language` 头，错误消息走 `translateServerMessage`
-- [`frontend/src/lib/sse.js`](frontend/src/lib/sse.js)：EventSource URL 拼 `?locale=`，`log` 事件优先用 `msg_en`，回退 `translateServerMessage`；任务名通过 `task.<name>` key 翻译
+- [`frontend/src/lib/i18n/zh.js`](frontend/src/lib/i18n/zh.js) / [`frontend/src/lib/i18n/en.js`](frontend/src/lib/i18n/en.js)：UI 文案用 `{name}`；镜像 `log.*`/`agent.*` 服务端 key 用 `{0}`/`{1}`
+- [`frontend/src/lib/api.js`](frontend/src/lib/api.js)：所有请求带 `X-UI-Locale`；`writeErrorReq` 已按请求语言返回错误，``translateServerMessage`` 仅 legacy 兜底
+- [`frontend/src/lib/sse.js`](frontend/src/lib/sse.js)：`formatLogEntry` / `formatToolResult`
 - [`frontend/src/lib/stores.js`](frontend/src/lib/stores.js)：新增 `projectLanguage` writable
 - [`frontend/src/App.svelte`](frontend/src/App.svelte)：Header 显示项目语言 badge（ZH/EN）+ UI 语言切换按钮（中 / EN）；选择/创建项目后自动 `setLocale(project.language)`
 - [`frontend/src/pages/Projects.svelte`](frontend/src/pages/Projects.svelte)：新建项目表单名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`；列表项显示语言 badge
@@ -570,7 +570,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 5. **提示词用 `{{.KeyName}}`**：不是 Go `text/template`，是简单字符串替换
 6. **异步任务互斥**：同一时间只能有一个 AI 任务运行（`tryStartTask`/`endTask`）
 7. **原子写入**：配置和进度文件使用 `writeFileAtomic`（先写 `.tmp` 再 rename）
-8. **双语界面**：所有新增用户可见文案必须同时在 `frontend/src/lib/i18n/zh.js` 和 `en.js` 添加 key；后端用户可见错误 / 日志推荐走 `locale.go` 的 `errorCatalog` + `writeErrorReq` 或 `Bilingual` 系列日志方法；旧的 `writeError` 中文字符串仍可保留，前端通过 `translateServerMessage` 兜底
+8. **双语界面**：UI 文案走 `$t('key', {name})`；后端日志/Agent 状态走 `messageCatalog` key + `InfoKey`/`agentMsg`；API 错误走 `writeErrorReq` + `errorCatalog`；新增 key 须同步 `messages.go`（或 `errorCatalog`）与 `zh.js`/`en.js`
 9. **Skill 可选性**：所有 skill 默认禁用，功能性 AI 不注入任何 skill，除非作者显式启用
 10. **多语言一致**：新增 prompt 模板必须同时在 `prompts.go`（`DefaultPromptsZH`）和 `prompts_en.go`（`DefaultPromptsEN`）补齐；新增注入块文本必须在 `i18n_inject.go` 处理两种语言；新增内联 system prompt 必须挂到 `locale.go` 的 `systemPrompts` map
 

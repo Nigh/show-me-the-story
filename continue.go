@@ -214,6 +214,6 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *APIConfig, cfg *Co
 
 	RunForeshadowOutlineCheckAndSave(ctx, apiCfg, cfg, state, progressPath, logger)
 
-	logger.Info(fmt.Sprintf("续写大纲生成完成，新增 %d 章，总计 %d 章", len(resp.Chapters), len(state.Chapters)))
+	logger.InfoKey("log.continuation_outline_summary", len(resp.Chapters), len(state.Chapters))
 	return nil
 }
