@@ -134,6 +134,15 @@ export function connectSSE() {
     if (d.success) {
       const name = taskLabel(d.task);
       addToast(translate('toast.taskDone', { name }), 'success');
+    } else if (d.task === 'chapter_generation') {
+      api('GET', '/api/progress').then(p => {
+        progress.set(p);
+        if (!p?.pending_writing_conflict) {
+          lastFailedTask.set({ task: d.task, taskName: taskLabel(d.task) });
+        }
+      }).catch(() => {
+        lastFailedTask.set({ task: d.task, taskName: taskLabel(d.task) });
+      });
     } else {
       lastFailedTask.set({ task: d.task, taskName: taskLabel(d.task) });
     }
@@ -205,6 +214,18 @@ export function connectSSE() {
     foreshadowSuggestions.set(items);
     foreshadowShowSuggestions.set(true);
     addToast(translate('toast.foreshadowReady', { n: items.length }), 'info');
+  });
+
+  eventSource.addEventListener('foreshadow_outline_conflicts', e => {
+    const d = JSON.parse(e.data);
+    refreshProgress(true);
+    addToast(translate('toast.foreshadowOutlineConflict', { n: (d.conflicts || []).length }), 'warning');
+  });
+
+  eventSource.addEventListener('writing_conflict', e => {
+    const d = JSON.parse(e.data);
+    refreshProgress(true);
+    addToast(translate('toast.writingConflict'), 'warning');
   });
 
   eventSource.addEventListener('chat_chunk', e => {

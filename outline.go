@@ -29,6 +29,7 @@ func generateOutline(ctx context.Context, apiCfg *APIConfig, cfg *Config) (*Outl
 		"ChapterCount":     chapterCountStr,
 		"TargetWords":      targetWordsStr,
 		"WritingStyle":     cfg.Story.WritingStyle,
+		"WritingPOV":       cfg.Story.WritingPOV,
 		"StorySynopsis":    cfg.Story.StorySynopsis,
 	})
 
@@ -201,6 +202,8 @@ func ReviseOutlineAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 	if err := SaveProgress(progressPath, state); err != nil {
 		return fmt.Errorf("保存进度失败: %w", err)
 	}
+
+	RunForeshadowOutlineCheckAndSave(ctx, apiCfg, cfg, state, progressPath, logger)
 
 	logger.Success(fmt.Sprintf("大纲已修订，共 %d 章", len(state.Chapters)))
 	return nil

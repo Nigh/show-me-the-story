@@ -128,6 +128,14 @@ func (lb *LogBroadcaster) ForeshadowSuggestions(suggestions []ForeshadowSuggesti
 	lb.Emit("foreshadow_suggestions", suggestions)
 }
 
+func (lb *LogBroadcaster) ForeshadowOutlineConflicts(report *ForeshadowOutlineReport) {
+	lb.Emit("foreshadow_outline_conflicts", report)
+}
+
+func (lb *LogBroadcaster) WritingConflict(conflict *WritingConflict) {
+	lb.Emit("writing_conflict", conflict)
+}
+
 func (lb *LogBroadcaster) ContinueAnalysisResult(data interface{}) {
 	lb.Emit("continue_analysis", data)
 }

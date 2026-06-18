@@ -52,6 +52,9 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	mux.HandleFunc("PUT /api/outline/{num}", h.PutChapterOutline)
 
 	mux.HandleFunc("POST /api/chapter/generate", h.PostChapterGenerate)
+	mux.HandleFunc("GET /api/chapter/conflict", h.GetChapterConflict)
+	mux.HandleFunc("POST /api/chapter/conflict-resolve", h.PostChapterConflictResolve)
+	mux.HandleFunc("POST /api/foreshadows/outline-check", h.PostForeshadowOutlineCheck)
 	mux.HandleFunc("POST /api/chapter/confirm", h.PostChapterConfirm)
 	mux.HandleFunc("POST /api/chapter/revise", h.PostChapterRevise)
 	mux.HandleFunc("POST /api/chapter/revise/{num}", h.PostChapterReviseSpecific)
