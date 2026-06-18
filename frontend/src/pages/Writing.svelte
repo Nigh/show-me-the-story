@@ -7,7 +7,7 @@
   import TaskTokenBadge from '../components/TaskTokenBadge.svelte';
 
   // 保留 prop 以兼容 App 传参
-  export let sendToChat = async () => {};
+  export const sendToChat = async () => {};
 
   onMount(async () => {
     try {
