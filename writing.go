@@ -116,7 +116,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 		return err
 	}
 
-	logger.Info(fmt.Sprintf("开始创作第 %d 章: 《%s》", ch.Num, ch.Title))
+	logger.InfoKey("log.chapter_start", ch.Num, ch.Title)
 
 	// 写前检查：本章大纲若已与实际写出的剧情冲突（如大纲安排初遇但前文已认识），
 	// 先最小化修订大纲再动笔，避免按过时大纲写出矛盾内容。
@@ -124,14 +124,14 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 		logger.StepInfo(1, 5, "正在检查本章大纲与当前剧情的一致性...")
 		revised, err := checkOutlineConsistency(ctx, apiCfg, cfg, state, i, logger)
 		if err != nil {
-			logger.Warn(fmt.Sprintf("大纲一致性检查失败: %v（按原大纲继续）", err))
+			logger.WarnKey("log.outline_check_failed", err)
 		} else if revised {
 			if err := SaveProgress(progressPath, state); err != nil {
 				return err
 			}
-			logger.Info("本章大纲已自动修订以匹配当前剧情")
+			logger.InfoKey("log.outline_auto_revised")
 		} else {
-			logger.Info("本章大纲与当前剧情一致 ✓")
+			logger.InfoKey("log.outline_consistent")
 		}
 	}
 
@@ -153,7 +153,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 			return fmt.Errorf("正文生成失败或被取消")
 		}
 		ch.Content = content
-		logger.Info(fmt.Sprintf("正文撰写完毕，共 %d 字", len([]rune(content))))
+		logger.InfoKey("log.prose_done", len([]rune(content)))
 
 		logger.StepInfo(3, 5, "正在提炼本章摘要...")
 		summary := generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, content, logger)
@@ -161,7 +161,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 			return fmt.Errorf("摘要提炼失败或被取消")
 		}
 		ch.Summary = summary
-		logger.Info("摘要提炼完成")
+		logger.InfoKey("log.summary_done")
 
 		logger.StepInfo(4, 5, "正在对本章进行事实核查...")
 		historySummary := buildHistorySummary(state, i)
@@ -171,20 +171,20 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 		if failed {
 			accumulatedIssues = mergeUniqueIssues(accumulatedIssues, splitFactCheckIssues(issues))
 			if attempt < maxFactCheckRetries {
-				logger.Warn(fmt.Sprintf("[事实核查] 发现问题，正在重新生成第 %d 章（第 %d 次重试）...", ch.Num, attempt+1))
-				logger.Warn(fmt.Sprintf("核查详情: %s", issues))
+				logger.WarnKey("log.factcheck_retry", ch.Num, attempt+1)
+				logger.WarnKey("log.factcheck_details", issues)
 				continue
 			}
 
-			logger.Warn("[事实核查] 已达最大重试次数，正在分析冲突根因...")
+			logger.WarnKey("log.factcheck_max_retries")
 			analysis, err := analyzeWritingConflict(ctx, apiCfg, cfg, state, i, content, accumulatedIssues, logger)
 			if err != nil {
-				logger.Warn(fmt.Sprintf("冲突分析失败: %v，保留当前版本", err))
+				logger.WarnKey("log.conflict_analyze_failed", err)
 				break
 			}
 
 			if analysis.Reconcilable && strings.TrimSpace(analysis.ExtraConstraints) != "" {
-				logger.Info("检测到可调和冲突，正在按补充约束进行最后一次尝试...")
+				logger.InfoKey("log.conflict_retry")
 				extraConstraints = strings.TrimSpace(analysis.ExtraConstraints)
 				content = generateChapterContentStreamWithRetryLog(ctx, apiCfg, cfg, state, i, settings, extraConstraints, logger)
 				if content == "" {
@@ -201,7 +201,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 				if failed {
 					accumulatedIssues = mergeUniqueIssues(accumulatedIssues, splitFactCheckIssues(issues))
 				} else {
-					logger.Info("[事实核查] 补充约束尝试通过 ✓")
+					logger.InfoKey("log.factcheck_constraint_pass")
 					break
 				}
 			}
@@ -216,7 +216,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 			logger.WritingConflict(conflict)
 			return &WritingConflictError{Conflict: conflict}
 		}
-		logger.Info("[事实核查] 通过 ✓")
+		logger.InfoKey("log.factcheck_pass")
 		break
 	}
 
@@ -235,7 +235,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 		return err
 	}
 
-	logger.Success(fmt.Sprintf("第 %d 章创作完成！", ch.Num))
+	logger.SuccessKey("log.chapter_write_complete", ch.Num)
 	return nil
 }
 
@@ -308,7 +308,7 @@ func checkOutlineConsistency(ctx context.Context, apiCfg *APIConfig, cfg *Config
 		return false, nil
 	}
 
-	logger.Warn(fmt.Sprintf("第 %d 章大纲与当前剧情冲突: %s", ch.Num, strings.Join(resp.Issues, "；")))
+	logger.WarnKey("log.outline_conflict", ch.Num, strings.Join(resp.Issues, "；"))
 	ch.Outline = strings.TrimSpace(resp.RevisedOutline)
 	return true, nil
 }
@@ -333,7 +333,7 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 		return fmt.Errorf("当前章节不在审核/写作状态")
 	}
 
-	logger.Info(fmt.Sprintf("正在修改第 %d 章《%s》...", ch.Num, ch.Title))
+	logger.InfoKey("log.chapter_modifying", ch.Num, ch.Title)
 
 	logger.StepInfo(1, 3, "正在根据意见修订正文...")
 	revisedContent, err := reviseChapterContentStream(ctx, apiCfg, cfg, state, chapterIdx, feedback, settings, logger)
@@ -341,7 +341,7 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 		return fmt.Errorf("修改章节失败: %w", err)
 	}
 	ch.Content = revisedContent
-	logger.Info(fmt.Sprintf("正文修改完毕，共 %d 字", len([]rune(revisedContent))))
+	logger.InfoKey("log.prose_revised", len([]rune(revisedContent)))
 
 	logger.StepInfo(2, 3, "重新提炼摘要...")
 	summary := generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, ch.Content, logger)
@@ -349,16 +349,16 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 		return fmt.Errorf("摘要提炼失败或被取消")
 	}
 	ch.Summary = summary
-	logger.Info("摘要提炼完成")
+	logger.InfoKey("log.summary_done")
 
 	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
 
 	if chapterIdx+1 < len(state.Chapters) {
 		logger.StepInfo(3, 3, "正在修订后续章节大纲...")
 		if err := reviseSubsequentOutlines(ctx, apiCfg, cfg, state, chapterIdx, feedback); err != nil {
-			logger.Warn(fmt.Sprintf("后续大纲修订失败: %v（不影响当前章节）", err))
+			logger.WarnKey("log.subsequent_outline_failed", err)
 		} else {
-			logger.Info("后续大纲修订完成")
+			logger.InfoKey("log.subsequent_outline_done")
 		}
 	}
 
@@ -374,7 +374,7 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 		}
 	}
 
-	logger.Success(fmt.Sprintf("第 %d 章已修订。", ch.Num))
+	logger.SuccessKey("log.chapter_revised")
 	return nil
 }
 
@@ -407,7 +407,7 @@ func ReviseSpecificChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Co
 		return fmt.Errorf("第 %d 章正在写作中，无法修订", chapterNum)
 	}
 
-	logger.Info(fmt.Sprintf("正在对第 %d 章《%s》进行定向修订（不影响其他章节）...", ch.Num, ch.Title))
+	logger.InfoKey("log.chapter_specific_revising_long", ch.Num, ch.Title)
 
 	logger.StepInfo(1, 2, "正在根据意见修订正文...")
 	revisedContent, err := reviseChapterContentStream(ctx, apiCfg, cfg, state, chapterIdx, feedback, settings, logger)
@@ -415,7 +415,7 @@ func ReviseSpecificChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Co
 		return fmt.Errorf("修订章节失败: %w", err)
 	}
 	ch.Content = revisedContent
-	logger.Info(fmt.Sprintf("正文修订完毕，共 %d 字", len([]rune(revisedContent))))
+	logger.InfoKey("log.prose_specific_revised", len([]rune(revisedContent)))
 
 	logger.StepInfo(2, 2, "重新提炼摘要...")
 	summary := generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, ch.Content, logger)
@@ -437,7 +437,7 @@ func ReviseSpecificChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Co
 		}
 	}
 
-	logger.Success(fmt.Sprintf("第 %d 章定向修订完成（其余章节未受影响）。", ch.Num))
+	logger.SuccessKey("log.chapter_specific_done", ch.Num)
 	return nil
 }
 
@@ -531,13 +531,13 @@ func generateChapterContentStreamWithRetryLog(ctx context.Context, apiCfg *APICo
 			return content
 		}
 		if isFatalAPIError(err) {
-			logger.Error(fmt.Sprintf("致命错误: %v，不再重试", err))
+			logger.ErrorKey("log.fatal_no_retry", err)
 			return ""
 		}
 
 		retryCount++
 		waitTime := getWaitTime(retryCount)
-		logger.Warn(fmt.Sprintf("正文生成失败: %v。第 %d 次重试，等待 %ds...", err, retryCount, waitTime))
+		logger.WarnKey("log.content_gen_retry", err, retryCount, waitTime)
 		select {
 		case <-time.After(time.Duration(waitTime) * time.Second):
 		case <-ctx.Done():
@@ -566,13 +566,13 @@ func generateChapterSummaryWithRetryLog(ctx context.Context, apiCfg *APIConfig, 
 			return summary
 		}
 		if isFatalAPIError(err) {
-			logger.Error(fmt.Sprintf("致命错误: %v，不再重试", err))
+			logger.ErrorKey("log.fatal_no_retry", err)
 			return ""
 		}
 
 		retryCount++
 		waitTime := getWaitTime(retryCount)
-		logger.Warn(fmt.Sprintf("摘要提炼失败: %v。第 %d 次重试，等待 %ds...", err, retryCount, waitTime))
+		logger.WarnKey("log.summary_retry", err, retryCount, waitTime)
 		select {
 		case <-time.After(time.Duration(waitTime) * time.Second):
 		case <-ctx.Done():
@@ -625,13 +625,13 @@ func generateChapterFactCheckWithRetryLog(ctx context.Context, apiCfg *APIConfig
 			return result
 		}
 		if isFatalAPIError(err) {
-			logger.Error(fmt.Sprintf("致命错误: %v，不再重试", err))
+			logger.ErrorKey("log.fatal_no_retry", err)
 			return ""
 		}
 
 		retryCount++
 		waitTime := getWaitTime(retryCount)
-		logger.Warn(fmt.Sprintf("事实核查失败: %v。第 %d 次重试，等待 %ds...", err, retryCount, waitTime))
+		logger.WarnKey("log.factcheck_api_retry", err, retryCount, waitTime)
 		select {
 		case <-time.After(time.Duration(waitTime) * time.Second):
 		case <-ctx.Done():
@@ -826,7 +826,7 @@ func SmoothTransitionsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 		return fmt.Errorf("没有可优化的章节（需要至少两个相邻的已确认章节）")
 	}
 
-	logger.Info(fmt.Sprintf("开始章节衔接优化，共 %d 章待检查", len(targets)))
+	logger.InfoKey("log.smooth_start", len(targets))
 	optimized := 0
 	for n, idx := range targets {
 		if ctx.Err() != nil {
@@ -858,7 +858,7 @@ func SmoothTransitionsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 			head = string([]rune(head)[:30])
 		}
 		if revised == "" || strings.Contains(head, "NO_CHANGE") {
-			logger.Info(fmt.Sprintf("第 %d 章衔接自然，无需修改", ch.Num))
+			logger.InfoKey("log.smooth_natural", ch.Num)
 			continue
 		}
 
@@ -872,10 +872,10 @@ func SmoothTransitionsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 			return err
 		}
 		optimized++
-		logger.Info(fmt.Sprintf("第 %d 章开头已优化并保存", ch.Num))
+		logger.InfoKey("log.smooth_optimized", ch.Num)
 	}
 
-	logger.Success(fmt.Sprintf("章节衔接优化完成：检查 %d 章，优化 %d 章", len(targets), optimized))
+	logger.SuccessKey("log.smooth_done", len(targets), optimized)
 	return nil
 }
 

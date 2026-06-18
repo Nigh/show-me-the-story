@@ -13,10 +13,12 @@ type SSEMessage struct {
 }
 
 type LogEntry struct {
-	Level string `json:"level"`
-	Msg   string `json:"msg"`            // Chinese text (default fallback)
-	MsgEN string `json:"msg_en,omitempty"` // optional English text; if empty, frontend uses dictionary fallback or shows Msg
-	Time  string `json:"time"`
+	Level   string   `json:"level"`
+	Msg     string   `json:"msg"`               // Chinese text (default fallback)
+	MsgEN   string   `json:"msg_en,omitempty"`  // English text fallback
+	MsgKey  string   `json:"msg_key,omitempty"` // stable i18n key for frontend
+	MsgArgs []string `json:"msg_args,omitempty"`
+	Time    string   `json:"time"`
 }
 
 type LogBroadcaster struct {
@@ -61,24 +63,51 @@ func (lb *LogBroadcaster) broadcast(msg SSEMessage) {
 }
 
 func (lb *LogBroadcaster) Log(level, msg string) {
-	lb.logBilingual(level, msg, "")
+	lb.logEntry(LogEntry{
+		Level: level,
+		Msg:   msg,
+		Time:  time.Now().Format("15:04:05"),
+	})
 }
 
 func (lb *LogBroadcaster) logBilingual(level, msg, msgEN string) {
-	entry := LogEntry{
+	lb.logEntry(LogEntry{
 		Level: level,
 		Msg:   msg,
 		MsgEN: msgEN,
 		Time:  time.Now().Format("15:04:05"),
-	}
+	})
+}
+
+func (lb *LogBroadcaster) logKey(level, key string, args ...any) {
+	lb.logEntry(LogEntry{
+		Level:   level,
+		MsgKey:  key,
+		MsgArgs: msgArgsToStrings(args...),
+		Msg:     T(LangZH, key, args...),
+		MsgEN:   T(LangEN, key, args...),
+		Time:    time.Now().Format("15:04:05"),
+	})
+}
+
+func (lb *LogBroadcaster) logEntry(entry LogEntry) {
 	lb.broadcast(SSEMessage{Event: "log", Data: entry})
-	fmt.Printf(" [%s] %s\n", level, msg)
+	if entry.Msg != "" {
+		fmt.Printf(" [%s] %s\n", entry.Level, entry.Msg)
+	} else if entry.MsgKey != "" {
+		fmt.Printf(" [%s] %s\n", entry.Level, entry.MsgKey)
+	}
 }
 
 func (lb *LogBroadcaster) Info(msg string)    { lb.Log("info", msg) }
 func (lb *LogBroadcaster) Error(msg string)   { lb.Log("error", msg) }
 func (lb *LogBroadcaster) Warn(msg string)    { lb.Log("warn", msg) }
 func (lb *LogBroadcaster) Success(msg string) { lb.Log("success", msg) }
+
+func (lb *LogBroadcaster) InfoKey(key string, args ...any)    { lb.logKey("info", key, args...) }
+func (lb *LogBroadcaster) ErrorKey(key string, args ...any)   { lb.logKey("error", key, args...) }
+func (lb *LogBroadcaster) WarnKey(key string, args ...any)    { lb.logKey("warn", key, args...) }
+func (lb *LogBroadcaster) SuccessKey(key string, args ...any) { lb.logKey("success", key, args...) }
 
 // *Bilingual variants supply both zh and en text; frontend picks based on UI locale.
 func (lb *LogBroadcaster) InfoBilingual(zh, en string)    { lb.logBilingual("info", zh, en) }
@@ -89,8 +118,6 @@ func (lb *LogBroadcaster) SuccessBilingual(zh, en string) { lb.logBilingual("suc
 func (lb *LogBroadcaster) StepInfo(step, total int, msg string) {
 	lb.Log("info", fmt.Sprintf("[%d/%d] %s", step, total, msg))
 }
-
-// StreamStart 通知前端：某章节的流式输出即将开始，应清空之前的流式缓冲。
 func (lb *LogBroadcaster) StreamStart(chapterIdx int) {
 	lb.Emit("stream_start", map[string]interface{}{
 		"chapter_idx": chapterIdx,
@@ -189,12 +216,17 @@ func (lb *LogBroadcaster) ToolCallStart(sessionID, toolName, args string) {
 	})
 }
 
-func (lb *LogBroadcaster) ToolCallEnd(sessionID, toolName, result string) {
-	lb.Emit("tool_call_end", map[string]interface{}{
+func (lb *LogBroadcaster) ToolCallEnd(sessionID, toolName, result, resultKey string, resultArgs []string) {
+	payload := map[string]interface{}{
 		"session_id": sessionID,
 		"tool_name":  toolName,
 		"result":     result,
-	})
+	}
+	if resultKey != "" {
+		payload["result_key"] = resultKey
+		payload["result_args"] = resultArgs
+	}
+	lb.Emit("tool_call_end", payload)
 }
 
 func (lb *LogBroadcaster) Close() {

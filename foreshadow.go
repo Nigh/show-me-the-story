@@ -59,7 +59,7 @@ func SuggestForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, sta
 		return nil, fmt.Errorf("解析伏笔建议JSON失败: %w", err)
 	}
 
-	logger.Info(fmt.Sprintf("伏笔方案解析完成，共 %d 条", len(resp.Foreshadows)))
+	logger.InfoKey("log.foreshadow_plan_parsed", len(resp.Foreshadows))
 	return resp.Foreshadows, nil
 }
 
@@ -97,7 +97,7 @@ func UpdateForeshadows(ctx context.Context, apiCfg *APIConfig, cfg *Config, stat
 	}
 
 	applyForeshadowUpdates(state, resp.Updates, ch.Num)
-	logger.Info(fmt.Sprintf("伏笔状态更新完成，处理 %d 条变更", len(resp.Updates)))
+	logger.InfoKey("log.foreshadow_status_updated", len(resp.Updates))
 	return nil
 }
 
@@ -389,7 +389,7 @@ func syncForeshadowsAfterChapter(ctx context.Context, apiCfg *APIConfig, cfg *Co
 		return
 	}
 	if err := UpdateForeshadows(ctx, apiCfg, cfg, state, chapterIdx, logger); err != nil {
-		logger.Warn(fmt.Sprintf("伏笔状态更新失败: %v（不影响本章）", err))
+		logger.WarnKey("log.foreshadow_sync_failed", err)
 		return
 	}
 	active, resolved := 0, 0
@@ -401,9 +401,9 @@ func syncForeshadowsAfterChapter(ctx context.Context, apiCfg *APIConfig, cfg *Co
 			resolved++
 		}
 	}
-	logger.Info(fmt.Sprintf("伏笔状态已更新（活跃: %d, 已回收: %d）", active, resolved))
+	logger.InfoKey("log.foreshadow_sync_summary", active, resolved)
 	if err := SaveForeshadowRoadmap(filepath.Dir(progressPath), state); err != nil {
-		logger.Warn(fmt.Sprintf("伏笔路线图保存失败: %v", err))
+		logger.WarnKey("log.foreshadow_roadmap_save_failed", err)
 	}
 	if warn := BuildForeshadowWarnings(state); warn != "" {
 		logger.Warn(warn)

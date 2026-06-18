@@ -186,7 +186,7 @@ func GenerateOutlineAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 		return fmt.Errorf("保存进度失败: %w", err)
 	}
 
-	logger.Success(fmt.Sprintf("大纲生成完成，共 %d 章，标题: 《%s》", len(state.Chapters), state.Title))
+	logger.SuccessKey("log.outline_generate_summary", len(state.Chapters), state.Title)
 	return nil
 }
 
@@ -205,7 +205,7 @@ func ReviseOutlineAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 
 	RunForeshadowOutlineCheckAndSave(ctx, apiCfg, cfg, state, progressPath, logger)
 
-	logger.Success(fmt.Sprintf("大纲已修订，共 %d 章", len(state.Chapters)))
+	logger.SuccessKey("log.outline_revise_summary", len(state.Chapters))
 	return nil
 }
 

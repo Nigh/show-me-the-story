@@ -215,13 +215,13 @@ func CallAPIWithRetryLog(ctx context.Context, apiCfg *APIConfig, system, user st
 			return result
 		}
 		if isFatalAPIError(err) {
-			logger.Error(fmt.Sprintf("致命错误: %v，不再重试", err))
+			logger.ErrorKey("log.fatal_no_retry", err)
 			return ""
 		}
 
 		retryCount++
 		waitTime := getWaitTime(retryCount)
-		logger.Warn(fmt.Sprintf("API调用失败: %v。第 %d 次重试，等待 %ds...", err, retryCount, waitTime))
+		logger.WarnKey("log.api_retry", err, retryCount, waitTime)
 		select {
 		case <-time.After(time.Duration(waitTime) * time.Second):
 		case <-ctx.Done():
@@ -381,13 +381,13 @@ func CallAPIStreamWithRetryLog(ctx context.Context, apiCfg *APIConfig, system, u
 			return result
 		}
 		if isFatalAPIError(err) {
-			logger.Error(fmt.Sprintf("致命错误: %v，不再重试", err))
+			logger.ErrorKey("log.fatal_no_retry", err)
 			return ""
 		}
 
 		retryCount++
 		waitTime := getWaitTime(retryCount)
-		logger.Warn(fmt.Sprintf("流式API调用失败: %v。第 %d 次重试，等待 %ds...", err, retryCount, waitTime))
+		logger.WarnKey("log.api_stream_retry", err, retryCount, waitTime)
 		select {
 		case <-time.After(time.Duration(waitTime) * time.Second):
 		case <-ctx.Done():

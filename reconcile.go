@@ -83,7 +83,7 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 		origStory := cfg.Story
 		cfg.Story = adjustedStory
 		if err := regeneratePendingOutlines(ctx, apiCfg, cfg, state, logger); err != nil {
-			logger.Warn(fmt.Sprintf("待定章节大纲重新生成失败: %v（设定已更新）", err))
+			logger.WarnKey("log.reconcile_pending_outline_failed", err)
 		}
 		cfg.Story = origStory
 	}
@@ -100,7 +100,7 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *APIConfig, cfg *Config
 
 	RunForeshadowOutlineCheckAndSave(ctx, apiCfg, cfg, state, progressPath, logger)
 
-	logger.Success("设定协调完成。" + result.Explanation)
+	logger.SuccessKey("log.reconcile_done_explain" + result.Explanation)
 
 	changedFields := []string{}
 	if result.Type != newSettings.Type {

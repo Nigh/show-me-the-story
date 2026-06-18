@@ -17,11 +17,13 @@ type ChatSession struct {
 }
 
 type ChatMessage struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolResult string     `json:"tool_result,omitempty"`
-	Timestamp  string     `json:"timestamp"`
+	Role            string     `json:"role"`
+	Content         string     `json:"content"`
+	ToolCalls       []ToolCall `json:"tool_calls,omitempty"`
+	ToolResult      string     `json:"tool_result,omitempty"`
+	ToolResultKey   string     `json:"tool_result_key,omitempty"`
+	ToolResultArgs  []string   `json:"tool_result_args,omitempty"`
+	Timestamp       string     `json:"timestamp"`
 }
 
 type ChatSessionIndex struct {

@@ -29,13 +29,17 @@ type AgentContext struct {
 	SessionsDir  string
 	ProjectDir   string
 	StartAsync   func(taskName string, fn func(goCtx context.Context))
+	toolMsgKey   string
+	toolMsgArgs  []string
 }
 
 type AgentStep struct {
-	Role       string
-	Content    string
-	ToolCall   *ToolCall
-	ToolResult string
+	Role           string
+	Content        string
+	ToolCall       *ToolCall
+	ToolResult     string
+	ToolResultKey  string
+	ToolResultArgs []string
 }
 
 type ToolCall struct {
@@ -74,7 +78,7 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 
 	for step := 0; step < maxSteps; step++ {
 		if goCtx.Err() != nil {
-			return "", history, fmt.Errorf("任务已取消")
+			return "", history, agentErr(ctx, "agent.task_cancelled")
 		}
 
 		fullResp := ""
@@ -82,7 +86,7 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 			fullResp += chunk
 		})
 		if err != nil {
-			return "", history, fmt.Errorf("Agent API 调用失败: %w", err)
+			return "", history, agentErr(ctx, "agent.api_failed", err)
 		}
 
 		toolCall := parseToolCall(fullResp)
@@ -98,12 +102,17 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 			ctx.Logger.ToolCallStart("", toolCall.Name, string(toolCall.Arguments))
 		}
 
-		result := executeTool(toolCall, tools, ctx)
+		result, resultKey, resultArgs := executeTool(toolCall, tools, ctx)
 
-		history = append(history, AgentStep{Role: "tool", ToolResult: result})
+		history = append(history, AgentStep{
+			Role:           "tool",
+			ToolResult:     result,
+			ToolResultKey:  resultKey,
+			ToolResultArgs: resultArgs,
+		})
 
 		if ctx.Logger != nil {
-			ctx.Logger.ToolCallEnd("", toolCall.Name, truncate(result, 200))
+			ctx.Logger.ToolCallEnd("", toolCall.Name, truncate(result, 200), resultKey, resultArgs)
 		}
 
 		messages = append(messages, Message{Role: "assistant", Content: fmt.Sprintf("<tool_call>\n%s\n</tool_call>", func() string {
@@ -113,10 +122,7 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 		messages = append(messages, Message{Role: "user", Content: fmt.Sprintf("%s\n%s", toolResultLabel, result)})
 	}
 
-	if NormalizeLanguage(ctx.Config.Language) == LangEN {
-		return "Reached the maximum tool-call step limit.", history, nil
-	}
-	return "已达到最大工具调用步骤限制。", history, nil
+	return agentMsg(ctx, "agent.max_steps"), history, nil
 }
 
 func callAgentAPI(ctx context.Context, apiCfg *APIConfig, messages []Message, onChunk func(string)) error {
@@ -507,22 +513,25 @@ func extractJSON(content string) string {
 	return ""
 }
 
-func executeTool(call *ToolCall, tools []Tool, ctx *AgentContext) string {
+func executeTool(call *ToolCall, tools []Tool, ctx *AgentContext) (string, string, []string) {
+	ctx.clearToolMsg()
+	lang := projectLang(ctx)
 	for _, t := range tools {
 		if t.Name == call.Name {
 			result, err := t.Execute(call.Arguments, ctx)
 			if err != nil {
-				return fmt.Sprintf("工具执行错误: %v", err)
+				return T(lang, "agent.tool_exec_error", err), "agent.tool_exec_error", msgArgsToStrings(err)
 			}
-			return result
+			key, args := ctx.takeToolMsg()
+			return result, key, args
 		}
 	}
-	return fmt.Sprintf("未知工具: %s", call.Name)
+	return T(lang, "agent.unknown_tool", call.Name), "agent.unknown_tool", msgArgsToStrings(call.Name)
 }
 
 // requireConfirm 检查危险操作的 confirm 参数。
 // 未确认时返回非空提示（作为工具结果反馈给 AI，要求其先征得用户同意）。
-func requireConfirm(args json.RawMessage, action string) string {
+func requireConfirm(ctx *AgentContext, args json.RawMessage, action string) string {
 	var params struct {
 		Confirm bool `json:"confirm"`
 	}
@@ -530,7 +539,7 @@ func requireConfirm(args json.RawMessage, action string) string {
 	if params.Confirm {
 		return ""
 	}
-	return fmt.Sprintf("⚠️ 操作未执行：「%s」是不可逆的危险操作。请先向用户复述影响范围并获得明确同意，确认后携带 confirm=true 重新调用。如果用户的本意是修改内容而非删除，请改用对应的修订工具。", action)
+	return agentMsg(ctx, "agent.confirm_required", action)
 }
 
 func getBuiltinTools() []Tool {
@@ -546,7 +555,7 @@ func getBuiltinTools() []Tool {
 				json.Unmarshal(args, &params)
 
 				if ctx.Settings == nil {
-					return "暂无角色数据", nil
+					return agentMsg(ctx, "agent.no_characters"), nil
 				}
 
 				var result strings.Builder
@@ -568,7 +577,7 @@ func getBuiltinTools() []Tool {
 				}
 
 				if result.Len() == 0 {
-					return "没有找到匹配的角色", nil
+					return agentMsg(ctx, "agent.characters_not_found"), nil
 				}
 				return result.String(), nil
 			},
@@ -584,7 +593,7 @@ func getBuiltinTools() []Tool {
 				json.Unmarshal(args, &params)
 
 				if ctx.Settings == nil {
-					return "暂无角色数据", nil
+					return agentMsg(ctx, "agent.no_characters"), nil
 				}
 
 				for _, c := range ctx.Settings.Characters {
@@ -593,7 +602,7 @@ func getBuiltinTools() []Tool {
 						return string(data), nil
 					}
 				}
-				return fmt.Sprintf("未找到角色: %s", params.ID), nil
+				return agentMsg(ctx, "agent.character_not_found", params.ID), nil
 			},
 		},
 		{
@@ -607,7 +616,7 @@ func getBuiltinTools() []Tool {
 				json.Unmarshal(args, &params)
 
 				if ctx.Settings == nil || len(ctx.Settings.Worldview) == 0 {
-					return "暂无世界观数据", nil
+					return agentMsg(ctx, "agent.no_worldview"), nil
 				}
 
 				var result strings.Builder
@@ -619,7 +628,7 @@ func getBuiltinTools() []Tool {
 				}
 
 				if result.Len() == 0 {
-					return "没有找到匹配的世界观条目", nil
+					return agentMsg(ctx, "agent.worldview_not_found"), nil
 				}
 				return result.String(), nil
 			},
@@ -630,7 +639,7 @@ func getBuiltinTools() []Tool {
 			Parameters:  `{}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				if ctx.Settings == nil || len(ctx.Settings.Organizations) == 0 {
-					return "暂无组织数据", nil
+					return agentMsg(ctx, "agent.no_organizations"), nil
 				}
 
 				var result strings.Builder
@@ -672,7 +681,7 @@ func getBuiltinTools() []Tool {
 						return result.String(), nil
 					}
 				}
-				return fmt.Sprintf("未找到第%d章", params.Num), nil
+				return agentMsg(ctx, "agent.chapter_not_found", params.Num), nil
 			},
 		},
 		{
@@ -681,7 +690,7 @@ func getBuiltinTools() []Tool {
 			Parameters:  `{}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				if len(ctx.State.Chapters) == 0 {
-					return "暂无大纲", nil
+					return agentMsg(ctx, "agent.no_outline"), nil
 				}
 
 				var result strings.Builder
@@ -707,7 +716,7 @@ func getBuiltinTools() []Tool {
 			Parameters:  `{}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				if len(ctx.State.Foreshadows) == 0 {
-					return "暂无伏笔", nil
+					return agentMsg(ctx, "agent.no_foreshadows"), nil
 				}
 
 				var result strings.Builder
@@ -744,7 +753,7 @@ func getBuiltinTools() []Tool {
 				json.Unmarshal(args, &params)
 
 				if params.Query == "" {
-					return "请提供搜索关键词", nil
+					return agentMsg(ctx, "agent.search_keyword_required"), nil
 				}
 
 				var results []string
@@ -770,7 +779,7 @@ func getBuiltinTools() []Tool {
 				}
 
 				if len(results) == 0 {
-					return "未找到相关内容", nil
+					return agentMsg(ctx, "agent.search_no_results"), nil
 				}
 				return strings.Join(results, "\n"), nil
 			},
@@ -782,23 +791,23 @@ func getBuiltinTools() []Tool {
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var c Character
 				if err := json.Unmarshal(args, &c); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				if c.Name == "" {
-					return "", fmt.Errorf("角色名不能为空")
+					return "", agentErr(ctx, "character_name_empty")
 				}
 
 				c.ID = ctx.Settings.nextCharacterID()
 				ctx.Settings.Characters = append(ctx.Settings.Characters, c)
 
 				if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-					return "", fmt.Errorf("保存失败: %w", err)
+					return "", agentErr(ctx, "save_failed", err)
 				}
 				if ctx.Logger != nil {
 					ctx.Logger.SettingsUpdated()
 				}
 
-				return fmt.Sprintf("角色「%s」创建成功 (ID: %s)", c.Name, c.ID), nil
+				return agentMsg(ctx, "agent.character_created", c.Name, c.ID), nil
 			},
 		},
 		{
@@ -818,7 +827,7 @@ func getBuiltinTools() []Tool {
 					Notes       string `json:"notes"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 
 				for i, c := range ctx.Settings.Characters {
@@ -849,16 +858,16 @@ func getBuiltinTools() []Tool {
 						}
 
 						if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						if ctx.Logger != nil {
 							ctx.Logger.SettingsUpdated()
 						}
 
-						return fmt.Sprintf("角色「%s」已更新", ctx.Settings.Characters[i].Name), nil
+						return agentMsg(ctx, "agent.character_updated", ctx.Settings.Characters[i].Name), nil
 					}
 				}
-				return fmt.Sprintf("未找到角色: %s", params.ID), nil
+				return agentMsg(ctx, "agent.character_not_found", params.ID), nil
 			},
 		},
 		{
@@ -875,15 +884,15 @@ func getBuiltinTools() []Tool {
 					if c.ID == params.ID || c.Name == params.ID {
 						ctx.Settings.Characters = append(ctx.Settings.Characters[:i], ctx.Settings.Characters[i+1:]...)
 						if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						if ctx.Logger != nil {
 							ctx.Logger.SettingsUpdated()
 						}
-						return fmt.Sprintf("角色「%s」已删除", c.Name), nil
+						return agentMsg(ctx, "agent.character_deleted", c.Name), nil
 					}
 				}
-				return fmt.Sprintf("未找到角色: %s", params.ID), nil
+				return agentMsg(ctx, "agent.character_not_found", params.ID), nil
 			},
 		},
 		{
@@ -893,23 +902,23 @@ func getBuiltinTools() []Tool {
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var w WorldviewEntry
 				if err := json.Unmarshal(args, &w); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				if w.Name == "" || w.Description == "" {
-					return "", fmt.Errorf("名称和描述不能为空")
+					return "", agentErr(ctx, "worldview_field_empty")
 				}
 
 				w.ID = ctx.Settings.nextWorldviewID()
 				ctx.Settings.Worldview = append(ctx.Settings.Worldview, w)
 
 				if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-					return "", fmt.Errorf("保存失败: %w", err)
+					return "", agentErr(ctx, "save_failed", err)
 				}
 				if ctx.Logger != nil {
 					ctx.Logger.SettingsUpdated()
 				}
 
-				return fmt.Sprintf("世界观条目「%s」创建成功 (ID: %s)", w.Name, w.ID), nil
+				return agentMsg(ctx, "agent.worldview_created", w.Name, w.ID), nil
 			},
 		},
 		{
@@ -925,7 +934,7 @@ func getBuiltinTools() []Tool {
 					Tags        string `json:"tags"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 
 				for i, w := range ctx.Settings.Worldview {
@@ -944,16 +953,16 @@ func getBuiltinTools() []Tool {
 						}
 
 						if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						if ctx.Logger != nil {
 							ctx.Logger.SettingsUpdated()
 						}
 
-						return fmt.Sprintf("世界观条目「%s」已更新", ctx.Settings.Worldview[i].Name), nil
+						return agentMsg(ctx, "agent.worldview_updated", ctx.Settings.Worldview[i].Name), nil
 					}
 				}
-				return fmt.Sprintf("未找到世界观条目: %s", params.ID), nil
+				return agentMsg(ctx, "agent.worldview_not_found", params.ID), nil
 			},
 		},
 		{
@@ -970,15 +979,15 @@ func getBuiltinTools() []Tool {
 					if w.ID == params.ID || w.Name == params.ID {
 						ctx.Settings.Worldview = append(ctx.Settings.Worldview[:i], ctx.Settings.Worldview[i+1:]...)
 						if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						if ctx.Logger != nil {
 							ctx.Logger.SettingsUpdated()
 						}
-						return fmt.Sprintf("世界观条目「%s」已删除", w.Name), nil
+						return agentMsg(ctx, "agent.worldview_deleted", w.Name), nil
 					}
 				}
-				return fmt.Sprintf("未找到世界观条目: %s", params.ID), nil
+				return agentMsg(ctx, "agent.worldview_not_found", params.ID), nil
 			},
 		},
 		{
@@ -1009,7 +1018,7 @@ func getBuiltinTools() []Tool {
 					StorySynopsis         string `json:"story_synopsis"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 
 				if params.Type != "" {
@@ -1035,7 +1044,7 @@ func getBuiltinTools() []Tool {
 				}
 
 				if err := saveConfig(ctx.CfgPath, ctx.Config); err != nil {
-					return "", fmt.Errorf("保存配置失败: %w", err)
+					return "", agentErr(ctx, "save_config_failed", err)
 				}
 
 				hasAccepted := false
@@ -1054,15 +1063,15 @@ func getBuiltinTools() []Tool {
 							ctx.Logger.Error(fmt.Sprintf("设定协调失败: %v", err))
 							return
 						}
-						ctx.Logger.Success("设定协调完成！")
+						ctx.Logger.SuccessKey("log.settings_reconcile_done")
 					})
-					return "故事配置已保存，正在自动协调已有内容...", nil
+					return agentMsg(ctx, "agent.config_saved_reconciling"), nil
 				}
 
 				if ctx.Logger != nil {
 					ctx.Logger.SettingsUpdated()
 				}
-				return "故事配置已保存", nil
+				return agentMsg(ctx, "agent.config_saved"), nil
 			},
 		},
 		{
@@ -1071,14 +1080,14 @@ func getBuiltinTools() []Tool {
 			Parameters:  `{}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				if ctx.StartAsync == nil {
-					return "", fmt.Errorf("异步任务系统未初始化")
+					return "", agentErr(ctx, "task_running_wait")
 				}
 				for _, ch := range ctx.State.Chapters {
 					if ch.Status == StatusAccepted {
-						return "", fmt.Errorf("存在已确认章节，无法整体重新生成大纲（会覆盖已完成内容）。请引导用户使用「生成后续大纲」追加章节")
+						return "", agentErr(ctx, "accepted_chapter_present")
 					}
 					if ch.Status == StatusWriting || ch.Status == StatusReview {
-						return "", fmt.Errorf("有正在写作/审核中的章节，请先处理后再重新生成大纲")
+						return "", agentErr(ctx, "writing_chapter_present")
 					}
 				}
 				ctx.StartAsync("outline_generation", func(goCtx context.Context) {
@@ -1087,9 +1096,9 @@ func getBuiltinTools() []Tool {
 						ctx.Logger.Error(fmt.Sprintf("大纲生成失败: %v", err))
 						return
 					}
-					ctx.Logger.Success("大纲生成完成！")
+					ctx.Logger.SuccessKey("log.outline_generate_done")
 				})
-				return "大纲生成任务已启动，请等待完成。", nil
+				return agentMsg(ctx, "agent.outline_task_started"), nil
 			},
 		},
 		{
@@ -1098,16 +1107,16 @@ func getBuiltinTools() []Tool {
 			Parameters:  `{}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				if ctx.State.Phase != "outline" {
-					return "", fmt.Errorf("当前不在大纲阶段")
+					return "", agentErr(ctx, "phase_not_outline")
 				}
 				if len(ctx.State.Chapters) == 0 {
-					return "", fmt.Errorf("大纲为空，请先生成大纲")
+					return "", agentErr(ctx, "outline_empty")
 				}
 				if err := ConfirmOutlineAction(ctx.State, ctx.ProgressPath); err != nil {
-					return "", fmt.Errorf("确认大纲失败: %w", err)
+					return "", agentErr(ctx, "outline_confirm_failed", err)
 				}
-				ctx.Logger.Success("大纲已确认，进入写作阶段。")
-				return "大纲已确认，现在进入写作阶段。", nil
+				ctx.Logger.SuccessKey("log.outline_confirmed")
+				return agentMsg(ctx, "agent.outline_confirmed"), nil
 			},
 		},
 		{
@@ -1119,10 +1128,10 @@ func getBuiltinTools() []Tool {
 					Feedback string `json:"feedback"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil || params.Feedback == "" {
-					return "", fmt.Errorf("缺少 feedback 参数")
+					return "", agentErr(ctx, "missing_feedback")
 				}
 				if ctx.StartAsync == nil {
-					return "", fmt.Errorf("异步任务系统未初始化")
+					return "", agentErr(ctx, "task_running_wait")
 				}
 				feedback := params.Feedback
 				ctx.StartAsync("outline_revision", func(goCtx context.Context) {
@@ -1131,9 +1140,9 @@ func getBuiltinTools() []Tool {
 						ctx.Logger.Error(fmt.Sprintf("大纲修订失败: %v", err))
 						return
 					}
-					ctx.Logger.Success("大纲已修订。")
+					ctx.Logger.SuccessKey("log.outline_revised")
 				})
-				return "大纲修订任务已启动，请等待完成。", nil
+				return agentMsg(ctx, "agent.outline_revise_started"), nil
 			},
 		},
 		{
@@ -1141,12 +1150,12 @@ func getBuiltinTools() []Tool {
 			Description: "【危险·不可逆】删除整个大纲及全部章节数据。仅当用户明确要求删除大纲时使用，且必须先向用户确认。严禁用于实现「修改大纲」的需求——修改请用 revise_outline 或 edit_chapter_outline。",
 			Parameters:  `{"confirm": true}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
-				if msg := requireConfirm(args, fmt.Sprintf("删除整个大纲（共 %d 章）", len(ctx.State.Chapters))); msg != "" {
+				if msg := requireConfirm(ctx, args, fmt.Sprintf("删除整个大纲（共 %d 章）", len(ctx.State.Chapters))); msg != "" {
 					return msg, nil
 				}
 				for _, ch := range ctx.State.Chapters {
 					if ch.Status == StatusWriting || ch.Status == StatusReview {
-						return "", fmt.Errorf("有正在写作/审核中的章节，请先处理后再删除大纲")
+						return "", agentErr(ctx, "writing_chapter_present_delete")
 					}
 				}
 				ctx.State.Title = ""
@@ -1156,10 +1165,10 @@ func getBuiltinTools() []Tool {
 				ctx.State.StoryConfigSnapshot = nil
 				ctx.State.CurrentChapterIndex = 0
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
-					return "", fmt.Errorf("保存进度失败: %w", err)
+					return "", agentErr(ctx, "save_progress_failed", err)
 				}
-				ctx.Logger.Success("大纲已删除。")
-				return "大纲已删除。", nil
+				ctx.Logger.SuccessKey("log.outline_deleted")
+				return agentMsg(ctx, "agent.outline_deleted"), nil
 			},
 		},
 		{
@@ -1173,16 +1182,16 @@ func getBuiltinTools() []Tool {
 					Outline string `json:"outline"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				if err := EditChapterOutline(ctx.State, params.Num, params.Title, params.Outline); err != nil {
 					return "", err
 				}
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
-					return "", fmt.Errorf("保存进度失败: %w", err)
+					return "", agentErr(ctx, "save_progress_failed", err)
 				}
-				ctx.Logger.Success(fmt.Sprintf("第 %d 章大纲已更新。", params.Num))
-				return fmt.Sprintf("第 %d 章大纲已更新。", params.Num), nil
+				ctx.Logger.SuccessKey("log.chapter_outline_updated", params.Num)
+				return agentMsg(ctx, "agent.chapter_outline_updated", params.Num), nil
 			},
 		},
 		{
@@ -1191,10 +1200,10 @@ func getBuiltinTools() []Tool {
 			Parameters:  `{}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				if ctx.State.Phase != "writing" {
-					return "", fmt.Errorf("当前不在写作阶段")
+					return "", agentErr(ctx, "phase_not_writing")
 				}
 				if ctx.StartAsync == nil {
-					return "", fmt.Errorf("异步任务系统未初始化")
+					return "", agentErr(ctx, "task_running_wait")
 				}
 				chIdx := ctx.State.CurrentChapterIndex
 				chTitle := ""
@@ -1207,9 +1216,9 @@ func getBuiltinTools() []Tool {
 						ctx.Logger.Error(fmt.Sprintf("章节创作失败: %v", err))
 						return
 					}
-					ctx.Logger.Success(fmt.Sprintf("第 %d 章《%s》创作完成！", chIdx+1, chTitle))
+					ctx.Logger.SuccessKey("log.chapter_write_done", chIdx+1, chTitle)
 				})
-				return fmt.Sprintf("第 %d 章生成任务已启动，请等待完成。", chIdx+1), nil
+				return agentMsg(ctx, "agent.chapter_task_started", chIdx+1), nil
 			},
 		},
 		{
@@ -1218,14 +1227,14 @@ func getBuiltinTools() []Tool {
 			Parameters:  `{}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				if ctx.State.Phase != "writing" {
-					return "", fmt.Errorf("当前不在写作阶段")
+					return "", agentErr(ctx, "phase_not_writing")
 				}
 				if err := ConfirmChapterAction(ctx.State, ctx.ProgressPath); err != nil {
 					return "", err
 				}
 				ch := ctx.State.Chapters[ctx.State.CurrentChapterIndex-1]
-				ctx.Logger.Success(fmt.Sprintf("第 %d 章已确认。", ch.Num))
-				return fmt.Sprintf("第 %d 章《%s》已确认。", ch.Num, ch.Title), nil
+				ctx.Logger.SuccessKey("log.chapter_confirmed", ch.Num)
+				return agentMsg(ctx, "agent.chapter_confirmed", ch.Num, ch.Title), nil
 			},
 		},
 		{
@@ -1238,10 +1247,10 @@ func getBuiltinTools() []Tool {
 					Feedback string `json:"feedback"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil || strings.TrimSpace(params.Feedback) == "" {
-					return "", fmt.Errorf("缺少 feedback 参数")
+					return "", agentErr(ctx, "missing_feedback")
 				}
 				if ctx.StartAsync == nil {
-					return "", fmt.Errorf("异步任务系统未初始化")
+					return "", agentErr(ctx, "task_running_wait")
 				}
 				feedback := params.Feedback
 				num := params.Num
@@ -1249,7 +1258,7 @@ func getBuiltinTools() []Tool {
 				// 未指定章节号 → 修订当前章节（写作流程内）
 				if num <= 0 {
 					if ctx.State.Phase != "writing" || ctx.State.CurrentChapterIndex >= len(ctx.State.Chapters) {
-						return "", fmt.Errorf("未指定章节号且当前没有写作中的章节，请通过 num 参数指定要修订的章节")
+						return "", agentErr(ctx, "chapter_not_found")
 					}
 					num = ctx.State.Chapters[ctx.State.CurrentChapterIndex].Num
 				}
@@ -1263,10 +1272,10 @@ func getBuiltinTools() []Tool {
 					}
 				}
 				if target == nil {
-					return "", fmt.Errorf("第 %d 章不存在", num)
+					return "", agentErr(ctx, "chapter_n_not_found", num)
 				}
 				if target.Content == "" {
-					return "", fmt.Errorf("第 %d 章尚未生成内容，无法修订", num)
+					return "", agentErr(ctx, "chapter_content_empty")
 				}
 
 				// 当前审核中的章节走完整修订流程（含后续大纲联动），
@@ -1289,7 +1298,7 @@ func getBuiltinTools() []Tool {
 						return
 					}
 				})
-				return fmt.Sprintf("第 %d 章修订任务已启动（仅修改该章，不影响其他章节），请等待完成。", num), nil
+				return agentMsg(ctx, "agent.chapter_revise_started", num), nil
 			},
 		},
 		{
@@ -1297,16 +1306,16 @@ func getBuiltinTools() []Tool {
 			Description: "【危险·不可逆】删除最后一个章节。仅当用户明确要求删除时使用，且必须先向用户确认。",
 			Parameters:  `{"confirm": true}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
-				if msg := requireConfirm(args, "删除最后一个章节"); msg != "" {
+				if msg := requireConfirm(ctx, args, "删除最后一个章节"); msg != "" {
 					return msg, nil
 				}
 				if len(ctx.State.Chapters) == 0 {
-					return "", fmt.Errorf("没有可删除的章节")
+					return "", agentErr(ctx, "no_chapters_to_delete")
 				}
 				lastIdx := len(ctx.State.Chapters) - 1
 				ch := ctx.State.Chapters[lastIdx]
 				if ch.Status == StatusWriting {
-					return "", fmt.Errorf("正在写作中的章节无法删除")
+					return "", agentErr(ctx, "writing_chapter_cannot_delete")
 				}
 				deleteFile(ChapterMarkdownPath(ctx.ProjectDir, ch.Num))
 				ctx.State.Chapters = ctx.State.Chapters[:lastIdx]
@@ -1319,10 +1328,10 @@ func getBuiltinTools() []Tool {
 					ctx.State.StoryConfigSnapshot = nil
 				}
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
-					return "", fmt.Errorf("保存进度失败: %w", err)
+					return "", agentErr(ctx, "save_progress_failed", err)
 				}
-				ctx.Logger.Success(fmt.Sprintf("已删除第 %d 章。", ch.Num))
-				return fmt.Sprintf("已删除第 %d 章。", ch.Num), nil
+				ctx.Logger.SuccessKey("log.chapter_deleted", ch.Num)
+				return agentMsg(ctx, "agent.chapter_deleted", ch.Num), nil
 			},
 		},
 		{
@@ -1343,7 +1352,7 @@ func getBuiltinTools() []Tool {
 							affected++
 						}
 					}
-					return fmt.Sprintf("⚠️ 操作未执行：这将永久删除第 %d 章到末尾共 %d 章的全部内容。请先向用户复述此影响范围并获得明确同意，确认后携带 confirm=true 重新调用。如果用户的本意是修改章节内容，请改用 revise_chapter。", params.Num, affected), nil
+					return agentMsg(ctx, "agent.chapters_bulk_delete_confirm", params.Num, affected), nil
 				}
 
 				startIdx := -1
@@ -1354,11 +1363,11 @@ func getBuiltinTools() []Tool {
 					}
 				}
 				if startIdx == -1 {
-					return "", fmt.Errorf("章节 %d 不存在", params.Num)
+					return "", agentErr(ctx, "chapter_n_not_found", params.Num)
 				}
 				for i := startIdx; i < len(ctx.State.Chapters); i++ {
 					if ctx.State.Chapters[i].Status == StatusWriting {
-						return "", fmt.Errorf("删除范围内有正在写作中的章节，无法删除")
+						return "", agentErr(ctx, "writing_range_has_writing")
 					}
 				}
 				deletedCount := len(ctx.State.Chapters) - startIdx
@@ -1375,10 +1384,10 @@ func getBuiltinTools() []Tool {
 					ctx.State.StoryConfigSnapshot = nil
 				}
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
-					return "", fmt.Errorf("保存进度失败: %w", err)
+					return "", agentErr(ctx, "save_progress_failed", err)
 				}
-				ctx.Logger.Success(fmt.Sprintf("已从第 %d 章删除到末尾，共删除 %d 章。", params.Num, deletedCount))
-				return fmt.Sprintf("已从第 %d 章删除到末尾，共删除 %d 章。", params.Num, deletedCount), nil
+				ctx.Logger.SuccessKey("log.chapters_deleted_from", params.Num, deletedCount)
+				return agentMsg(ctx, "agent.chapters_deleted_from", params.Num, deletedCount), nil
 			},
 		},
 		{
@@ -1388,20 +1397,20 @@ func getBuiltinTools() []Tool {
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var o Organization
 				if err := json.Unmarshal(args, &o); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				if o.Name == "" {
-					return "", fmt.Errorf("组织名不能为空")
+					return "", agentErr(ctx, "organization_name_empty")
 				}
 				o.ID = ctx.Settings.nextOrganizationID()
 				ctx.Settings.Organizations = append(ctx.Settings.Organizations, o)
 				if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-					return "", fmt.Errorf("保存失败: %w", err)
+					return "", agentErr(ctx, "save_failed", err)
 				}
 				if ctx.Logger != nil {
 					ctx.Logger.SettingsUpdated()
 				}
-				return fmt.Sprintf("组织「%s」创建成功 (ID: %s)", o.Name, o.ID), nil
+				return agentMsg(ctx, "agent.organization_created", o.Name, o.ID), nil
 			},
 		},
 		{
@@ -1417,7 +1426,7 @@ func getBuiltinTools() []Tool {
 					Members     []string `json:"members"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				for i, o := range ctx.Settings.Organizations {
 					if o.ID == params.ID || o.Name == params.ID {
@@ -1434,15 +1443,15 @@ func getBuiltinTools() []Tool {
 							ctx.Settings.Organizations[i].Members = params.Members
 						}
 						if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						if ctx.Logger != nil {
 							ctx.Logger.SettingsUpdated()
 						}
-						return fmt.Sprintf("组织「%s」已更新", ctx.Settings.Organizations[i].Name), nil
+						return agentMsg(ctx, "agent.organization_updated", ctx.Settings.Organizations[i].Name), nil
 					}
 				}
-				return fmt.Sprintf("未找到组织: %s", params.ID), nil
+				return agentMsg(ctx, "agent.organization_not_found", params.ID), nil
 			},
 		},
 		{
@@ -1458,15 +1467,15 @@ func getBuiltinTools() []Tool {
 					if o.ID == params.ID || o.Name == params.ID {
 						ctx.Settings.Organizations = append(ctx.Settings.Organizations[:i], ctx.Settings.Organizations[i+1:]...)
 						if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						if ctx.Logger != nil {
 							ctx.Logger.SettingsUpdated()
 						}
-						return fmt.Sprintf("组织「%s」已删除", o.Name), nil
+						return agentMsg(ctx, "agent.organization_deleted", o.Name), nil
 					}
 				}
-				return fmt.Sprintf("未找到组织: %s", params.ID), nil
+				return agentMsg(ctx, "agent.organization_not_found", params.ID), nil
 			},
 		},
 		{
@@ -1476,20 +1485,20 @@ func getBuiltinTools() []Tool {
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var rel Relation
 				if err := json.Unmarshal(args, &rel); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				if rel.SourceID == "" || rel.TargetID == "" {
-					return "", fmt.Errorf("源和目标不能为空")
+					return "", agentErr(ctx, "relation_endpoints_empty")
 				}
 				rel.ID = ctx.Settings.nextRelationID()
 				ctx.Settings.Relations = append(ctx.Settings.Relations, rel)
 				if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-					return "", fmt.Errorf("保存失败: %w", err)
+					return "", agentErr(ctx, "save_failed", err)
 				}
 				if ctx.Logger != nil {
 					ctx.Logger.SettingsUpdated()
 				}
-				return fmt.Sprintf("关系创建成功 (ID: %s)", rel.ID), nil
+				return agentMsg(ctx, "agent.relation_created", rel.ID), nil
 			},
 		},
 		{
@@ -1506,7 +1515,7 @@ func getBuiltinTools() []Tool {
 					Label      string `json:"label"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				for i, rel := range ctx.Settings.Relations {
 					if rel.ID == params.ID {
@@ -1526,15 +1535,15 @@ func getBuiltinTools() []Tool {
 							ctx.Settings.Relations[i].Label = params.Label
 						}
 						if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						if ctx.Logger != nil {
 							ctx.Logger.SettingsUpdated()
 						}
-						return fmt.Sprintf("关系已更新 (ID: %s)", ctx.Settings.Relations[i].ID), nil
+						return agentMsg(ctx, "agent.relation_updated", ctx.Settings.Relations[i].ID), nil
 					}
 				}
-				return fmt.Sprintf("未找到关系: %s", params.ID), nil
+				return agentMsg(ctx, "agent.relation_not_found", params.ID), nil
 			},
 		},
 		{
@@ -1550,15 +1559,15 @@ func getBuiltinTools() []Tool {
 					if rel.ID == params.ID {
 						ctx.Settings.Relations = append(ctx.Settings.Relations[:i], ctx.Settings.Relations[i+1:]...)
 						if err := SaveProjectSettings(ctx.SettingsPath, ctx.Settings); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						if ctx.Logger != nil {
 							ctx.Logger.SettingsUpdated()
 						}
-						return "关系已删除", nil
+						return agentMsg(ctx, "agent.relation_deleted"), nil
 					}
 				}
-				return fmt.Sprintf("未找到关系: %s", params.ID), nil
+				return agentMsg(ctx, "agent.relation_not_found", params.ID), nil
 			},
 		},
 		{
@@ -1567,10 +1576,10 @@ func getBuiltinTools() []Tool {
 			Parameters:  `{}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				if len(ctx.State.Chapters) == 0 {
-					return "", fmt.Errorf("请先生成大纲")
+					return "", agentErr(ctx, "need_generate_outline_first")
 				}
 				if ctx.StartAsync == nil {
-					return "", fmt.Errorf("异步任务系统未初始化")
+					return "", agentErr(ctx, "task_running_wait")
 				}
 				ctx.StartAsync("foreshadow_suggest", func(goCtx context.Context) {
 					suggestions, err := SuggestForeshadows(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.Logger)
@@ -1581,7 +1590,7 @@ func getBuiltinTools() []Tool {
 					ctx.Logger.Success(fmt.Sprintf("伏笔建议生成完成，共 %d 条", len(suggestions)))
 					ctx.Logger.ForeshadowSuggestions(suggestions)
 				})
-				return "伏笔建议生成任务已启动，请等待完成。", nil
+				return agentMsg(ctx, "agent.foreshadow_suggest_started"), nil
 			},
 		},
 		{
@@ -1596,10 +1605,10 @@ func getBuiltinTools() []Tool {
 					TargetChapter int    `json:"target_chapter"`
 				}
 				if err := json.Unmarshal(args, &req); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				if req.Name == "" || req.Description == "" {
-					return "", fmt.Errorf("名称和描述不能为空")
+					return "", agentErr(ctx, "worldview_field_empty")
 				}
 				fs := Foreshadow{
 					ID:            NextForeshadowID(ctx.State.Foreshadows),
@@ -1612,10 +1621,10 @@ func getBuiltinTools() []Tool {
 				}
 				ctx.State.Foreshadows = append(ctx.State.Foreshadows, fs)
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
-					return "", fmt.Errorf("保存失败: %w", err)
+					return "", agentErr(ctx, "save_failed", err)
 				}
 				_ = SaveForeshadowRoadmap(filepath.Dir(ctx.ProgressPath), ctx.State)
-				return fmt.Sprintf("伏笔「%s」创建成功 (ID: %d)", fs.Name, fs.ID), nil
+				return agentMsg(ctx, "agent.foreshadow_created", fs.Name, fs.ID), nil
 			},
 		},
 		{
@@ -1633,7 +1642,7 @@ func getBuiltinTools() []Tool {
 					Resolution    string `json:"resolution"`
 				}
 				if err := json.Unmarshal(args, &req); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				idx := -1
 				for i, fs := range ctx.State.Foreshadows {
@@ -1643,7 +1652,7 @@ func getBuiltinTools() []Tool {
 					}
 				}
 				if idx == -1 {
-					return "", fmt.Errorf("伏笔 %d 不存在", req.ID)
+					return "", agentErr(ctx, "foreshadow_not_found")
 				}
 				fs := &ctx.State.Foreshadows[idx]
 				if req.Name != "" {
@@ -1665,10 +1674,10 @@ func getBuiltinTools() []Tool {
 					fs.Resolution = req.Resolution
 				}
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
-					return "", fmt.Errorf("保存失败: %w", err)
+					return "", agentErr(ctx, "save_failed", err)
 				}
 				_ = SaveForeshadowRoadmap(filepath.Dir(ctx.ProgressPath), ctx.State)
-				return fmt.Sprintf("伏笔「%s」已更新", fs.Name), nil
+				return agentMsg(ctx, "agent.foreshadow_updated", fs.Name), nil
 			},
 		},
 		{
@@ -1684,13 +1693,13 @@ func getBuiltinTools() []Tool {
 					if fs.ID == params.ID {
 						ctx.State.Foreshadows = append(ctx.State.Foreshadows[:i], ctx.State.Foreshadows[i+1:]...)
 						if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
-							return "", fmt.Errorf("保存失败: %w", err)
+							return "", agentErr(ctx, "save_failed", err)
 						}
 						_ = SaveForeshadowRoadmap(filepath.Dir(ctx.ProgressPath), ctx.State)
-						return fmt.Sprintf("伏笔「%s」已删除", fs.Name), nil
+						return agentMsg(ctx, "agent.foreshadow_deleted", fs.Name), nil
 					}
 				}
-				return fmt.Sprintf("伏笔 %d 不存在", params.ID), nil
+				return agentMsg(ctx, "agent.foreshadow_not_found", params.ID), nil
 			},
 		},
 		{
@@ -1723,7 +1732,7 @@ func getBuiltinTools() []Tool {
 					Enabled bool   `json:"enabled"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
-					return "", fmt.Errorf("参数解析失败: %w", err)
+					return "", agentErr(ctx, "invalid_json", err)
 				}
 				found := false
 				for _, s := range ctx.Skills {
@@ -1733,7 +1742,7 @@ func getBuiltinTools() []Tool {
 					}
 				}
 				if !found {
-					return "", fmt.Errorf("技能不存在: %s", params.ID)
+					return "", agentErr(ctx, "skill_not_found")
 				}
 				if ctx.Config.SkillConfig == nil {
 					ctx.Config.SkillConfig = &SkillConfig{EnabledSkills: make(map[string]bool)}
@@ -1743,13 +1752,13 @@ func getBuiltinTools() []Tool {
 				}
 				ctx.Config.SkillConfig.EnabledSkills[params.ID] = params.Enabled
 				if err := saveConfig(ctx.CfgPath, ctx.Config); err != nil {
-					return "", fmt.Errorf("保存配置失败: %w", err)
+					return "", agentErr(ctx, "save_config_failed", err)
 				}
 				status := "禁用"
 				if params.Enabled {
 					status = "启用"
 				}
-				return fmt.Sprintf("技能「%s」已%s", params.ID, status), nil
+				return agentMsg(ctx, "agent.skill_toggled", params.ID, status), nil
 			},
 		},
 		{
@@ -1757,16 +1766,16 @@ func getBuiltinTools() []Tool {
 			Description: "【危险·不可逆】重置所有进度，清除全部章节、大纲和伏笔。仅当用户明确要求重置/清空整个项目进度时使用，且必须先向用户确认。",
 			Parameters:  `{"confirm": true}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
-				if msg := requireConfirm(args, fmt.Sprintf("重置全部进度（共 %d 章及所有伏笔）", len(ctx.State.Chapters))); msg != "" {
+				if msg := requireConfirm(ctx, args, fmt.Sprintf("重置全部进度（共 %d 章及所有伏笔）", len(ctx.State.Chapters))); msg != "" {
 					return msg, nil
 				}
 				if err := deleteFile(ctx.ProgressPath); err != nil {
-					return "", fmt.Errorf("删除进度文件失败: %w", err)
+					return "", agentErr(ctx, "delete_progress_failed", err)
 				}
 				// 原地清空，保证 Handlers 持有的同一指针也被重置
 				*ctx.State = Progress{Phase: "outline"}
 				ctx.Logger.Success("进度已重置。")
-				return "进度已重置。", nil
+				return agentMsg(ctx, "agent.progress_reset"), nil
 			},
 		},
 	}

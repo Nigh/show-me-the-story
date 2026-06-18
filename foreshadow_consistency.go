@@ -80,17 +80,17 @@ func RunForeshadowOutlineCheckAndSave(ctx context.Context, apiCfg *APIConfig, cf
 	}
 	report, err := CheckForeshadowOutlineConsistency(ctx, apiCfg, cfg, state, logger)
 	if err != nil {
-		logger.Warn(fmt.Sprintf("伏笔-大纲一致性检查失败: %v", err))
+		logger.WarnKey("log.foreshadow_outline_check_failed", err)
 		return
 	}
 	applyForeshadowOutlineReport(state, report)
 	if err := SaveProgress(progressPath, state); err != nil {
-		logger.Warn(fmt.Sprintf("保存伏笔-大纲检查报告失败: %v", err))
+		logger.WarnKey("log.foreshadow_outline_report_save_failed", err)
 		return
 	}
 	if report.HasConflicts {
 		logger.ForeshadowOutlineConflicts(report)
 	} else {
-		logger.Info("伏笔与大纲一致性检查通过 ✓")
+		logger.InfoKey("log.foreshadow_outline_check_pass")
 	}
 }
