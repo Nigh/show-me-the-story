@@ -6,6 +6,7 @@ import { getLocale, translate, formatLogEntry, formatToolResult } from './i18n/i
 let eventSource = null;
 let reconnectTimer = null;
 let tokenPollTimer = null;
+let taskCount = 0;
 
 // —— 流式输出节流缓冲 + 尾部窗口 ——
 const FLUSH_INTERVAL = 150;
@@ -109,6 +110,7 @@ export function connectSSE() {
 
   eventSource.addEventListener('task_start', e => {
     const d = JSON.parse(e.data);
+    taskCount++;
     taskRunning.set(true);
     resetContentStream(-1);
     clearChatBuf();
@@ -121,12 +123,16 @@ export function connectSSE() {
 
   eventSource.addEventListener('task_end', e => {
     const d = JSON.parse(e.data);
-    taskRunning.set(false);
-    resetContentStream(-1);
-    clearChatBuf();
-    taskTokenUsage.set(null);
-    currentTaskName.set(null);
-    stopTokenPoll();
+    taskCount--;
+    if (taskCount <= 0) {
+      taskCount = 0;
+      taskRunning.set(false);
+      resetContentStream(-1);
+      clearChatBuf();
+      taskTokenUsage.set(null);
+      currentTaskName.set(null);
+      stopTokenPoll();
+    }
     refreshProgress(true);
 
     if (d.success) {
