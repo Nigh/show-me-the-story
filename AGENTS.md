@@ -69,7 +69,7 @@ task dev                              # 编译并启动 Go 后端
 
 | 文件 | 职责 |
 |------|------|
-| `main.go` | 入口，确定程序目录（`progDir`），创建 `storys/` 目录，加载 API 配置，启动 Web 服务器（无项目选择状态） |
+| `main.go` | 入口，确定程序目录（`progDir`），创建 `storys/` 目录，加载 API 配置，启动 Web 服务器（无项目选择状态）；`var version = "dev"` 通过 CI `-ldflags` 注入实际版本号 |
 | `config.go` | `APIConfig`（含 `ContextBudgetTokens` 全书优化上下文预算）、`Config`（含 `SkillConfig` + `Language`）、`StoryConfig`、`PromptsConfig` 结构体，Load/Save 函数，`DefaultConfigForLang(lang)`、`NormalizeLanguage`、`applyDefaults(lang)` 按语言选择默认 prompts |
 | `state.go` | `Progress`、`ChapterState`、`Foreshadow` 结构体，`LoadProgress`、`SaveProgress`（原子写入）、`ChapterMarkdownPath`、`SaveChapterMarkdown(projectDir, ...)`、`ForeshadowRoadmapPath`（项目目录 `Foreshadows.md`） |
 | `api.go` | `CallAPI`/`CallAPIMessages`（**内部优先流式缓冲**，失败时回退 `callAPIMessagesSync`）、`CallAPIStream`/`CallAPIStreamMessages`（流式，含 `stream_options.include_usage`）、`CallAPIWithRetry`/`CallAPIWithRetryLog`（无限重试）、`CallAPIStreamWithRetry`/`CallAPIStreamWithRetryLog`，`validateAPIConfig`、`isFatalAPIError`（401/403/404 致命，网络超时可重试）；所有调用经 `taskCtx` 时自动累计 token（优先 API `usage`，否则 rune 估算） |
@@ -87,8 +87,8 @@ task dev                              # 编译并启动 Go 后端
 | `chat.go` | `ChatSession`、`ChatMessage`（含 `tool_result_key`/`tool_result_args`）、`ChatSessionIndex` 结构体，Load/Save/Delete |
 | `logger.go` | `LogBroadcaster`；`LogEntry` 含 `msg_key`/`msg_args`；`InfoKey`/`SuccessKey`/…；`ToolCallEnd` 含 `result_key`/`result_args`；其余 SSE 事件方法同前 |
 | `postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体，`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略：全文/摘要模式）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`ExecuteRoadmapAction`（可选前置衔接优化 + 逐条定向修订/润色 + diff 节选） |
-| `handlers.go` | `Handlers` 结构体（含项目管理字段 `progDir`/`projectName`/`projectMu`、自动确认开关 `autoConfirm`、`postprocess`/`postprocessPath`）、`projectDir()` 帮助函数、项目切换 `switchProject()`、`ensureProject()` 检查、`rejectIfTaskRunning()`（任务运行期间编辑类端点返回 409）、所有 HTTP handler（含 `PostChapterPolish` 单章去AI味、`PostChapterReviseSpecific` 定向修订、`PostChaptersSmoothTransitions` 批量衔接优化、全书优化 `GetPostProcess`/`PostPostProcessDiagnose`/`PostPostProcessConsistency`/`PostPostProcessRoadmap`/`PutPostProcessRoadmap`/`PostPostProcessExecute`/`DeletePostProcess`、`GetAutoConfirm`/`PutAutoConfirm`）、`PostChapterGenerate` 自动确认循环（开启时每章生成后自动确认并继续下一章）、`tryStartTask`/`endTask`/`startChildWork` 互斥、项目管理 handler（`GetProjects`/`PostProject`/`PostProjectSelect`/`GetProjectCurrent`/`DeleteProject`） |
-| `web.go` | 路由注册（含项目管理端点、`/api/autoconfirm`）、CORS/日志中间件、静态文件服务、`startWebServer`、项目管理 handler（`GetProjects`/`PostProject`/`GetProjectCurrent`/`PostProjectSelect`/`DeleteProject`） |
+| `handlers.go` | `Handlers` 结构体（含项目管理字段 `progDir`/`projectName`/`projectMu`、自动确认开关 `autoConfirm`、`postprocess`/`postprocessPath`）、`projectDir()` 帮助函数、项目切换 `switchProject()`、`ensureProject()` 检查、`rejectIfTaskRunning()`（任务运行期间编辑类端点返回 409）、所有 HTTP handler（含 `PostChapterPolish` 单章去AI味、`PostChapterReviseSpecific` 定向修订、`PostChaptersSmoothTransitions` 批量衔接优化、全书优化 `GetPostProcess`/`PostPostProcessDiagnose`/`PostPostProcessConsistency`/`PostPostProcessRoadmap`/`PutPostProcessRoadmap`/`PostPostProcessExecute`/`DeletePostProcess`、`GetAutoConfirm`/`PutAutoConfirm`）、`PostChapterGenerate` 自动确认循环（开启时每章生成后自动确认并继续下一章）、`tryStartTask`/`endTask`/`startChildWork` 互斥、项目管理 handler（`GetProjects`/`PostProject`/`PostProjectSelect`/`GetProjectCurrent`/`DeleteProject`）、`GetVersion` |
+| `web.go` | 路由注册（含项目管理端点、`/api/autoconfirm`、`/api/version`）、CORS/日志中间件、静态文件服务、`startWebServer`、项目管理 handler（`GetProjects`/`PostProject`/`GetProjectCurrent`/`PostProjectSelect`/`DeleteProject`） |
 | `tokens.go` | `TaskTokenUsage` 任务级 token 累计器（context 挂载）、`withTaskTokens`/`taskTokensFromContext`、throttled SSE 推送 |
 | `prompts.go` | `RenderPrompt`（`{{.KeyName}}` 替换）、`DefaultPromptsZH` 变量（所有内置中文提示词模板）、`DefaultPromptsForLang(lang)` |
 | `prompts_en.go` | `DefaultPromptsEN`：16 个 prompt 字段全量英文模板（与中文一一对应） |
@@ -99,7 +99,7 @@ task dev                              # 编译并启动 Go 后端
 | `filesys.go` | `writeFileImpl`、`deleteFileImpl`、`renameFileImpl` |
 | `skills.go` | `Skill`（含 `Lang` 字段）、`SkillConfig` 结构体，`LoadBuiltinSkills`、`LoadProjectSkills`、`MergeSkills`、`GetEnabledSkills`、`GetEnabledSkillsByCategory`、`FilterSkillsByLang(skills, projectLang)`、`FormatSkillsContent`（按 skill 语言选择双语 header）、`//go:embed embeds/skills` |
 | `embeds/skills/*.md` | 内置 Skill 文件（YAML frontmatter `lang: zh|en` + prompt body），通过 `//go:embed` 嵌入；中文：`humanizer-zh.md` / `story-deslop.md` / `writing-craft.md`；英文：`humanizer-en.md` / `story-deslop-en.md` / `writing-craft-en.md` |
-| `.github/workflows/release.yml` | GitHub Actions 发布流程：推送 `v*` tag 时校验 tag 在 main 分支上，构建前端 + 交叉编译 5 个目标（linux/windows/macOS × amd64/arm64，windows 仅 amd64），打包 tar.gz/zip 并用 `gh` 创建 Release |
+| `.github/workflows/release.yml` | GitHub Actions 发布流程：推送 `v*` tag 时校验 tag 在 main 分支上，构建前端 + 交叉编译 5 个目标（linux/windows/macOS × amd64/arm64，windows 仅 amd64），打包 tar.gz/zip 并用 `gh` 创建 Release；通过 `-ldflags "-X main.version=${GITHUB_REF_NAME}"` 注入版本号 |
 
 ### 前端文件（`frontend/`）
 
@@ -111,7 +111,7 @@ task dev                              # 编译并启动 Go 后端
 | `index.html` | 入口 HTML，`data-theme="xianii"` |
 | `src/main.js` | Svelte 应用挂载点 |
 | `src/app.css` | 全局样式：Tailwind 指令 + 自定义滚动条/toast 动画 |
-| `src/App.svelte` | 根组件：Header（项目badge + 项目语言 badge ZH/EN + 「切换 / 新建项目」按钮（任务运行时禁用）+ 阶段badge + 章节进度badge + AI思考中badge + 右侧 UI 语言切换按钮中 / EN） + 顶部导航（配置/大纲/写作/伏笔/图谱/技能，带图标） + 页面路由 + LogPanel + Toast 容器；初始加载若有当前项目则 `setLocale(project.language)` |
+| `src/App.svelte` | 根组件：Header（项目badge + 项目语言 badge ZH/EN + 版本号badge + 新版本更新提示（非dev版本检查GitHub releases）+ 「切换 / 新建项目」按钮（任务运行时禁用）+ 阶段badge + 章节进度badge + AI思考中badge + 右侧 UI 语言切换按钮中 / EN） + 顶部导航（配置/大纲/写作/伏笔/图谱/技能，带图标） + 页面路由 + LogPanel + Toast 容器；初始加载若有当前项目则 `setLocale(project.language)` |
 | `src/lib/api.js` | `api(method, url, body)` — fetch 封装，自动带 `X-UI-Locale`/`Accept-Language` 头，错误消息走 `translateServerMessage` |
 | `src/lib/router.js` | `currentPage` store + hash 路由监听 |
 | `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、postprocess、taskRunning、taskTokenUsage、autoConfirm、lastFailedTask、`projectLanguage` 等）+ toast/log 管理 |
@@ -356,6 +356,7 @@ pending → writing → review → accepted
 | GET | `/api/projects` | 同步 | 列出所有项目 |
 | POST | `/api/projects` | 同步 | 创建新项目 |
 | GET | `/api/projects/current` | 同步 | 获取当前项目名 |
+| GET | `/api/version` | 同步 | 获取应用版本号（CI 注入，非 CI 编译为 `dev`） |
 | POST | `/api/projects/select` | 同步 | 切换到指定项目 |
 | DELETE | `/api/projects/{name}` | 同步 | 删除项目 |
 | GET | `/api/config/api` | 同步 | 获取 API 配置 |
@@ -555,7 +556,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 - [`frontend/src/lib/api.js`](frontend/src/lib/api.js)：所有请求带 `X-UI-Locale`；`writeErrorReq` 已按请求语言返回错误，``translateServerMessage`` 仅 legacy 兜底
 - [`frontend/src/lib/sse.js`](frontend/src/lib/sse.js)：`formatLogEntry` / `formatToolResult`
 - [`frontend/src/lib/stores.js`](frontend/src/lib/stores.js)：新增 `projectLanguage` writable
-- [`frontend/src/App.svelte`](frontend/src/App.svelte)：Header 显示项目语言 badge（ZH/EN）+ UI 语言切换按钮（中 / EN）；选择/创建项目后自动 `setLocale(project.language)`
+- [`frontend/src/App.svelte`](frontend/src/App.svelte)：Header 显示项目语言 badge（ZH/EN）+ 版本号badge + 新版本更新提示（非dev版本检查GitHub releases，点击跳转最新release页面）+ UI 语言切换按钮（中 / EN）；选择/创建项目后自动 `setLocale(project.language)`
 - [`frontend/src/pages/Projects.svelte`](frontend/src/pages/Projects.svelte)：新建项目表单名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`；列表项显示语言 badge
 
 ### 老项目兼容

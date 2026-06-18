@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 )
 
+var (
+	version = "dev"
+)
+
 const (
 	defaultPort = ":48090"
 )
@@ -70,8 +74,9 @@ func main() {
 	logger := NewLogBroadcaster()
 	defer logger.Close()
 
+	fmt.Printf(" [系统] 版本: %s\n", version)
 	fmt.Printf(" [系统] 程序目录: %s\n", progDir)
 	fmt.Printf(" [系统] 项目目录: %s\n", storysDir)
 
-	startWebServer(apiCfg, apiCfgPath, cfg, state, settings, skills, sessionsDir, logger, port, progDir)
+	startWebServer(apiCfg, apiCfgPath, cfg, state, settings, skills, sessionsDir, logger, port, progDir, version)
 }

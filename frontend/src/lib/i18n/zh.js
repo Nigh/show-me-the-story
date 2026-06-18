@@ -3,6 +3,7 @@
 export default {
   // Header / shell
   'app.title': 'AI 小说生成器',
+  'app.newVersion': '新版本',
   'app.switchProject': '⇄ 切换 / 新建项目',
   'app.switchProject.disabled': 'AI 任务进行中，暂不能切换项目',
   'app.switchProject.tooltip': '关闭当前项目，返回项目列表（可切换或新建项目）',

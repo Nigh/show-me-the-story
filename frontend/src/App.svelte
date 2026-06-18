@@ -18,10 +18,34 @@
 
   let chatPanel;
 
+  let appVersion = '';
+  let latestVersion = '';
+  let hasUpdate = false;
+  const releasesURL = 'https://github.com/Nigh/show-me-the-story/releases';
+  const latestReleaseURL = 'https://github.com/Nigh/show-me-the-story/releases/latest';
+
   $: $contextPage = $currentPage;
 
   onMount(async () => {
     connectSSE();
+    // Fetch app version
+    try {
+      const ver = await api('GET', '/api/version');
+      appVersion = ver.version || 'dev';
+    } catch (e) {}
+    // Check for updates (skip for dev builds)
+    if (appVersion && appVersion !== 'dev') {
+      try {
+        const resp = await fetch('https://api.github.com/repos/Nigh/show-me-the-story/releases/latest');
+        if (resp.ok) {
+          const data = await resp.json();
+          latestVersion = data.tag_name || '';
+          if (latestVersion && latestVersion !== appVersion) {
+            hasUpdate = true;
+          }
+        }
+      } catch (e) {}
+    }
     // Check if a project is already selected
     try {
       const cur = await api('GET', '/api/projects/current');
@@ -67,6 +91,14 @@
   <!-- Header -->
   <header class="navbar bg-base-200 border-b border-base-content/10 px-6 min-h-[46px] shrink-0 gap-4">
     <span class="text-lg font-semibold">{$t('app.title')}</span>
+    {#if appVersion}
+      <span class="badge badge-xs badge-ghost font-mono">{appVersion}</span>
+    {/if}
+    {#if hasUpdate}
+      <a href={latestReleaseURL} target="_blank" rel="noopener" class="badge badge-xs badge-warning gap-0.5 no-underline">
+        {$t('app.newVersion')}
+      </a>
+    {/if}
     {#if $currentProject}
       <span class="badge badge-sm badge-outline">{$currentProject}</span>
       <span class="badge badge-sm badge-accent uppercase" title={$projectLanguage === 'en' ? 'English' : '中文'}>

@@ -21,8 +21,8 @@ import (
 //go:embed frontend/dist
 var staticFiles embed.FS
 
-func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Progress, settings *ProjectSettings, skills []Skill, sessionsDir string, logger *LogBroadcaster, port string, progDir string) {
-	h := NewHandlers(apiCfg, apiCfgPath, logger, progDir)
+func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Progress, settings *ProjectSettings, skills []Skill, sessionsDir string, logger *LogBroadcaster, port string, progDir string, version string) {
+	h := NewHandlers(apiCfg, apiCfgPath, logger, progDir, version)
 
 	mux := http.NewServeMux()
 
@@ -32,6 +32,9 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	mux.HandleFunc("GET /api/projects/current", h.GetProjectCurrent)
 	mux.HandleFunc("POST /api/projects/select", h.PostProjectSelect)
 	mux.HandleFunc("DELETE /api/projects/{name}", h.DeleteProject)
+
+	// Version endpoint (global, always available)
+	mux.HandleFunc("GET /api/version", h.GetVersion)
 
 	// API config (global, always available)
 	mux.HandleFunc("GET /api/config/api", h.GetAPIConfig)
