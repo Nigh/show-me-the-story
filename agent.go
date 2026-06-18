@@ -61,8 +61,24 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 		toolResultLabel = "[Tool result]"
 	}
 
-	for _, step := range history {
-		if step.Role == "assistant" {
+	// 找到最后一个 user 步骤的索引（即当前轮用户消息），用于去重。
+	// handlers.go 在 agent loop 启动前就把当前用户消息追加到了 session.Messages，
+	// 所以 history 中最后一条 user 步骤与 userMessage 相同，需跳过避免重复。
+	lastUserIdx := -1
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			lastUserIdx = i
+			break
+		}
+	}
+
+	for i, step := range history {
+		if step.Role == "user" {
+			if i == lastUserIdx {
+				continue
+			}
+			messages = append(messages, Message{Role: "user", Content: step.Content})
+		} else if step.Role == "assistant" {
 			if step.ToolCall != nil {
 				tcJSON, _ := json.Marshal(step.ToolCall)
 				messages = append(messages, Message{Role: "assistant", Content: fmt.Sprintf("<tool_call>\n%s\n</tool_call>", string(tcJSON))})
@@ -82,7 +98,11 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 		}
 
 		if ctx.Logger != nil {
-			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d/%d: 调用 API...", step+1, maxSteps))
+			var roleSeq []string
+			for _, m := range messages {
+				roleSeq = append(roleSeq, fmt.Sprintf("%s(%d)", m.Role, len([]rune(m.Content))))
+			}
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d/%d: 消息 %d 条: %v", step+1, maxSteps, len(messages), roleSeq))
 		}
 
 		fullResp := ""
@@ -273,6 +293,7 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("- 在生成大纲之前，提醒用户检查配置页面中的各项设定（故事类型、写作风格、故事梗概、角色、世界观），确认无误后再进行。\n")
 	sb.WriteString("- 在正式开始写作（确认大纲）之前，再次提醒用户确认所有设定，包括角色详情和世界观条目。\n")
 	sb.WriteString("- 执行写操作前，优先用读工具（read_outline、read_chapter 等）确认目标存在且状态符合预期。\n")
+	sb.WriteString("- 对话中的 [工具结果] 是你之前调用工具的返回值，代表你已经完成的操作。如果你已通过工具修复了某个问题，后续不需要再次检查同一问题。需要验证修复结果时，直接基于工具返回值判断，不要重新读取数据来「确认」。\n")
 	sb.WriteString("- 所有操作完成后，简要告知用户结果，并在末尾建议接下来可以进行的 1-2 个操作（如：检查角色设定、生成大纲、确认章节等），帮助用户推进项目。\n")
 
 	return sb.String()
@@ -362,6 +383,7 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("- Before generating the outline, remind the user to check the Config page (story type, writing style, synopsis, characters, worldview) and confirm everything looks right.\n")
 	sb.WriteString("- Before kicking off actual writing (confirming the outline), remind the user once more to confirm all settings, including character details and worldview entries.\n")
 	sb.WriteString("- Before a write operation, prefer reading first (read_outline, read_chapter, etc.) to confirm the target exists and is in the expected state.\n")
+	sb.WriteString("- [Tool result] messages in the conversation are the return values of your own prior tool calls — they represent operations you have already completed. If you have already fixed an issue via a tool call, do NOT re-check the same issue afterward. To verify a fix, rely on the tool's return value directly; do not re-read data to \"confirm\" what you already changed.\n")
 	sb.WriteString("- After any operation, briefly report the result and suggest 1-2 next actions (e.g. check character settings, generate the outline, confirm the chapter) to help the user advance the project.\n")
 
 	return sb.String()
