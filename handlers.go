@@ -17,6 +17,7 @@ type Handlers struct {
 	apiCfg     *APIConfig
 	apiCfgPath string
 	logger     *LogBroadcaster
+	version    string
 
 	// Project management
 	progDir     string
@@ -49,11 +50,12 @@ type Handlers struct {
 	lastReconcileBody      StoryConfig // 缓存最后的设定协调请求
 }
 
-func NewHandlers(apiCfg *APIConfig, apiCfgPath string, logger *LogBroadcaster, progDir string) *Handlers {
+func NewHandlers(apiCfg *APIConfig, apiCfgPath string, logger *LogBroadcaster, progDir string, version string) *Handlers {
 	return &Handlers{
 		apiCfg:     apiCfg,
 		apiCfgPath: apiCfgPath,
 		logger:     logger,
+		version:    version,
 		progDir:    progDir,
 		cfg:        DefaultConfig(),
 		state:      &Progress{Phase: "outline"},
@@ -1123,6 +1125,10 @@ func (h *Handlers) broadcastProgress() {
 		"percent":           pct,
 		"is_task_running":   h.isTaskRunning(),
 	})
+}
+
+func (h *Handlers) GetVersion(w http.ResponseWriter, r *http.Request) {
+	h.writeJSON(w, http.StatusOK, map[string]string{"version": h.version})
 }
 
 func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {

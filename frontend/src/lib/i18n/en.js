@@ -2,6 +2,7 @@
 export default {
   // Header / shell
   'app.title': 'AI Novel Generator',
+  'app.newVersion': 'New version',
   'app.switchProject': '⇄ Switch / new project',
   'app.switchProject.disabled': 'AI task in progress; cannot switch projects',
   'app.switchProject.tooltip': 'Close the current project and return to the project list',
