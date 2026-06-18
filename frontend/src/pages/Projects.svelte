@@ -114,15 +114,13 @@
             <div class="join">
               <button
                 type="button"
-                class="btn btn-sm join-item"
-                class:btn-active={newProjectLang === 'zh'}
+                class="btn btn-sm join-item {newProjectLang === 'zh' ? 'btn-primary' : 'btn-ghost'}"
                 disabled={creating}
                 on:click={() => newProjectLang = 'zh'}
               >中文</button>
               <button
                 type="button"
-                class="btn btn-sm join-item"
-                class:btn-active={newProjectLang === 'en'}
+                class="btn btn-sm join-item {newProjectLang === 'en' ? 'btn-primary' : 'btn-ghost'}"
                 disabled={creating}
                 on:click={() => newProjectLang = 'en'}
               >EN</button>

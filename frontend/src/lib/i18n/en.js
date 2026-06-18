@@ -586,7 +586,7 @@ export default {
   // ---- Chat panel ----
   'chat.session.placeholder': 'No session selected',
   'chat.session.collapse': 'Collapse',
-  'chat.session.menu': '☰ Sessions',
+  'chat.session.menu': 'Sessions',
   'chat.session.new': '＋ New',
   'chat.session.stop': '⏹ Stop',
   'chat.session.empty': 'No sessions',

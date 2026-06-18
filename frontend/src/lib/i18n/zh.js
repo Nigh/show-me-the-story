@@ -590,7 +590,7 @@ export default {
   // ---- Chat panel ----
   'chat.session.placeholder': '未选择会话',
   'chat.session.collapse': '收起',
-  'chat.session.menu': '☰ 会话',
+  'chat.session.menu': '会话列表',
   'chat.session.new': '＋ 新建',
   'chat.session.stop': '⏹ 停止',
   'chat.session.empty': '暂无会话',
