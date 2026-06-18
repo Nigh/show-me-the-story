@@ -88,7 +88,7 @@
 </script>
 
 <div class="flex items-center justify-center min-h-[60vh]">
-  <div class="w-full max-w-lg space-y-6">
+  <div class="w-full max-w-xl space-y-6">
     <!-- Title -->
     <div class="text-center">
       <div class="text-5xl mb-4">📚</div>
@@ -100,19 +100,34 @@
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4">
         <h3 class="card-title text-sm">{$t('projects.create')}</h3>
-        <div class="flex gap-2">
-          <input
-            type="text"
-            class="input input-sm flex-1"
-            bind:value={newProjectName}
-            placeholder={$t('projects.create.placeholder')}
-            on:keydown={handleKeydown}
-            disabled={creating}
-          />
-          <select class="select select-sm" bind:value={newProjectLang} disabled={creating} title={$t('projects.create.lang')}>
-            <option value="zh">中文</option>
-            <option value="en">English</option>
-          </select>
+        <input
+          type="text"
+          class="input input-sm w-full"
+          bind:value={newProjectName}
+          placeholder={$t('projects.create.placeholder')}
+          on:keydown={handleKeydown}
+          disabled={creating}
+        />
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-base-content/50">{$t('projects.create.lang')}</span>
+            <div class="join">
+              <button
+                type="button"
+                class="btn btn-sm join-item"
+                class:btn-active={newProjectLang === 'zh'}
+                disabled={creating}
+                on:click={() => newProjectLang = 'zh'}
+              >中文</button>
+              <button
+                type="button"
+                class="btn btn-sm join-item"
+                class:btn-active={newProjectLang === 'en'}
+                disabled={creating}
+                on:click={() => newProjectLang = 'en'}
+              >EN</button>
+            </div>
+          </div>
           <button
             class="btn btn-primary btn-sm"
             on:click={createProject}

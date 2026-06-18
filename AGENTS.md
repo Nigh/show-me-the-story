@@ -71,7 +71,7 @@ task dev                              # 编译并启动 Go 后端
 | `main.go` | 入口，确定程序目录（`progDir`），创建 `storys/` 目录，加载 API 配置，启动 Web 服务器（无项目选择状态） |
 | `config.go` | `APIConfig`（含 `ContextBudgetTokens` 全书优化上下文预算）、`Config`（含 `SkillConfig` + `Language`）、`StoryConfig`、`PromptsConfig` 结构体，Load/Save 函数，`DefaultConfigForLang(lang)`、`NormalizeLanguage`、`applyDefaults(lang)` 按语言选择默认 prompts |
 | `state.go` | `Progress`、`ChapterState`、`Foreshadow` 结构体，`LoadProgress`、`SaveProgress`（原子写入）、`ChapterMarkdownPath`、`SaveChapterMarkdown(projectDir, ...)`、`ForeshadowRoadmapPath`（项目目录 `Foreshadows.md`） |
-| `api.go` | `CallAPI`/`CallAPIMessages`（同步）、`CallAPIStream`/`CallAPIStreamMessages`（流式，支持完整多轮消息历史）、`CallAPIWithRetry`/`CallAPIWithRetryLog`（无限重试）、`CallAPIStreamWithRetry`/`CallAPIStreamWithRetryLog`，`validateAPIConfig`、`isFatalAPIError`（401/403/404 致命，网络超时可重试） |
+| `api.go` | `CallAPI`/`CallAPIMessages`（**内部优先流式缓冲**，失败时回退 `callAPIMessagesSync`）、`CallAPIStream`/`CallAPIStreamMessages`（流式，含 `stream_options.include_usage`）、`CallAPIWithRetry`/`CallAPIWithRetryLog`（无限重试）、`CallAPIStreamWithRetry`/`CallAPIStreamWithRetryLog`，`validateAPIConfig`、`isFatalAPIError`（401/403/404 致命，网络超时可重试）；所有调用经 `taskCtx` 时自动累计 token（优先 API `usage`，否则 rune 估算） |
 | `outline.go` | `generateOutline`、`reviseOutline`、`GenerateOutlineAction`（存在已确认章节时拒绝整体重新生成）、`ReviseOutlineAction`、`ConfirmOutlineAction`、`EditChapterOutline`、`cleanJSONResponse` |
 | `writing.go` | `GenerateChapterAction`（含写前大纲一致性检查，共 5 步；第 5 步更新伏笔并落盘 `Foreshadows.md`）、`ReviseChapterAction`/`ReviseSpecificChapterAction`（修订后同步更新伏笔）、`ConfirmChapterAction`、`PolishChapterAction`、`SmoothTransitionsAction`（批量优化已确认章节衔接，逐章最小化重写开头、逐章落盘）、`parseFactCheckResult`（JSON 优先 + 字符串 fallback）、`checkOutlineConsistency`（写前检查本章大纲与已写剧情冲突，冲突时最小化修订本章大纲）、章节内容生成/摘要/事实核查/流式输出、`buildHistorySummary`、`buildPreviousChapterTail`（上一章尾部约 800 字注入写作 prompt）、`buildOutlineConstraints`（全书章节脉络反向约束：后续 10 章大纲防提前出现 + 前文大纲防一次性事件重复，注入写作与事实核查 prompt）、`appendIfMissingPlaceholder`（老项目持久化旧模板缺新占位符时把上下文块追加到渲染结果末尾兜底）、`splitChapterOpening` |
 | `foreshadow.go` | `SuggestForeshadows`、`UpdateForeshadows`、伏笔格式化注入、伏笔告警、`BuildForeshadowRoadmapMarkdown`、`SaveForeshadowRoadmap`、`syncForeshadowsAfterChapter`、`NextForeshadowID` |
@@ -84,7 +84,8 @@ task dev                              # 编译并启动 Go 后端
 | `postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体，`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略：全文/摘要模式）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`ExecuteRoadmapAction`（可选前置衔接优化 + 逐条定向修订/润色 + diff 节选） |
 | `handlers.go` | `Handlers` 结构体（含项目管理字段 `progDir`/`projectName`/`projectMu`、自动确认开关 `autoConfirm`、`postprocess`/`postprocessPath`）、`projectDir()` 帮助函数、项目切换 `switchProject()`、`ensureProject()` 检查、`rejectIfTaskRunning()`（任务运行期间编辑类端点返回 409）、所有 HTTP handler（含 `PostChapterPolish` 单章去AI味、`PostChapterReviseSpecific` 定向修订、`PostChaptersSmoothTransitions` 批量衔接优化、全书优化 `GetPostProcess`/`PostPostProcessDiagnose`/`PostPostProcessConsistency`/`PostPostProcessRoadmap`/`PutPostProcessRoadmap`/`PostPostProcessExecute`/`DeletePostProcess`、`GetAutoConfirm`/`PutAutoConfirm`）、`PostChapterGenerate` 自动确认循环（开启时每章生成后自动确认并继续下一章）、`tryStartTask`/`endTask`/`startChildWork` 互斥、项目管理 handler（`GetProjects`/`PostProject`/`PostProjectSelect`/`GetProjectCurrent`/`DeleteProject`） |
 | `web.go` | 路由注册（含项目管理端点、`/api/autoconfirm`）、CORS/日志中间件、静态文件服务、`startWebServer`、项目管理 handler（`GetProjects`/`PostProject`/`GetProjectCurrent`/`PostProjectSelect`/`DeleteProject`） |
-| `logger.go` | `LogBroadcaster`（SSE 广播）、所有日志/事件方法（含 `ChatChunk`、`ToolCallStart`、`ToolCallEnd`、`StreamStart`、`StreamProgress`、`PolishResult`、`PostProcessReport`、`PostProcessRoadmap`、`PostProcessItemDone`、`PostProcessUpdate`）、`LogEntry.MsgEN` 可选英文版、`logBilingual` 与 `InfoBilingual`/`ErrorBilingual`/`WarnBilingual`/`SuccessBilingual` |
+| `logger.go` | `LogBroadcaster`（SSE 广播）、所有日志/事件方法（含 `ChatChunk`、`ToolCallStart`、`ToolCallEnd`、`StreamStart`、`TokenUsage`、`PolishResult`、`PostProcessReport`、`PostProcessRoadmap`、`PostProcessItemDone`、`PostProcessUpdate`）、`LogEntry.MsgEN` 可选英文版、`logBilingual` 与 `InfoBilingual`/`ErrorBilingual`/`WarnBilingual`/`SuccessBilingual` |
+| `tokens.go` | `TaskTokenUsage` 任务级 token 累计器（context 挂载）、`withTaskTokens`/`taskTokensFromContext`、throttled SSE 推送 |
 | `prompts.go` | `RenderPrompt`（`{{.KeyName}}` 替换）、`DefaultPromptsZH` 变量（所有内置中文提示词模板）、`DefaultPromptsForLang(lang)` |
 | `prompts_en.go` | `DefaultPromptsEN`：16 个 prompt 字段全量英文模板（与中文一一对应） |
 | `locale.go` | `LangZH`/`LangEN` 常量、`localeFromRequest` 从 `X-UI-Locale`/`Accept-Language`/`?locale=` 解析、`errorCatalog` 双语错误表、`T(lang, key, args)`、`systemPrompts` 内联 system prompt 集中表、`SystemPromptFor(lang, key)`、`Handlers.writeErrorReq` 本地化错误响应 |
@@ -107,15 +108,16 @@ task dev                              # 编译并启动 Go 后端
 | `src/App.svelte` | 根组件：Header（项目badge + 项目语言 badge ZH/EN + 「切换 / 新建项目」按钮（任务运行时禁用）+ 阶段badge + 章节进度badge + AI思考中badge + 右侧 UI 语言切换按钮中 / EN） + 顶部导航（配置/大纲/写作/伏笔/图谱/技能，带图标） + 页面路由 + LogPanel + Toast 容器；初始加载若有当前项目则 `setLocale(project.language)` |
 | `src/lib/api.js` | `api(method, url, body)` — fetch 封装，自动带 `X-UI-Locale`/`Accept-Language` 头，错误消息走 `translateServerMessage` |
 | `src/lib/router.js` | `currentPage` store + hash 路由监听 |
-| `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、postprocess、taskRunning、streamCharCount、autoConfirm、lastFailedTask、`projectLanguage` 等）+ toast/log 管理 |
+| `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、postprocess、taskRunning、taskTokenUsage、autoConfirm、lastFailedTask、`projectLanguage` 等）+ toast/log 管理 |
 | `src/lib/sse.js` | `connectSSE()` — EventSource 连接 URL 拼 `?locale=` + 多种事件处理 → 更新 stores；content_chunk/chat_chunk 按 150ms 节流缓冲批量刷入；章节流式全文只存模块级变量，`streamingContent` store 仅保留尾部窗口（约 3000 字符）；`refreshProgress()` 对 progress_update 拉取做 500ms 去抖（task_end 立即刷新）；stream_start 事件清空流式缓冲；`log` 事件优先用 `msg_en` 字段，否则 `translateServerMessage`；任务名通过 i18n `task.<name>` 翻译；全书优化 `postprocess_update`/`postprocess_roadmap`/`postprocess_item_done` 事件 |
 | `src/lib/markdown.js` | `renderMarkdown(text)` — marked 解析 + DOMPurify 清洗，供聊天气泡渲染 markdown |
 | `src/lib/i18n/index.js` | i18n 核心：`uiLocale` store（持久化到 `localStorage`）、`setLocale`/`getLocale`、`t` 派生 store（`$t('key', params)`，插值 `{name}`）、`translate` 命令式、`translateServerMessage(msg, lang)` 把后端中文映射到英文（含 errorCatalog 镜像 + 常见 log + 动态前缀） |
 | `src/lib/i18n/zh.js`, `en.js` | 扁平 key 字典；新增可见文案必须同时在两个文件加 key |
-| `src/pages/Projects.svelte` | 项目选择页：新建项目（含中文/English 语言下拉，POST 时携带 `language`）+ 项目列表（每项显示语言 badge，可选择/删除）；选中项目后 `setLocale(project.language)` |
+| `src/pages/Projects.svelte` | 项目选择页：新建项目（名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`）+ 项目列表（每项显示语言 badge，可选择/删除）；选中项目后 `setLocale(project.language)` |
 | `src/pages/Config.svelte` | 配置页：API 配置（含上下文预算 tokens）、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；任务运行时所有输入控件禁用 |
 | `src/pages/Outline.svelte` | 大纲页：直接操作按钮（生成/确认/修订意见/删除/生成后续大纲）+ 导入续写 + pending 章节内联编辑 + 流式预览 |
-| `src/pages/Writing.svelte` | 写作页：章节列表（状态点）+ 直接操作（生成/确认/修改意见/去AI味，自动区分当前章修订与定向修订）+ 自动确认模式开关（toggle，随时可开关）+ 伏笔追踪摘要卡片（活跃/超期/临近回收）+ 优化章节衔接（进度卡片工具栏小按钮，已确认 ≥ 2 章时显示）+ 导出 TXT + 复制 + 上下章导航 + 流式尾部窗口展示（含「仅显示最新内容」提示，字数用 streamCharCount）+ rAF 自动滚动（自动确认模式下自动跟随正在生成的章节）+ 全书完成后展示 `PostProcessPanel` |
+| `src/pages/Writing.svelte` | 写作页：章节列表（状态点）+ 直接操作（生成/确认/修改意见/去AI味，自动区分当前章修订与定向修订）+ 自动确认模式开关（toggle，随时可开关）+ 伏笔追踪摘要卡片（活跃/超期/临近回收）+ 优化章节衔接（进度卡片工具栏小按钮，已确认 ≥ 2 章时显示）+ 导出 TXT + 复制 + 上下章导航 + 流式尾部窗口展示（含「仅显示最新内容」提示；任务进行中当前章显示 taskTokenUsage，空闲时显示正文字数）+ rAF 自动滚动（自动确认模式下自动跟随正在生成的章节）+ 全书完成后展示 `PostProcessPanel` |
+| `src/components/TaskTokenBadge.svelte` | 任务 token 展示组件（`↑ prompt ↓ completion tokens`），供 ChatPanel / App 顶栏 / Writing 页复用 |
 | `src/pages/Foreshadows.svelte` | 伏笔页：统计概览 + AI 设计伏笔 + 手动 CRUD + AI 建议确认面板（SSE `foreshadow_suggestions`）+ 列表/章节时间线/路线图文档三视图 + 复制/下载 `Foreshadows.md` |
 | `src/components/PostProcessPanel.svelte` | 全书优化面板：开始全书分析（诊断+核查+路线图）/ 重新核查 / 重新生成路线图 / 清空；诊断与核查报告 Markdown 展示；优化工单表格（勾选、编辑意见、执行选项、diff 对比弹窗） |
 | `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph 类），支持拖拽、滚轮缩放（以光标为中心，0.3x–3x）、hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
@@ -179,7 +181,7 @@ func (h *Handlers) PostXxxAction(w http.ResponseWriter, r *http.Request) {
 
 ### 自动确认模式
 
-`Handlers.autoConfirm`（`taskMu` 保护）为运行时开关，不持久化。`GET/PUT /api/autoconfirm` 读取/切换，任务运行期间也可随时开关。开启后 `PostChapterGenerate` 的任务 goroutine 进入循环：生成章节 → 若开关仍开启则 `ConfirmChapterAction` 自动确认 → 继续生成下一章，直到全部完成、开关被关闭（当前章生成完后停在 review 状态）、任务被取消或出错。整个循环在同一个任务锁内执行，期间仍受任务互斥保护。`GET /api/status` 返回 `auto_confirm` 字段。前端开关位于写作页进度卡片（toggle），开启时流式输出自动跟随正在生成的章节。
+`Handlers.autoConfirm`（`taskMu` 保护）为运行时开关，不持久化。`GET/PUT /api/autoconfirm` 读取/切换，任务运行期间也可随时开关。开启后 `PostChapterGenerate` 的任务 goroutine 进入循环：生成章节 → 若开关仍开启则 `ConfirmChapterAction` 自动确认 → 继续生成下一章，直到全部完成、开关被关闭（当前章生成完后停在 review 状态）、任务被取消或出错。整个循环在同一个任务锁内执行，期间仍受任务互斥保护。`GET /api/status` 返回 `auto_confirm` 及任务运行中的 `token_usage` 字段。前端开关位于写作页进度卡片（toggle），开启时流式输出自动跟随正在生成的章节。
 
 ### 流式输出节流 + 尾部窗口（前端性能）
 
@@ -188,9 +190,8 @@ func (h *Handlers) PostXxxAction(w http.ResponseWriter, r *http.Request) {
 - **节流缓冲**：`sse.js` 将 chunk 先累积到本地缓冲区，每 150ms 批量刷入 store
 - **尾部窗口**：章节流式全文只存 `sse.js` 模块级变量，`streamingContent` store 仅保留尾部约 3000 字符，每次刷新渲染成本恒定；写作页流式期间显示「仅显示最新内容」提示，生成结束后由 progress 重新拉取展示全文
 - **rAF 滚动**：写作页自动滚动合并到 `requestAnimationFrame`，每帧最多一次
-- **流式字数**：流式期间字数显示用 `streamCharCount` store（SSE 累计），不对全文做正则统计
+- **任务 token 追踪**：`tryStartTask()` 将 `TaskTokenUsage` 挂到 `taskCtx`；`api.go` 每次 LLM 调用累计 prompt/completion（优先 API `usage`，否则 rune×1.5 估算）；throttled SSE `token_usage`（约 2s）+ 前端每 2s poll `GET /api/status` 兜底；ChatPanel 任务栏、App 顶栏「AI思考中」、Writing 当前章均展示 `↑ ↓ tokens`
 - **progress 去抖**：`progress_update` 事件触发的 `/api/progress` 拉取（含全书正文的大 JSON）500ms 内合并为一次，`task_end` 时立即刷新
-- **聊天面板滚动守卫**：`ChatPanel` 的 `afterUpdate` 仅在消息区内容实际变化时才写 `scrollTop`，`streamCharCount` 跳动不触发重排
 
 `stream_start` 事件（每次章节流式输出开始时由后端发出）会清空缓冲与已生成字数计数，避免事实核查重试或自动连写时新旧内容叠加。
 
@@ -245,7 +246,7 @@ API 配置（`APIConfig`）与故事配置（`Config`）完全分离，分别保
 
 ### 流式输出
 
-`CallAPIStream` 返回流式响应，通过 `onChunk` 回调实时推送每个 token。`ContentChunk` SSE 事件用于前端实时渲染，`StreamProgress` 事件用于日志面板显示字符数进度（每 500 字触发一次）。
+`CallAPIStream` 返回流式响应，通过 `onChunk` 回调实时推送每个 token。`ContentChunk` SSE 事件用于前端实时渲染；token 累计经 `TaskTokenUsage` 推送 `token_usage` SSE（约 2s 节流）。
 
 ### 大纲反向约束 + 写前一致性检查
 
@@ -426,7 +427,7 @@ pending → writing → review → accepted
 | `progress_update` | `{phase, title, current_chapter, total_chapters, ...}` | 进度变化 |
 | `stream_start` | `{chapter_idx}` | 一次新的章节流式输出开始（前端清空流式缓冲，避免事实核查重试/自动连写时内容叠加） |
 | `content_chunk` | `{chapter_idx, text}` | 流式生成 token |
-| `stream_progress` | `{chapter_idx, char_count}` | 流式生成字符数进度（每 500 字） |
+| `token_usage` | `{prompt_tokens, completion_tokens}` | 任务级 token 累计（约 2s 节流；含流式与非流式步骤） |
 | `foreshadow_suggestions` | `ForeshadowSuggestion[]` | 伏笔建议结果 |
 | `continue_analysis` | `ContinueAnalysis` | 续写分析结果 |
 | `settings_reconciled` | `{explanation, changed_fields}` | 设定协调完成 |
@@ -501,10 +502,10 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 前端使用 Vite 5 + Svelte 4 + Tailwind CSS 4 + DaisyUI 5 构建，产物输出到 `frontend/dist/`，通过 `//go:embed frontend/dist` 内嵌到 Go 二进制。主题使用 xianii 暗色主题（定义在 `src/app.css` 的 `@plugin "daisyui/theme"` 块中）。
 
 - **页面**：`config`（配置直接保存 + 角色管理 + 世界观管理 + 组织管理（卡片 + 角色成员勾选）+ 关系管理（卡片 + 源/目标实体下拉，实体覆盖角色/组织/世界观，值编码为 `type:id`））、`outline`（大纲直接操作 + 内联编辑 + 导入续写）、`writing`（写作直接操作 + 定向修订 + 自动确认模式开关 + 伏笔追踪摘要 + 导出 TXT）、`foreshadows`（伏笔 CRUD + AI 建议确认 + 列表/时间线/路线图三视图）、`relations`（关系图谱 Canvas）、`skills`（技能管理）
-- **状态管理**：Svelte stores（`src/lib/stores.js`），包含 progress、config、settings、taskRunning、streamCharCount（流式已生成字数）、autoConfirm（自动确认模式）、foreshadowSuggestions/foreshadowShowSuggestions（AI 伏笔建议待确认）等全局状态
+- **状态管理**：Svelte stores（`src/lib/stores.js`），包含 progress、config、settings、taskRunning、taskTokenUsage（任务 token 累计）、autoConfirm（自动确认模式）、foreshadowSuggestions/foreshadowShowSuggestions（AI 伏笔建议待确认）等全局状态
 - **路由**：hash 路由（`src/lib/router.js`），`currentPage` store + `window.hashchange` 监听
 - **API 调用**：`api(method, url, body)` 封装 fetch（`src/lib/api.js`）
-- **SSE**：`connectSSE()` 建立 EventSource 连接，13 种事件类型自动更新 stores（`src/lib/sse.js`）；content_chunk/chat_chunk 经 150ms 节流缓冲批量刷入；任务成功完成以 toast 提示（不弹全屏遮罩）
+- **SSE**：`connectSSE()` 建立 EventSource 连接，14 种事件类型自动更新 stores（`src/lib/sse.js`）；content_chunk/chat_chunk 经 150ms 节流缓冲批量刷入；`token_usage` 更新 taskTokenUsage，任务运行中每 2s poll `/api/status` 兜底；任务成功完成以 toast 提示（不弹全屏遮罩）
 - **Markdown 渲染**：助理消息通过 `src/lib/markdown.js`（marked + DOMPurify）渲染为 HTML，样式在 `app.css` 的 `.md-body` 块中定义
 - **开发模式**：`task dev:frontend` 启动 Vite dev server（端口 5173），代理 `/api` → `:48090`，支持 HMR 热重载
 - **关系图谱**：`ForceGraph` 类，纯 Canvas 力导向布局，支持拖拽节点、滚轮缩放（以光标为中心）、悬浮 tooltip 与 hover 高亮（hover 节点及连线强调、相邻节点次强调、无关元素淡化）
@@ -542,7 +543,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 - [`frontend/src/lib/sse.js`](frontend/src/lib/sse.js)：EventSource URL 拼 `?locale=`，`log` 事件优先用 `msg_en`，回退 `translateServerMessage`；任务名通过 `task.<name>` key 翻译
 - [`frontend/src/lib/stores.js`](frontend/src/lib/stores.js)：新增 `projectLanguage` writable
 - [`frontend/src/App.svelte`](frontend/src/App.svelte)：Header 显示项目语言 badge（ZH/EN）+ UI 语言切换按钮（中 / EN）；选择/创建项目后自动 `setLocale(project.language)`
-- [`frontend/src/pages/Projects.svelte`](frontend/src/pages/Projects.svelte)：新建项目表单含语言下拉（中文 / English），POST 时携带 `language`；列表项显示语言 badge
+- [`frontend/src/pages/Projects.svelte`](frontend/src/pages/Projects.svelte)：新建项目表单名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`；列表项显示语言 badge
 
 ### 老项目兼容
 

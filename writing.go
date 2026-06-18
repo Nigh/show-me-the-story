@@ -378,15 +378,8 @@ func generateChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *C
 		systemPrompt = SystemPromptFor(lang, "author_default")
 	}
 
-	totalChars := 0
-	nextReport := 500
 	onChunk := func(chunk string) {
 		logger.ContentChunk(idx, chunk)
-		totalChars += len([]rune(chunk))
-		if totalChars >= nextReport {
-			logger.StreamProgress(idx, totalChars)
-			nextReport += 500
-		}
 	}
 
 	// 通知前端清空流式缓冲（事实核查重试/自动连写时避免内容叠加）
@@ -541,15 +534,8 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Con
 	}
 	systemPrompt += SystemPromptFor(lang, "chapter_revision_suffix")
 
-	totalChars := 0
-	nextReport := 500
 	onChunk := func(chunk string) {
 		logger.ContentChunk(chapterIdx, chunk)
-		totalChars += len([]rune(chunk))
-		if totalChars >= nextReport {
-			logger.StreamProgress(chapterIdx, totalChars)
-			nextReport += 500
-		}
 	}
 
 	logger.StreamStart(chapterIdx)
@@ -794,15 +780,8 @@ func PolishChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 
 	systemPrompt := SystemPromptFor(cfg.Language, "polish_editor")
 
-	totalChars := 0
-	nextReport := 500
 	onChunk := func(chunk string) {
 		logger.ContentChunk(chapterIdx, chunk)
-		totalChars += len([]rune(chunk))
-		if totalChars >= nextReport {
-			logger.StreamProgress(chapterIdx, totalChars)
-			nextReport += 500
-		}
 	}
 
 	logger.StreamStart(chapterIdx)

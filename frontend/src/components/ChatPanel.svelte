@@ -2,8 +2,9 @@
   import { onMount, afterUpdate } from 'svelte';
   import { api } from '../lib/api.js';
   import { renderMarkdown } from '../lib/markdown.js';
-  import { chatSessions, currentChatSession, addToast, showConfirm, taskRunning, lastFailedTask, logEntries, currentTaskName, streamCharCount } from '../lib/stores.js';
+  import { chatSessions, currentChatSession, addToast, showConfirm, taskRunning, lastFailedTask, logEntries, currentTaskName } from '../lib/stores.js';
   import { t, uiLocale } from '../lib/i18n/index.js';
+  import TaskTokenBadge from './TaskTokenBadge.svelte';
 
   export let contextPage = 'config';
 
@@ -110,7 +111,7 @@
     autoScroll = nearBottom;
   }
 
-  // 滚动守卫：afterUpdate 在任何 store 变化（如 streamCharCount 每 150ms 跳动、
+  // 滚动守卫：afterUpdate 在任何 store 变化（如 token 计数、
   // 日志追加）后都会触发，无条件写 scrollTop 会造成高频强制重排。
   // 仅在消息区内容实际变化时才滚动。
   let lastScrollKey = '';
@@ -284,8 +285,8 @@
           <span class="text-success text-xs">●</span>
         {/if}
         <span class="text-xs font-semibold text-base-content/70">{$currentTaskName || $t('chat.task.placeholder')}{$taskRunning ? $t('chat.task.running') : $t('chat.task.ended')}</span>
-        {#if $taskRunning && $streamCharCount > 0}
-          <span class="badge badge-xs badge-info gap-1 font-mono">{$t('chat.task.wordCount', { n: $streamCharCount.toLocaleString() })}</span>
+        {#if $taskRunning}
+          <TaskTokenBadge />
         {/if}
         <span class="text-xs text-base-content/40 ml-auto">{taskStatusCollapsed ? $t('chat.task.expand') : $t('chat.task.collapse')}</span>
       </div>

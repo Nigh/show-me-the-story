@@ -5,6 +5,7 @@
   import { api } from './lib/api.js';
   import { onMount } from 'svelte';
   import { t, uiLocale, setLocale } from './lib/i18n/index.js';
+  import TaskTokenBadge from './components/TaskTokenBadge.svelte';
   import Projects from './pages/Projects.svelte';
   import Config from './pages/Config.svelte';
   import Outline from './pages/Outline.svelte';
@@ -87,6 +88,7 @@
         <span class="badge badge-sm badge-warning gap-1">
           <span class="loading loading-spinner loading-xs"></span>
           {$t('app.aiThinking')}
+          <TaskTokenBadge className="badge badge-xs badge-warning font-mono border-0" />
         </span>
       {/if}
     {/if}

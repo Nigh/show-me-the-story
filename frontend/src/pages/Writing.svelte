@@ -1,9 +1,10 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { progress, taskRunning, streamingContent, streamingChapterIdx, streamCharCount, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
+  import { progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
   import { t } from '../lib/i18n/index.js';
   import PostProcessPanel from '../components/PostProcessPanel.svelte';
+  import TaskTokenBadge from '../components/TaskTokenBadge.svelte';
 
   // 保留 prop 以兼容 App 传参
   export let sendToChat = async () => {};
@@ -54,8 +55,8 @@
   $: isStreamingThis = $streamingChapterIdx === $selectedChapter && $streamingContent;
   // 流式期间 $streamingContent 只含尾部窗口（性能保护），全文在生成结束后由 progress 拉取
   $: displayContent = isStreamingThis ? $streamingContent : (ch?.content || '');
-  // 流式期间不对全文做正则统计，直接用 SSE 累计的字数
-  $: wordCount = isStreamingThis ? $streamCharCount : (ch?.content ? ch.content.replace(/\s/g, '').length : 0);
+  $: chapterWordCount = ch?.content ? ch.content.replace(/\s/g, '').length : 0;
+  $: showTaskTokens = $taskRunning && isCurrent;
   $: totalWords = chapters.reduce((sum, c) => sum + (c.content ? c.content.replace(/\s/g, '').length : 0), 0);
 
   $: foreshadows = p?.foreshadows || [];
@@ -275,8 +276,10 @@
               <div class="flex items-center gap-2 flex-wrap">
                 <h2 class="card-title text-base flex-1 min-w-0">{$t('writing.chapter.title', { num: ch.num, title: ch.title })}</h2>
                 <span class="badge badge-sm {statusMeta[ch.status]?.cls || 'badge-ghost'}">{statusMeta[ch.status]?.label || ch.status}</span>
-                {#if wordCount > 0}
-                  <span class="text-xs text-base-content/40">{$t('writing.chapter.words', { n: wordCount.toLocaleString() })}</span>
+                {#if showTaskTokens}
+                  <TaskTokenBadge className="text-xs text-base-content/40 font-mono" />
+                {:else if chapterWordCount > 0}
+                  <span class="text-xs text-base-content/40">{$t('writing.chapter.words', { n: chapterWordCount.toLocaleString() })}</span>
                 {/if}
               </div>
 
