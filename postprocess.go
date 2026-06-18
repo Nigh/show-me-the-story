@@ -11,7 +11,7 @@ import (
 
 const (
 	postprocessVolumeSplitRunes = 150000
-	defaultContextBudgetTokens  = 900000
+	defaultContextBudgetTokens  = 300000
 	diffExcerptRunes            = 500
 )
 

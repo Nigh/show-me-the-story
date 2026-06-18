@@ -28,7 +28,7 @@ type AgentContext struct {
 	CfgPath      string
 	SessionsDir  string
 	ProjectDir   string
-	StartAsync   func(taskName string, fn func(goCtx context.Context))
+	StartAsync   func(taskName string, fn func(goCtx context.Context) error)
 	toolMsgKey   string
 	toolMsgArgs  []string
 }
@@ -81,19 +81,41 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 			return "", history, agentErr(ctx, "agent.task_cancelled")
 		}
 
+		if ctx.Logger != nil {
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d/%d: 调用 API...", step+1, maxSteps))
+		}
+
 		fullResp := ""
 		err := callAgentAPI(goCtx, ctx.APICfg, messages, func(chunk string) {
 			fullResp += chunk
 		})
 		if err != nil {
+			if ctx.Logger != nil {
+				ctx.Logger.Error(fmt.Sprintf("[Agent] 步骤 %d: API 调用失败: %v", step+1, err))
+			}
 			return "", history, agentErr(ctx, "agent.api_failed", err)
+		}
+
+		if ctx.Logger != nil {
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: API 响应 %d 字符", step+1, len(fullResp)))
 		}
 
 		toolCall := parseToolCall(fullResp)
 
 		if toolCall == nil {
+			if ctx.Logger != nil {
+				preview := fullResp
+				if len([]rune(preview)) > 200 {
+					preview = string([]rune(preview)[:200]) + "..."
+				}
+				ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 未检测到工具调用，作为最终回复返回。内容预览: %s", step+1, preview))
+			}
 			history = append(history, AgentStep{Role: "assistant", Content: fullResp})
 			return fullResp, history, nil
+		}
+
+		if ctx.Logger != nil {
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 检测到工具调用 → %s", step+1, toolCall.Name))
 		}
 
 		history = append(history, AgentStep{Role: "assistant", Content: fullResp, ToolCall: toolCall})
@@ -103,6 +125,14 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 		}
 
 		result, resultKey, resultArgs := executeTool(toolCall, tools, ctx)
+
+		if ctx.Logger != nil {
+			resultPreview := result
+			if len([]rune(resultPreview)) > 100 {
+				resultPreview = string([]rune(resultPreview)[:100]) + "..."
+			}
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 工具 %s 执行完成，结果: %s", step+1, toolCall.Name, resultPreview))
+		}
 
 		history = append(history, AgentStep{
 			Role:           "tool",
@@ -212,7 +242,7 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("## 安全规则（最高优先级，违反将造成用户数据永久丢失）\n")
 	sb.WriteString("1. **修改 ≠ 删除**。当用户要求「修改/调整/润色/修正某一章」时，必须且只能使用 revise_chapter 工具（通过 num 参数指定章节号）。绝对禁止通过 delete_chapter / delete_chapters_from / delete_outline / reset_progress 来实现任何形式的「修改」需求。\n")
 	sb.WriteString("2. revise_chapter 支持修订任意已有内容的章节（包括已确认的早期章节），它只改动目标章节本身，不影响其他章节。修改第 6 章的细节就调用 revise_chapter(num=6, feedback=具体意见)，仅此而已。\n")
-	sb.WriteString("3. 删除类工具（delete_chapter、delete_chapters_from、delete_outline、reset_progress）是不可逆的危险操作，仅当用户**明确使用「删除/清空/重置」等字眼**并指明范围时才可使用。使用前必须：先用一条纯文本回复向用户复述将被删除的确切范围（如「将删除第 6~30 章共 25 章内容及其正文文件」），等用户明确回复确认后，才在下一轮调用工具并传入 confirm=true。\n")
+	sb.WriteString("3. 删除类工具（delete_chapter、delete_chapters_from、delete_outline、reset_progress）是不可逆的危险操作，仅当用户**明确使用「删除/清空/重置」等字眼**并指明范围时才可使用。使用前必须：先用一条纯文本回复向用户复述将被删除的确切范围（如「将清除第 6~30 章共 25 章的正文内容（大纲保留）」），等用户明确回复确认后，才在下一轮调用工具并传入 confirm=true。注意：delete_chapter / delete_chapters_from 只清除正文（Content、Summary、markdown 文件），保留大纲，章节状态重置为 pending；delete_outline / reset_progress 才会删除大纲和全部数据。\n")
 	sb.WriteString("4. 任何情况下都不要为了「让操作更彻底」「方便重新生成」而扩大删除范围。宁可少做，不可多删。\n")
 	sb.WriteString("5. 拿不准用户意图时，先提问澄清，不要猜测着执行写操作。\n\n")
 
@@ -299,7 +329,7 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("## Safety rules (highest priority — violating them causes permanent user-data loss)\n")
 	sb.WriteString("1. **Edit != Delete**. When the user asks to \"revise/adjust/polish/fix chapter N\", you MUST use the revise_chapter tool (pass the chapter number via the num argument). NEVER use delete_chapter / delete_chapters_from / delete_outline / reset_progress to satisfy any kind of \"edit\" request.\n")
 	sb.WriteString("2. revise_chapter can revise any chapter that has content (including confirmed early chapters); it only modifies the target chapter and never touches the others. To tweak chapter 6, call revise_chapter(num=6, feedback=specific instructions). That's it.\n")
-	sb.WriteString("3. Delete tools (delete_chapter, delete_chapters_from, delete_outline, reset_progress) are irreversible. Only use them when the user explicitly says \"delete/clear/reset\" and specifies the range. Before using one, first reply in plain text restating the exact range that will be deleted (e.g. \"will delete chapters 6-30, 25 chapters and their text files\") and wait for the user's explicit confirmation; then on the next turn call the tool with confirm=true.\n")
+	sb.WriteString("3. Delete tools (delete_chapter, delete_chapters_from, delete_outline, reset_progress) are irreversible. Only use them when the user explicitly says \"delete/clear/reset\" and specifies the range. Before using one, first reply in plain text restating the exact range that will be affected (e.g. \"will clear content of chapters 6-30, 25 chapters — outlines will be preserved\") and wait for the user's explicit confirmation; then on the next turn call the tool with confirm=true. Note: delete_chapter / delete_chapters_from only clear content (Content, Summary, markdown file), keeping outlines and resetting chapter status to pending; delete_outline / reset_progress delete outlines and all data.\n")
 	sb.WriteString("4. Never widen the delete range \"for cleanliness\" or \"to make regeneration easier\". Prefer doing less to doing too much.\n")
 	sb.WriteString("5. When user intent is ambiguous, ask a clarifying question instead of guessing into a write operation.\n\n")
 
@@ -1057,13 +1087,12 @@ func getBuiltinTools() []Tool {
 
 				if hasAccepted && ctx.StartAsync != nil {
 					newSettings := ctx.Config.Story
-					ctx.StartAsync("settings_reconciliation", func(goCtx context.Context) {
+					ctx.StartAsync("settings_reconciliation", func(goCtx context.Context) error {
 						err := ReconcileSettingsAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, newSettings, ctx.ProgressPath, ctx.CfgPath, ctx.Logger)
 						if err != nil {
 							ctx.Logger.Error(fmt.Sprintf("设定协调失败: %v", err))
-							return
 						}
-						ctx.Logger.SuccessKey("log.settings_reconcile_done")
+						return err
 					})
 					return agentMsg(ctx, "agent.config_saved_reconciling"), nil
 				}
@@ -1090,13 +1119,12 @@ func getBuiltinTools() []Tool {
 						return "", agentErr(ctx, "writing_chapter_present")
 					}
 				}
-				ctx.StartAsync("outline_generation", func(goCtx context.Context) {
+				ctx.StartAsync("outline_generation", func(goCtx context.Context) error {
 					err := GenerateOutlineAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("大纲生成失败: %v", err))
-						return
 					}
-					ctx.Logger.SuccessKey("log.outline_generate_done")
+					return err
 				})
 				return agentMsg(ctx, "agent.outline_task_started"), nil
 			},
@@ -1134,13 +1162,12 @@ func getBuiltinTools() []Tool {
 					return "", agentErr(ctx, "task_running_wait")
 				}
 				feedback := params.Feedback
-				ctx.StartAsync("outline_revision", func(goCtx context.Context) {
+				ctx.StartAsync("outline_revision", func(goCtx context.Context) error {
 					err := ReviseOutlineAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, feedback, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("大纲修订失败: %v", err))
-						return
 					}
-					ctx.Logger.SuccessKey("log.outline_revised")
+					return err
 				})
 				return agentMsg(ctx, "agent.outline_revise_started"), nil
 			},
@@ -1206,17 +1233,12 @@ func getBuiltinTools() []Tool {
 					return "", agentErr(ctx, "task_running_wait")
 				}
 				chIdx := ctx.State.CurrentChapterIndex
-				chTitle := ""
-				if chIdx < len(ctx.State.Chapters) {
-					chTitle = ctx.State.Chapters[chIdx].Title
-				}
-				ctx.StartAsync("chapter_generation", func(goCtx context.Context) {
+				ctx.StartAsync("chapter_generation", func(goCtx context.Context) error {
 					err := GenerateChapterAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, ctx.Settings, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("章节创作失败: %v", err))
-						return
 					}
-					ctx.Logger.SuccessKey("log.chapter_write_done", chIdx+1, chTitle)
+					return err
 				})
 				return agentMsg(ctx, "agent.chapter_task_started", chIdx+1), nil
 			},
@@ -1286,7 +1308,7 @@ func getBuiltinTools() []Tool {
 					(target.Status == StatusReview || target.Status == StatusWriting)
 
 				chNum := num
-				ctx.StartAsync("chapter_revision", func(goCtx context.Context) {
+				ctx.StartAsync("chapter_revision", func(goCtx context.Context) error {
 					var err error
 					if isCurrent {
 						err = ReviseChapterAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, feedback, ctx.Settings, ctx.Logger)
@@ -1295,37 +1317,34 @@ func getBuiltinTools() []Tool {
 					}
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("章节修订失败: %v", err))
-						return
 					}
+					return err
 				})
 				return agentMsg(ctx, "agent.chapter_revise_started", num), nil
 			},
 		},
 		{
 			Name:        "delete_chapter",
-			Description: "【危险·不可逆】删除最后一个章节。仅当用户明确要求删除时使用，且必须先向用户确认。",
+			Description: "【危险·不可逆】清除最后一个章节的正文内容（保留大纲）。仅当用户明确要求删除时使用，且必须先向用户确认。",
 			Parameters:  `{"confirm": true}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
-				if msg := requireConfirm(ctx, args, "删除最后一个章节"); msg != "" {
+				if msg := requireConfirm(ctx, args, "清除最后一个章节的正文"); msg != "" {
 					return msg, nil
 				}
 				if len(ctx.State.Chapters) == 0 {
 					return "", agentErr(ctx, "no_chapters_to_delete")
 				}
 				lastIdx := len(ctx.State.Chapters) - 1
-				ch := ctx.State.Chapters[lastIdx]
+				ch := &ctx.State.Chapters[lastIdx]
 				if ch.Status == StatusWriting {
 					return "", agentErr(ctx, "writing_chapter_cannot_delete")
 				}
 				deleteFile(ChapterMarkdownPath(ctx.ProjectDir, ch.Num))
-				ctx.State.Chapters = ctx.State.Chapters[:lastIdx]
-				if ctx.State.CurrentChapterIndex > len(ctx.State.Chapters) {
-					ctx.State.CurrentChapterIndex = len(ctx.State.Chapters)
-				}
-				if len(ctx.State.Chapters) == 0 {
-					ctx.State.Phase = "outline"
-					ctx.State.CurrentChapterIndex = 0
-					ctx.State.StoryConfigSnapshot = nil
+				ch.Content = ""
+				ch.Summary = ""
+				ch.Status = StatusPending
+				if ctx.State.CurrentChapterIndex > lastIdx {
+					ctx.State.CurrentChapterIndex = lastIdx
 				}
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
 					return "", agentErr(ctx, "save_progress_failed", err)
@@ -1336,7 +1355,7 @@ func getBuiltinTools() []Tool {
 		},
 		{
 			Name:        "delete_chapters_from",
-			Description: "【危险·不可逆】从指定章节删除到末尾，将永久删除范围内所有章节的大纲和正文。仅当用户明确要求批量删除时使用，且必须先向用户复述删除范围并获得确认。严禁用于实现「修改某章」的需求——修改请用 revise_chapter。",
+			Description: "【危险·不可逆】从指定章节到末尾清除正文内容（保留大纲）。仅当用户明确要求批量删除正文时使用，且必须先向用户复述删除范围并获得确认。严禁用于实现「修改某章」的需求——修改请用 revise_chapter。",
 			Parameters:  `{"num": 6, "confirm": true}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var params struct {
@@ -1372,16 +1391,14 @@ func getBuiltinTools() []Tool {
 				}
 				deletedCount := len(ctx.State.Chapters) - startIdx
 				for i := startIdx; i < len(ctx.State.Chapters); i++ {
-					deleteFile(ChapterMarkdownPath(ctx.ProjectDir, ctx.State.Chapters[i].Num))
+					ch := &ctx.State.Chapters[i]
+					deleteFile(ChapterMarkdownPath(ctx.ProjectDir, ch.Num))
+					ch.Content = ""
+					ch.Summary = ""
+					ch.Status = StatusPending
 				}
-				ctx.State.Chapters = ctx.State.Chapters[:startIdx]
-				if ctx.State.CurrentChapterIndex > len(ctx.State.Chapters) {
-					ctx.State.CurrentChapterIndex = len(ctx.State.Chapters)
-				}
-				if len(ctx.State.Chapters) == 0 {
-					ctx.State.Phase = "outline"
-					ctx.State.CurrentChapterIndex = 0
-					ctx.State.StoryConfigSnapshot = nil
+				if ctx.State.CurrentChapterIndex >= startIdx {
+					ctx.State.CurrentChapterIndex = startIdx
 				}
 				if err := SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
 					return "", agentErr(ctx, "save_progress_failed", err)
@@ -1581,14 +1598,15 @@ func getBuiltinTools() []Tool {
 				if ctx.StartAsync == nil {
 					return "", agentErr(ctx, "task_running_wait")
 				}
-				ctx.StartAsync("foreshadow_suggest", func(goCtx context.Context) {
+				ctx.StartAsync("foreshadow_suggest", func(goCtx context.Context) error {
 					suggestions, err := SuggestForeshadows(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("伏笔建议生成失败: %v", err))
-						return
+						return err
 					}
 					ctx.Logger.Success(fmt.Sprintf("伏笔建议生成完成，共 %d 条", len(suggestions)))
 					ctx.Logger.ForeshadowSuggestions(suggestions)
+					return nil
 				})
 				return agentMsg(ctx, "agent.foreshadow_suggest_started"), nil
 			},

@@ -277,7 +277,11 @@ func (h *Handlers) PutAPIConfig(w http.ResponseWriter, r *http.Request) {
 		newCfg.HTTPTimeoutSeconds = 300
 	}
 	if newCfg.ContextBudgetTokens <= 0 {
-		newCfg.ContextBudgetTokens = defaultContextBudgetTokens
+		if window := FetchModelContextWindow(&newCfg); window > 0 {
+			newCfg.ContextBudgetTokens = window
+		} else {
+			newCfg.ContextBudgetTokens = defaultContextBudgetTokens
+		}
 	}
 
 	data, err := json.MarshalIndent(newCfg, "", "  ")
@@ -863,7 +867,7 @@ func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lastIdx := len(h.state.Chapters) - 1
-	ch := h.state.Chapters[lastIdx]
+	ch := &h.state.Chapters[lastIdx]
 
 	if ch.Status == StatusWriting {
 		h.writeErrorReq(w, r, http.StatusConflict, "writing_chapter_cannot_delete")
@@ -871,17 +875,12 @@ func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deleteFile(ChapterMarkdownPath(h.projectDir(), ch.Num))
+	ch.Content = ""
+	ch.Summary = ""
+	ch.Status = StatusPending
 
-	h.state.Chapters = h.state.Chapters[:lastIdx]
-
-	if h.state.CurrentChapterIndex > len(h.state.Chapters) {
-		h.state.CurrentChapterIndex = len(h.state.Chapters)
-	}
-
-	if len(h.state.Chapters) == 0 {
-		h.state.Phase = "outline"
-		h.state.CurrentChapterIndex = 0
-		h.state.StoryConfigSnapshot = nil
+	if h.state.CurrentChapterIndex > lastIdx {
+		h.state.CurrentChapterIndex = lastIdx
 	}
 
 	if err := SaveProgress(h.progressPath, h.state); err != nil {
@@ -1035,22 +1034,15 @@ func (h *Handlers) DeleteChaptersFrom(w http.ResponseWriter, r *http.Request) {
 	deletedCount := len(h.state.Chapters) - startIdx
 
 	for i := startIdx; i < len(h.state.Chapters); i++ {
-		mdFile := ChapterMarkdownPath(h.projectDir(), h.state.Chapters[i].Num)
-		if err := deleteFile(mdFile); err != nil {
-			h.logger.WarnKey("log.delete_file_failed", mdFile, err)
-		}
+		ch := &h.state.Chapters[i]
+		deleteFile(ChapterMarkdownPath(h.projectDir(), ch.Num))
+		ch.Content = ""
+		ch.Summary = ""
+		ch.Status = StatusPending
 	}
 
-	h.state.Chapters = h.state.Chapters[:startIdx]
-
-	if h.state.CurrentChapterIndex > len(h.state.Chapters) {
-		h.state.CurrentChapterIndex = len(h.state.Chapters)
-	}
-
-	if len(h.state.Chapters) == 0 {
-		h.state.Phase = "outline"
-		h.state.CurrentChapterIndex = 0
-		h.state.StoryConfigSnapshot = nil
+	if h.state.CurrentChapterIndex >= startIdx {
+		h.state.CurrentChapterIndex = startIdx
 	}
 
 	if err := SaveProgress(h.progressPath, h.state); err != nil {
@@ -2283,6 +2275,19 @@ func (h *Handlers) GetChatSessions(w http.ResponseWriter, r *http.Request) {
 	if idx == nil {
 		idx = &ChatSessionIndex{}
 	}
+
+	// 清理空会话：删除 msg_count == 0 且不在当前会话中的条目
+	var cleaned []ChatSessionMeta
+	for _, m := range idx.Sessions {
+		if m.MsgCount == 0 {
+			path := filepath.Join(chatSessionsDir(h.sessionsDir), m.ID+".json")
+			deleteFile(path)
+			continue
+		}
+		cleaned = append(cleaned, m)
+	}
+	idx.Sessions = cleaned
+
 	h.writeJSON(w, http.StatusOK, idx)
 }
 
@@ -2296,10 +2301,13 @@ func (h *Handlers) PostChatSession(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: now,
 	}
 
-	if err := SaveChatSession(h.sessionsDir, session); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "create_session_failed", err.Error())
-		return
-	}
+	// 保存会话文件但不加入索引，等首次发消息时 SaveChatSession 才入索引，
+	// 避免产生 0 条记录的空会话。
+	dir := chatSessionsDir(h.sessionsDir)
+	os.MkdirAll(dir, 0755)
+	path := filepath.Join(dir, session.ID+".json")
+	data, _ := json.MarshalIndent(session, "", "  ")
+	writeFileAtomic(path, data)
 
 	h.writeJSON(w, http.StatusOK, session)
 }
@@ -2414,7 +2422,7 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 			CfgPath:      h.cfgPath,
 			SessionsDir:  h.sessionsDir,
 			ProjectDir:   filepath.Join(h.progDir, "storys", h.projectName),
-			StartAsync: func(taskName string, fn func(goCtx context.Context)) {
+			StartAsync: func(taskName string, fn func(goCtx context.Context) error) {
 				// 子任务必须计入 activeWork，否则 Agent 主循环结束后锁被释放，
 				// 子任务仍在运行时新任务可并发进入，造成数据竞争。
 				if !h.startChildWork() {
@@ -2425,9 +2433,9 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 				go func() {
 					defer h.endTask()
 					h.logger.TaskStart(taskName)
-					fn(childCtx)
-					h.logger.TaskEnd(taskName, true)
+					err := fn(childCtx)
 					h.broadcastProgress()
+					h.logger.TaskEnd(taskName, err == nil)
 				}()
 			},
 		}

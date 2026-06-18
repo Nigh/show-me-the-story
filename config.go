@@ -116,7 +116,12 @@ func LoadAPIConfig(path string) (*APIConfig, error) {
 		cfg.HTTPTimeoutSeconds = 300
 	}
 	if cfg.ContextBudgetTokens <= 0 {
-		cfg.ContextBudgetTokens = defaultContextBudgetTokens
+		// 先尝试从 API 获取模型的上下文窗口
+		if window := FetchModelContextWindow(&cfg); window > 0 {
+			cfg.ContextBudgetTokens = window
+		} else {
+			cfg.ContextBudgetTokens = defaultContextBudgetTokens
+		}
 	}
 
 	return &cfg, nil
@@ -156,7 +161,14 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	cfg.Language = NormalizeLanguage(cfg.Language)
+
+	// 保存 applyDefaults 前的 prompts 状态，用于判断是否有字段被填充
+	oldPrompts := cfg.Prompts
 	cfg.Prompts.applyDefaults(cfg.Language)
+	// 如果有字段被填充（从空变为默认值），写回磁盘
+	if cfg.Prompts != oldPrompts {
+		saveConfig(path, &cfg)
+	}
 
 	if cfg.SkillConfig == nil {
 		cfg.SkillConfig = &SkillConfig{
