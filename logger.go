@@ -97,10 +97,10 @@ func (lb *LogBroadcaster) StreamStart(chapterIdx int) {
 	})
 }
 
-func (lb *LogBroadcaster) StreamProgress(chapterIdx int, charCount int) {
-	lb.Emit("stream_progress", map[string]interface{}{
-		"chapter_idx": chapterIdx,
-		"char_count":  charCount,
+func (lb *LogBroadcaster) TokenUsage(promptTokens, completionTokens int) {
+	lb.Emit("token_usage", map[string]int{
+		"prompt_tokens":     promptTokens,
+		"completion_tokens": completionTokens,
 	})
 }
 

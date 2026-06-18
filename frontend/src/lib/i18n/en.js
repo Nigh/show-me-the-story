@@ -400,7 +400,7 @@ export default {
   'chat.task.ended': ' ended',
   'chat.task.expand': 'Expand ▾',
   'chat.task.collapse': 'Collapse ▴',
-  'chat.task.wordCount': '{n} chars generated',
+  'task.tokens.usage': '↑ {prompt} ↓ {completion} tokens',
   'chat.notSelected': 'Select or create a session to start chatting',
   'chat.welcome.hint': 'I am the writing assistant. I can manage settings, generate outlines and write chapters for you.',
   'chat.welcome.q1': 'Help me refine the story settings',

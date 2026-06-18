@@ -404,7 +404,7 @@ export default {
   'chat.task.ended': ' 已结束',
   'chat.task.expand': '展开 ▾',
   'chat.task.collapse': '收起 ▴',
-  'chat.task.wordCount': '已生成 {n} 字',
+  'task.tokens.usage': '↑ {prompt} ↓ {completion} tokens',
   'chat.notSelected': '选择或创建一个会话开始对话',
   'chat.welcome.hint': '我是创作助理，可以帮你管理设定、生成大纲和章节。',
   'chat.welcome.q1': '帮我完善故事设定',

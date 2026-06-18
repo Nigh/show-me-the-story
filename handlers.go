@@ -40,6 +40,7 @@ type Handlers struct {
 	activeWork  int
 	taskCtx     context.Context
 	taskCancel  context.CancelFunc
+	taskTokens  *TaskTokenUsage
 	autoConfirm bool // 自动确认模式：章节生成完成后自动确认并继续生成下一章
 
 	pendingContinueContent string
@@ -163,7 +164,10 @@ func (h *Handlers) tryStartTask() bool {
 	}
 	h.taskRunning = true
 	h.activeWork = 1
-	h.taskCtx, h.taskCancel = context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx, h.taskTokens = withTaskTokens(ctx, h.logger)
+	h.taskCtx = ctx
+	h.taskCancel = cancel
 	return true
 }
 
@@ -990,14 +994,22 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 	if h.cfg != nil {
 		lang = NormalizeLanguage(h.cfg.Language)
 	}
-	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"phase":            h.state.Phase,
 		"title":            h.state.Title,
 		"total_chapters":   len(h.state.Chapters),
 		"is_task_running":  h.isTaskRunning(),
 		"auto_confirm":     h.isAutoConfirmOn(),
 		"project_language": lang,
-	})
+	}
+	if h.isTaskRunning() && h.taskTokens != nil {
+		prompt, completion := h.taskTokens.Snapshot()
+		resp["token_usage"] = map[string]int{
+			"prompt_tokens":     prompt,
+			"completion_tokens": completion,
+		}
+	}
+	h.writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handlers) GetForeshadows(w http.ResponseWriter, r *http.Request) {
