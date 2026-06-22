@@ -310,9 +310,17 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "[字数控制] 当前 %d 字，要求 %d–%d 字，正在第 %d 次重新撰写...",
 		LangEN: "[Length] Draft is %d chars, need %d–%d — regenerating (attempt %d)...",
 	},
+	"log.chapter_length_adjust": {
+		LangZH: "[字数控制] 重写后仍为 %d 字（要求 %d–%d 字），正在对原文压缩/扩展...",
+		LangEN: "[Length] Still %d chars after rewrite (need %d–%d) — compressing/expanding draft...",
+	},
+	"log.chapter_length_adjust_failed": {
+		LangZH: "[字数控制] 压缩/扩展失败: %v，保留重写稿",
+		LangEN: "[Length] Compress/expand failed: %v — keeping rewritten draft",
+	},
 	"log.chapter_length_off_range": {
-		LangZH: "[字数控制] 重写后仍为 %d 字（要求 %d–%d 字），请用户在审核时处理；自动确认模式下将继续下一章",
-		LangEN: "[Length] Still %d chars after retries (need %d–%d) — please review manually; auto-confirm will continue to the next chapter",
+		LangZH: "[字数控制] 压缩/扩展后仍为 %d 字（要求 %d–%d 字），请用户在审核时处理；自动确认模式下将继续下一章",
+		LangEN: "[Length] Still %d chars after adjust (need %d–%d) — please review manually; auto-confirm will continue to the next chapter",
 	},
 	"log.summary_done": {
 		LangZH: "摘要提炼完成",

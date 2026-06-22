@@ -172,7 +172,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 			return fmt.Errorf("正文生成失败或被取消")
 		}
 		ch.Content = content
-		logger.InfoKey("log.prose_done", len([]rune(content)))
+		logger.InfoKey("log.prose_done", countProseUnits(content))
 
 		logger.StepInfo(3, 6, "正在提炼本章摘要...")
 		summary := generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, content, logger)
@@ -366,7 +366,7 @@ func ReviseChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, st
 		return fmt.Errorf("修改章节失败: %w", err)
 	}
 	ch.Content = revisedContent
-	logger.InfoKey("log.prose_revised", len([]rune(revisedContent)))
+	logger.InfoKey("log.prose_revised", countProseUnits(revisedContent))
 
 	logger.StepInfo(2, 3, "重新提炼摘要...")
 	summary := generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, ch.Content, logger)
@@ -442,7 +442,7 @@ func ReviseSpecificChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Co
 		return fmt.Errorf("修订章节失败: %w", err)
 	}
 	ch.Content = revisedContent
-	logger.InfoKey("log.prose_specific_revised", len([]rune(revisedContent)))
+	logger.InfoKey("log.prose_specific_revised", countProseUnits(revisedContent))
 
 	logger.StepInfo(2, 2, "重新提炼摘要...")
 	summary := generateChapterSummaryWithRetryLog(ctx, apiCfg, cfg, ch.Content, logger)

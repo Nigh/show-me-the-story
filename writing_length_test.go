@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCalcChapterLengthRange(t *testing.T) {
 	tests := []struct {
@@ -24,10 +27,10 @@ func TestCalcChapterLengthRange(t *testing.T) {
 
 func TestChapterLengthInRange(t *testing.T) {
 	minLen, maxLen := calcChapterLengthRange(5000)
-	if !chapterLengthInRange(string(make([]rune, 5000)), minLen, maxLen) {
-		t.Fatal("5000 runes should be in range for 5000 target")
+	if !chapterLengthInRange(strings.Repeat("字", 5000), minLen, maxLen) {
+		t.Fatal("5000 prose units should be in range for 5000 target")
 	}
-	if chapterLengthInRange(string(make([]rune, 15000)), minLen, maxLen) {
-		t.Fatal("15000 runes should be out of range for 5000 target")
+	if chapterLengthInRange(strings.Repeat("字", 15000), minLen, maxLen) {
+		t.Fatal("15000 prose units should be out of range for 5000 target")
 	}
 }

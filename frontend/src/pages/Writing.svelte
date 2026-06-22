@@ -3,6 +3,7 @@
   import { api } from '../lib/api.js';
   import { progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal, currentPage } from '../lib/stores.js';
   import { t } from '../lib/i18n/index.js';
+  import { countProseUnits } from '../lib/proseUnits.js';
   import PostProcessPanel from '../components/PostProcessPanel.svelte';
   import TaskTokenBadge from '../components/TaskTokenBadge.svelte';
 
@@ -55,9 +56,9 @@
   $: isStreamingThis = $streamingChapterIdx === $selectedChapter && $streamingContent;
   // 流式期间 $streamingContent 只含尾部窗口（性能保护），全文在生成结束后由 progress 拉取
   $: displayContent = isStreamingThis ? $streamingContent : (ch?.content || '');
-  $: chapterWordCount = ch?.content ? ch.content.replace(/\s/g, '').length : 0;
+  $: chapterWordCount = ch?.content ? countProseUnits(ch.content) : 0;
   $: showTaskTokens = $taskRunning && isCurrent;
-  $: totalWords = chapters.reduce((sum, c) => sum + (c.content ? c.content.replace(/\s/g, '').length : 0), 0);
+  $: totalWords = chapters.reduce((sum, c) => sum + (c.content ? countProseUnits(c.content) : 0), 0);
 
   $: foreshadows = p?.foreshadows || [];
   $: fsActive = foreshadows.filter(f => f.status === 'planted' || f.status === 'progressing');

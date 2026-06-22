@@ -9,7 +9,7 @@ import (
 const (
 	chapterLengthToleranceAbsolute = 1000
 	chapterLengthTolerancePercent  = 15
-	chapterGenMaxLengthAttempts    = 2
+	chapterGenMaxLengthAttempts    = 1 // initial draft + one rewrite, then compress/expand
 )
 
 // calcChapterLengthRange returns acceptable chapter prose length bounds (runes/characters).
@@ -31,7 +31,7 @@ func calcChapterLengthRange(targetWordsPerChapter int) (minLen, maxLen int) {
 }
 
 func chapterLengthInRange(content string, minLen, maxLen int) bool {
-	n := len([]rune(content))
+	n := countProseUnits(content)
 	return n >= minLen && n <= maxLen
 }
 
@@ -74,6 +74,57 @@ func finalizeChapterWritingPrompt(template, rendered string, minLen, maxLen, tar
 	return rendered
 }
 
+func adjustChapterLength(ctx context.Context, apiCfg *APIConfig, cfg *Config, content string, minLen, maxLen int, logger *LogBroadcaster) (string, error) {
+	actual := countProseUnits(content)
+	lang := cfg.Language
+	var userPrompt string
+	if actual > maxLen {
+		if NormalizeLanguage(lang) == LangEN {
+			userPrompt = fmt.Sprintf(`You are a novel editor. The chapter below is %d words but must be %d–%d words.
+Compress without changing plot beats, character actions, or key dialogue. Cut redundant description and repeated narration; do not remove core events from this chapter's outline.
+Output ONLY the full revised chapter prose.
+
+[Chapter text]
+%s`, actual, minLen, maxLen, content)
+		} else {
+			userPrompt = fmt.Sprintf(`你是小说编辑。以下章节为 %d 字，须压缩至 %d–%d 字。
+在不改变本章情节走向、人物行为与关键对话的前提下精简冗余描写与重复叙述；不得删去大纲中的核心事件。
+只输出修改后的完整正文。
+
+【章节正文】
+%s`, actual, minLen, maxLen, content)
+		}
+	} else {
+		if NormalizeLanguage(lang) == LangEN {
+			userPrompt = fmt.Sprintf(`You are a novel editor. The chapter below is %d words but must be %d–%d words.
+Expand with concrete scene, sensory detail, and dialogue without adding new plot beats beyond this chapter's outline.
+Output ONLY the full revised chapter prose.
+
+[Chapter text]
+%s`, actual, minLen, maxLen, content)
+		} else {
+			userPrompt = fmt.Sprintf(`你是小说编辑。以下章节为 %d 字，须扩展至 %d–%d 字。
+在不超出本章大纲的前提下补充具体场景、感官细节与对话，不要添加新情节线。
+只输出修改后的完整正文。
+
+【章节正文】
+%s`, actual, minLen, maxLen, content)
+		}
+	}
+
+	systemPrompt := SystemPromptFor(lang, "author_default")
+	var raw string
+	if logger != nil {
+		raw = CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
+	} else {
+		raw = CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
+	}
+	if raw == "" {
+		return "", fmt.Errorf("章节字数调整 API 调用失败或被取消")
+	}
+	return stripChapterMetaProse(raw, lang), nil
+}
+
 func generateChapterContentWithLengthControl(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, idx int, settings *ProjectSettings, extraWritingConstraints string, logger *LogBroadcaster) (string, error) {
 	snapshot := state.StoryConfigSnapshot
 	if snapshot == nil {
@@ -82,17 +133,18 @@ func generateChapterContentWithLengthControl(ctx context.Context, apiCfg *APICon
 	minLen, maxLen := calcChapterLengthRange(snapshot.TargetWordsPerChapter)
 	lang := cfg.Language
 	lengthFeedback := ""
+	var content string
 
 	for attempt := 0; attempt <= chapterGenMaxLengthAttempts; attempt++ {
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("任务已取消")
 		}
 		constraints := mergeWritingConstraints(extraWritingConstraints, lengthFeedback)
-		content := generateChapterContentStreamWithRetryLog(ctx, apiCfg, cfg, state, idx, settings, constraints, logger)
+		content = generateChapterContentStreamWithRetryLog(ctx, apiCfg, cfg, state, idx, settings, constraints, logger)
 		if content == "" {
 			return "", fmt.Errorf("正文生成失败或被取消")
 		}
-		actualLen := len([]rune(content))
+		actualLen := countProseUnits(content)
 		if chapterLengthInRange(content, minLen, maxLen) {
 			return content, nil
 		}
@@ -103,11 +155,27 @@ func generateChapterContentWithLengthControl(ctx context.Context, apiCfg *APICon
 			lengthFeedback = formatChapterLengthRetryFeedback(actualLen, minLen, maxLen, lang)
 			continue
 		}
+		break
+	}
 
+	actualLen := countProseUnits(content)
+	if logger != nil {
+		logger.WarnKey("log.chapter_length_adjust", actualLen, minLen, maxLen)
+	}
+	adjusted, err := adjustChapterLength(ctx, apiCfg, cfg, content, minLen, maxLen, logger)
+	if err != nil || adjusted == "" {
 		if logger != nil {
+			logger.WarnKey("log.chapter_length_adjust_failed", err)
 			logger.WarnKey("log.chapter_length_off_range", actualLen, minLen, maxLen)
 		}
 		return content, nil
 	}
-	return "", fmt.Errorf("正文生成失败或被取消")
+	adjustedLen := countProseUnits(adjusted)
+	if chapterLengthInRange(adjusted, minLen, maxLen) {
+		return adjusted, nil
+	}
+	if logger != nil {
+		logger.WarnKey("log.chapter_length_off_range", adjustedLen, minLen, maxLen)
+	}
+	return adjusted, nil
 }
