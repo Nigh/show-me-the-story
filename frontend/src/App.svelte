@@ -13,6 +13,7 @@
   import Relations from './pages/Relations.svelte';
   import Skills from './pages/Skills.svelte';
   import Foreshadows from './pages/Foreshadows.svelte';
+  import Memory from './pages/Memory.svelte';
   import ChatPanel from './components/ChatPanel.svelte';
   import ConfirmModal from './components/ConfirmModal.svelte';
 
@@ -148,6 +149,7 @@
           ['outline', '📝', 'nav.outline'],
           ['writing', '✍️', 'nav.writing'],
           ['foreshadows', '🔗', 'nav.foreshadows'],
+          ['memory', '🧠', 'nav.memory'],
           ['relations', '🕸️', 'nav.relations'],
           ['skills', '🧩', 'nav.skills']
         ] as [page, icon, labelKey]}
@@ -170,6 +172,8 @@
           <Writing {sendToChat} />
         {:else if $currentPage === 'foreshadows'}
           <Foreshadows />
+        {:else if $currentPage === 'memory'}
+          <Memory />
         {:else if $currentPage === 'relations'}
           <Relations />
         {:else if $currentPage === 'skills'}
