@@ -86,8 +86,8 @@ func DefaultConfigForLang(lang string) *Config {
 	cfg := &Config{
 		Language: lang,
 		Story: StoryConfig{
-			ChapterCount:          30,
-			TargetWordsPerChapter: 2500,
+		ChapterCount:          12,
+		TargetWordsPerChapter: 5000,
 		},
 		SkillConfig: &SkillConfig{
 			EnabledSkills: make(map[string]bool),
@@ -157,10 +157,10 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	if cfg.Story.ChapterCount <= 0 {
-		cfg.Story.ChapterCount = 30
+		cfg.Story.ChapterCount = 12
 	}
 	if cfg.Story.TargetWordsPerChapter <= 0 {
-		cfg.Story.TargetWordsPerChapter = 2500
+		cfg.Story.TargetWordsPerChapter = 5000
 	}
 
 	cfg.Language = NormalizeLanguage(cfg.Language)
