@@ -195,6 +195,9 @@ func callAgentAPI(ctx context.Context, apiCfg *APIConfig, messages []Message, on
 		if err2 != nil {
 			return err
 		}
+		if result == "" {
+			return fmt.Errorf("API 返回空响应: %v", err)
+		}
 		if onChunk != nil {
 			onChunk(result)
 		}
@@ -496,6 +499,12 @@ func parseToolCall(content string) *ToolCall {
 		if tc := parseToolCallFromJSON(inner); tc != nil {
 			return tc
 		}
+		// JSON 可能被截断（缺尾部 }}），尝试补全闭括号后解析
+		if repaired := repairTruncatedJSON(inner); repaired != inner {
+			if tc := parseToolCallFromJSON(repaired); tc != nil {
+				return tc
+			}
+		}
 		if tc := parseToolCallJSON(inner); tc != nil {
 			return tc
 		}
@@ -653,10 +662,28 @@ func extractJSON(content string) string {
 	}
 
 	depth := 0
+	inString := false
+	escaped := false
 	for i := start; i < len(content); i++ {
-		if content[i] == '{' {
+		c := content[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		if c == '{' {
 			depth++
-		} else if content[i] == '}' {
+		} else if c == '}' {
 			depth--
 			if depth == 0 {
 				return content[start : i+1]
@@ -665,6 +692,69 @@ func extractJSON(content string) string {
 	}
 
 	return ""
+}
+
+// repairTruncatedJSON 尝试补全被截断的 JSON 字符串。
+// 当 AI 响应被流式截断时，JSON 可能缺少结尾的 }} 和未闭合的字符串。
+// 本函数统计未闭合的花括号/方括号/字符串，追加对应闭字符后返回。
+func repairTruncatedJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || s[0] != '{' {
+		return s
+	}
+	// 若原样可解析，直接返回
+	var tmp interface{}
+	if json.Unmarshal([]byte(s), &tmp) == nil {
+		return s
+	}
+
+	depthBrace := 0
+	depthBracket := 0
+	inString := false
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch c {
+		case '{':
+			depthBrace++
+		case '}':
+			depthBrace--
+		case '[':
+			depthBracket++
+		case ']':
+			depthBracket--
+		}
+	}
+
+	suffix := ""
+	if inString {
+		suffix += `"`
+	}
+	for i := 0; i < depthBracket; i++ {
+		suffix += "]"
+	}
+	for i := 0; i < depthBrace; i++ {
+		suffix += "}"
+	}
+	if suffix == "" {
+		return s
+	}
+	return s + suffix
 }
 
 func executeTool(call *ToolCall, tools []Tool, ctx *AgentContext) (string, string, []string) {
