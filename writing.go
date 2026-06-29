@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -686,8 +687,166 @@ func generateChapterFactCheckWithRetryLog(ctx context.Context, apiCfg *APIConfig
 	}
 }
 
+// quoteLineRegexp 匹配修改意见中的引用行：以 '> ' 开头（markdown 引用块语法）。
+// 用户在前端框选原文后点击「引用」按钮，前端自动把选中文字以 '> ' 前缀插入修改意见输入框。
+var quoteLineRegexp = regexp.MustCompile(`(?m)^[ \t]*>[ \t]?(.+?)\s*$`)
+
+// errSegmentFallback 表示局部修订无法完成（如引用句在原文找不到、AI 输出段落数不匹配），
+// 调用方应回退到整章修订流程。
+var errSegmentFallback = errors.New("segment revision unavailable, fallback to full chapter revision")
+
+// extractQuotedSentences 从修改意见中提取以 '> ' 开头的引用行。
+// 返回去重保持顺序的引用句列表，以及去掉引用行后的"纯修改意见"。
+// 若没有引用行，返回 nil 和原 feedback。
+func extractQuotedSentences(feedback string) (quotes []string, cleanFeedback string) {
+	matches := quoteLineRegexp.FindAllStringSubmatch(feedback, -1)
+	if len(matches) == 0 {
+		return nil, feedback
+	}
+	seen := make(map[string]bool)
+	for _, m := range matches {
+		q := strings.TrimSpace(m[1])
+		if q == "" || seen[q] {
+			continue
+		}
+		seen[q] = true
+		quotes = append(quotes, q)
+	}
+	if len(quotes) == 0 {
+		return nil, feedback
+	}
+	cleanFeedback = strings.TrimSpace(quoteLineRegexp.ReplaceAllString(feedback, ""))
+	return quotes, cleanFeedback
+}
+
+// findParagraphsContaining 在章节正文中找到包含任一引用句的自然段。
+// 段落优先按双换行切分；若原文不含空行则按单换行切分。
+// 返回升序去重的匹配段索引和段落切片。若任一引用句在原文中找不到匹配段，ok=false。
+func findParagraphsContaining(content string, quotes []string) (matchedIdx []int, paragraphs []string, ok bool) {
+	paragraphs = strings.Split(content, "\n\n")
+	if len(paragraphs) <= 1 && strings.Contains(content, "\n") {
+		paragraphs = strings.Split(content, "\n")
+	}
+	matchedSet := make(map[int]bool)
+	for _, q := range quotes {
+		found := -1
+		for i, p := range paragraphs {
+			if strings.Contains(p, q) {
+				found = i
+				break
+			}
+		}
+		if found == -1 {
+			return nil, nil, false
+		}
+		matchedSet[found] = true
+	}
+	for i := range paragraphs {
+		if matchedSet[i] {
+			matchedIdx = append(matchedIdx, i)
+		}
+	}
+	return matchedIdx, paragraphs, true
+}
+
+// trimEmptyEnds 去除切片首尾的空白段（仅含空白字符的元素）。
+func trimEmptyEnds(paras []string) []string {
+	start, end := 0, len(paras)
+	for start < end && strings.TrimSpace(paras[start]) == "" {
+		start++
+	}
+	for end > start && strings.TrimSpace(paras[end-1]) == "" {
+		end--
+	}
+	return paras[start:end]
+}
+
+// reviseChapterSegment 对章节中包含引用句的自然段做局部最小化修订。
+// 仅重写匹配段，其余正文原样保留。返回新的整章正文。
+// 若引用句在原文找不到、或 AI 输出段落数与匹配段数不一致，返回 errSegmentFallback。
+func reviseChapterSegment(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, chapterIdx int, quotes []string, cleanFeedback string, settings *ProjectSettings, logger *LogBroadcaster) (string, error) {
+	ch := state.Chapters[chapterIdx]
+	lang := cfg.Language
+
+	matchedIdx, paragraphs, ok := findParagraphsContaining(ch.Content, quotes)
+	if !ok {
+		return "", errSegmentFallback
+	}
+	matchedParas := make([]string, 0, len(matchedIdx))
+	for _, i := range matchedIdx {
+		matchedParas = append(matchedParas, paragraphs[i])
+	}
+	segmentOriginal := strings.Join(matchedParas, "\n\n")
+	quotedText := strings.Join(quotes, "\n")
+
+	feedbackForAI := cleanFeedback
+	if strings.TrimSpace(feedbackForAI) == "" {
+		if NormalizeLanguage(lang) == LangEN {
+			feedbackForAI = "The user quoted this passage but gave no specific instruction. Apply minimal polish to the passage (tighten wording, sharpen sensory detail) and keep all plot beats intact."
+		} else {
+			feedbackForAI = "用户引用了这段原文但未说明具体修改意见，请对该段做最小化润色（精简措辞、强化感官细节），保留全部情节进展。"
+		}
+	}
+
+	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
+	characterContext := buildCharacterContextForLang(settings, ch.Outline, lang)
+	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
+
+	userPrompt := RenderPrompt(cfg.Prompts.ChapterSegmentRevision, map[string]string{
+		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
+		"ChapterTitle":     ch.Title,
+		"CorePrompt":       state.CorePrompt,
+		"HistorySummary":   historySummary,
+		"WritingStyle":     cfg.Story.WritingStyle,
+		"WritingPOV":       cfg.Story.WritingPOV,
+		"CharacterContext": characterContext,
+		"WorldviewContext": worldviewContext,
+		"QuotedText":       quotedText,
+		"SegmentOriginal":  segmentOriginal,
+		"UserFeedback":     feedbackForAI,
+	})
+	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterSegmentRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
+
+	systemPrompt := state.CorePrompt
+	if systemPrompt == "" {
+		systemPrompt = SystemPromptFor(lang, "author_default")
+	}
+	systemPrompt += SystemPromptFor(lang, "chapter_revision_suffix")
+
+	rawResp := CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
+	if rawResp == "" {
+		return "", fmt.Errorf("局部修订 API 调用失败或被取消")
+	}
+	newSegment := stripChapterMetaProse(rawResp, lang)
+
+	newParas := trimEmptyEnds(strings.Split(newSegment, "\n\n"))
+	if len(newParas) != len(matchedParas) {
+		return "", errSegmentFallback
+	}
+	out := make([]string, len(paragraphs))
+	copy(out, paragraphs)
+	for k, i := range matchedIdx {
+		out[i] = newParas[k]
+	}
+	return strings.Join(out, "\n\n"), nil
+}
+
 // reviseChapterContentStream 基于原文做最小化修订（流式）。
 func reviseChapterContentStream(ctx context.Context, apiCfg *APIConfig, cfg *Config, state *Progress, chapterIdx int, userFeedback string, settings *ProjectSettings, logger *LogBroadcaster) (string, error) {
+	// 局部修订分支：用户在修改意见中用 '> ' 引用了原文片段时，
+	// 只重写引用句所在自然段，其余正文原样保留；失败则回退到整章修订。
+	if quotes, cleanFeedback := extractQuotedSentences(userFeedback); len(quotes) > 0 {
+		logger.InfoKey("log.chapter_segment_revising", len(quotes))
+		newContent, err := reviseChapterSegment(ctx, apiCfg, cfg, state, chapterIdx, quotes, cleanFeedback, settings, logger)
+		if err == nil {
+			return newContent, nil
+		}
+		if !errors.Is(err, errSegmentFallback) {
+			return "", err
+		}
+		logger.InfoKey("log.chapter_segment_fallback")
+	}
+
 	ch := state.Chapters[chapterIdx]
 	lang := cfg.Language
 

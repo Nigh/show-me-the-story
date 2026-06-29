@@ -284,6 +284,10 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "项目「%s」创建成功",
 		LangEN: "Project \"%s\" created",
 	},
+	"log.project_imported": {
+		LangZH: "项目「%s」导入成功（模式: %s）",
+		LangEN: "Project \"%s\" imported successfully (mode: %s)",
+	},
 
 	// ---- Writing pipeline logs ----
 	"log.chapter_start": {
@@ -397,6 +401,14 @@ var messageCatalog = map[string]map[string]string{
 	"log.prose_specific_revised": {
 		LangZH: "正文修订完毕，共 %d 字",
 		LangEN: "Targeted revision complete — %d characters",
+	},
+	"log.chapter_segment_revising": {
+		LangZH: "检测到 %d 处原文引用，正在定向修订对应自然段...",
+		LangEN: "Detected %d quoted passage(s) — revising only the matched paragraph(s)...",
+	},
+	"log.chapter_segment_fallback": {
+		LangZH: "局部修订无法完成（引用片段在原文未精确定位或段落数不匹配），回退到整章修订",
+		LangEN: "Local revision unavailable (quoted passage not located or paragraph count mismatch) — falling back to full-chapter revision",
 	},
 	"log.chapter_specific_done": {
 		LangZH: "第 %d 章定向修订完成（其余章节未受影响）。",
