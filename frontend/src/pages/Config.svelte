@@ -38,6 +38,28 @@
   let localApiCfg = { base_url: '', model: '', api_key: '', http_timeout_seconds: 300, max_tokens: 0, context_budget_tokens: 900000 };
   let localStoryCfg = { type: '', title: '', chapter_count: 30, target_words_per_chapter: 2500, writing_style: '', writing_pov: '', story_synopsis: '' };
   let testingApi = false;
+  let selectedProvider = 'custom';
+
+  const apiProviders = [
+    { id: 'custom', label: '自定义', base_url: '', model: '' },
+    { id: 'openai', label: 'OpenAI', base_url: 'https://api.openai.com/v1/', model: 'gpt-4o' },
+    { id: 'anthropic', label: 'Anthropic', base_url: 'https://api.anthropic.com/v1/', model: 'claude-sonnet-4-20250514' },
+    { id: 'google', label: 'Google Gemini', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-2.5-pro' },
+    { id: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.com/v1/', model: 'deepseek-chat' },
+    { id: 'zhipu', label: '智谱AI', base_url: 'https://open.bigmodel.cn/api/paas/v4/', model: 'glm-4' },
+    { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1/', model: 'qwen-plus' },
+    { id: 'doubao', label: '豆包', base_url: 'https://ark.cn-beijing.volces.com/api/v3/', model: 'doubao-pro-32k' },
+    { id: 'moonshot', label: '月之暗面', base_url: 'https://api.moonshot.cn/v1/', model: 'moonshot-v1-8k' },
+    { id: 'siliconflow', label: '硅基流动', base_url: 'https://api.siliconflow.cn/v1/', model: 'deepseek-ai/DeepSeek-V3' },
+  ];
+
+  function onProviderChange() {
+    const p = apiProviders.find(x => x.id === selectedProvider);
+    if (p && p.id !== 'custom') {
+      localApiCfg.base_url = p.base_url;
+      localApiCfg.model = p.model;
+    }
+  }
 
   let apiCfgSnapshot = '';
   let storyCfgSnapshot = '';
@@ -369,6 +391,14 @@
       <div class="card-body p-4 gap-2">
         <h3 class="card-title text-base">{$t('config.api.title')}</h3>
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+          <div class="col-span-2">
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.provider')}</span>
+            <select class="select select-sm w-full" bind:value={selectedProvider} on:change={onProviderChange} disabled={$taskRunning || testingApi}>
+              {#each apiProviders as p}
+                <option value={p.id}>{p.label}</option>
+              {/each}
+            </select>
+          </div>
           <div class="col-span-2">
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.baseUrl')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localApiCfg.base_url} placeholder="https://api.example.com/v1/" disabled={$taskRunning || testingApi} />
