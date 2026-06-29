@@ -8,6 +8,14 @@
   let newProjectLang = 'zh';
   let creating = false;
 
+  // 导入工程相关状态
+  let showImportDialog = false;
+  let importSourcePath = '';
+  let importName = '';
+  let importMode = 'copy'; // 'copy' | 'link'
+  let importOnConflict = 'error'; // 'error' | 'rename' | 'overwrite'
+  let importing = false;
+
   onMount(loadProjects);
 
   function phaseLabel(p) {
@@ -85,6 +93,48 @@
       createProject();
     }
   }
+
+  function openImportDialog() {
+    showImportDialog = true;
+    importSourcePath = '';
+    importName = '';
+    importMode = 'copy';
+    importOnConflict = 'error';
+  }
+
+  function closeImportDialog() {
+    showImportDialog = false;
+  }
+
+  async function importProject() {
+    if (!importSourcePath.trim()) {
+      addToast($t('projects.import.needPath'), 'error');
+      return;
+    }
+
+    importing = true;
+    try {
+      const result = await api('POST', '/api/projects/import', {
+        source_path: importSourcePath.trim(),
+        name: importName.trim() || undefined,
+        mode: importMode,
+        on_conflict: importOnConflict
+      });
+
+      await loadProjects();
+      addToast($t('projects.import.success', { name: result.name }), 'success');
+      closeImportDialog();
+
+      // 自动切换到导入的工程
+      if (result.name) {
+        await selectProject(result.name);
+      }
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      importing = false;
+    }
+  }
 </script>
 
 <div class="flex items-center justify-center min-h-[60vh]">
@@ -139,6 +189,23 @@
           </button>
         </div>
         <p class="text-xs text-base-content/40 mt-1">{$t('projects.create.langHint')}</p>
+      </div>
+    </div>
+
+    <!-- Import project -->
+    <div class="card bg-base-200 shadow-sm">
+      <div class="card-body p-4">
+        <h3 class="card-title text-sm">{$t('projects.import')}</h3>
+        <p class="text-sm text-base-content/70">{$t('projects.import.hint')}</p>
+        <div class="card-actions justify-end">
+          <button
+            class="btn btn-secondary btn-sm"
+            on:click={openImportDialog}
+            disabled={$taskRunning}
+          >
+            {$t('projects.import.button')}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -197,3 +264,87 @@
     </div>
   </div>
 </div>
+
+{#if showImportDialog}
+  <dialog class="modal modal-open" open>
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">{$t('projects.import.dialog.title')}</h3>
+      <div class="py-4 space-y-4">
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">{$t('projects.import.dialog.sourcePath')}</span>
+          </label>
+          <input
+            type="text"
+            bind:value={importSourcePath}
+            placeholder="C:\path\to\old\project"
+            class="input input-bordered w-full"
+            disabled={importing}
+          />
+        </div>
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">{$t('projects.import.dialog.projectName')}</span>
+          </label>
+          <input
+            type="text"
+            bind:value={importName}
+            placeholder={$t('projects.import.dialog.projectNamePlaceholder')}
+            class="input input-bordered w-full"
+            disabled={importing}
+          />
+        </div>
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">{$t('projects.import.dialog.importMode')}</span>
+          </label>
+          <select bind:value={importMode} class="select select-bordered w-full" disabled={importing}>
+            <option value="copy">{$t('projects.import.dialog.modeCopy')}</option>
+            <option value="link">{$t('projects.import.dialog.modeLink')}</option>
+          </select>
+          <label class="label">
+            <span class="label-text-alt">
+              {#if importMode === 'copy'}
+                {$t('projects.import.dialog.modeCopyHint')}
+              {:else}
+                {$t('projects.import.dialog.modeLinkHint')}
+              {/if}
+            </span>
+          </label>
+        </div>
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">{$t('projects.import.dialog.conflictStrategy')}</span>
+          </label>
+          <select bind:value={importOnConflict} class="select select-bordered w-full" disabled={importing}>
+            <option value="error">{$t('projects.import.dialog.conflictError')}</option>
+            <option value="rename">{$t('projects.import.dialog.conflictRename')}</option>
+            <option value="overwrite">{$t('projects.import.dialog.conflictOverwrite')}</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-action">
+        <button
+          class="btn"
+          on:click={closeImportDialog}
+          disabled={importing}
+        >
+          {$t('common.cancel')}
+        </button>
+        <button
+          class="btn btn-primary"
+          on:click={importProject}
+          disabled={importing || !importSourcePath.trim()}
+        >
+          {#if importing}
+            <span class="loading loading-spinner"></span>
+          {/if}
+          {$t('projects.import.dialog.confirm')}
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button on:click={closeImportDialog} disabled={importing}>close</button>
+    </form>
+  </dialog>
+{/if}

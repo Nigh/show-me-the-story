@@ -32,6 +32,7 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	mux.HandleFunc("GET /api/projects/current", h.GetProjectCurrent)
 	mux.HandleFunc("POST /api/projects/select", h.PostProjectSelect)
 	mux.HandleFunc("DELETE /api/projects/{name}", h.DeleteProject)
+	mux.HandleFunc("POST /api/projects/import", h.PostProjectImport)
 
 	// Version endpoint (global, always available)
 	mux.HandleFunc("GET /api/version", h.GetVersion)
@@ -350,6 +351,183 @@ func (h *Handlers) DeleteProject(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.InfoKey("log.project_deleted", name)
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// PostProjectImport 从外部目录导入工程
+func (h *Handlers) PostProjectImport(w http.ResponseWriter, r *http.Request) {
+	if h.isTaskRunning() {
+		h.writeErrorReq(w, r, http.StatusConflict, "import_project_locked")
+		return
+	}
+
+	var req struct {
+		SourcePath   string `json:"source_path"`
+		Name         string `json:"name"`
+		Mode         string `json:"mode"`          // "copy" | "link"
+		OnConflict   string `json:"on_conflict"`   // "overwrite" | "rename" | "error"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+
+	// 验证源路径
+	if req.SourcePath == "" {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_source_path")
+		return
+	}
+	sourceInfo, err := os.Stat(req.SourcePath)
+	if err != nil || !sourceInfo.IsDir() {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "source_not_found_or_not_dir")
+		return
+	}
+
+	// 验证是否为有效工程（必须有 config.json 和 progress.json）
+	configPath := filepath.Join(req.SourcePath, "config.json")
+	progressPath := filepath.Join(req.SourcePath, "progress.json")
+	if _, err := os.Stat(configPath); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_project_no_config")
+		return
+	}
+	if _, err := os.Stat(progressPath); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_project_no_progress")
+		return
+	}
+
+	// 验证工程名
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		// 默认使用源目录名
+		name = filepath.Base(req.SourcePath)
+	}
+	for _, c := range name {
+		if c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "project_name_invalid_chars")
+			return
+		}
+	}
+
+	targetDir := filepath.Join(h.storysDir(), name)
+
+	// 处理冲突
+	if _, err := os.Stat(targetDir); err == nil {
+		// 目录已存在
+		switch req.OnConflict {
+		case "error":
+			h.writeErrorReq(w, r, http.StatusConflict, "project_exists")
+			return
+		case "rename":
+			// 自动重命名：name_1, name_2, ...
+			for i := 1; ; i++ {
+				newName := fmt.Sprintf("%s_%d", name, i)
+				targetDir = filepath.Join(h.storysDir(), newName)
+				if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+					name = newName
+					break
+				}
+			}
+		case "overwrite":
+			// 删除旧目录
+			if err := os.RemoveAll(targetDir); err != nil {
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "overwrite_failed", err.Error())
+				return
+			}
+		default:
+			h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_on_conflict")
+			return
+		}
+	}
+
+	// 执行导入
+	mode := req.Mode
+	if mode == "" {
+		mode = "copy"
+	}
+
+	switch mode {
+	case "copy":
+		if err := copyDir(req.SourcePath, targetDir); err != nil {
+			h.writeErrorReq(w, r, http.StatusInternalServerError, "copy_failed", err.Error())
+			return
+		}
+	case "link":
+		// 创建软链接
+		if err := os.Symlink(req.SourcePath, targetDir); err != nil {
+			h.writeErrorReq(w, r, http.StatusInternalServerError, "symlink_failed", err.Error())
+			return
+		}
+	default:
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_import_mode")
+		return
+	}
+
+	h.logger.InfoKey("log.project_imported", name, req.SourcePath, mode)
+	h.writeJSON(w, http.StatusOK, map[string]string{
+		"name": name,
+		"mode": mode,
+		"status": "imported",
+	})
+}
+
+// copyDir 递归复制目录
+func copyDir(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// 跳过符号链接，避免循环
+			if entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// copyFile 复制单个文件
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	srcInfo, err := srcFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = dstFile.ReadFrom(srcFile)
+	return err
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
