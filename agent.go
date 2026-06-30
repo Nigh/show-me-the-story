@@ -106,7 +106,7 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 		}
 
 		fullResp := ""
-		err := callAgentAPI(goCtx, ctx.APICfg, messages, func(chunk string) {
+		finishReason, err := callAgentAPI(goCtx, ctx.APICfg, messages, func(chunk string) {
 			fullResp += chunk
 		})
 		if err != nil {
@@ -117,10 +117,17 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 		}
 
 		if ctx.Logger != nil {
-			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: API 响应 %d 字符", step+1, len(fullResp)))
+			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: API 响应 %d 字符 (finish_reason=%s)", step+1, len(fullResp), finishReason))
 		}
 
 		toolCall := parseToolCall(fullResp)
+
+		if isAgentOutputTruncated(finishReason, fullResp, toolCall) {
+			if ctx.Logger != nil {
+				ctx.Logger.WarnKey("log.agent_output_truncated", agentEffectiveMaxTokens(ctx.APICfg))
+			}
+			return "", history, agentErr(ctx, "agent.output_truncated", agentEffectiveMaxTokens(ctx.APICfg))
+		}
 
 		if toolCall == nil {
 			if ctx.Logger != nil {
@@ -178,7 +185,7 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 	return agentMsg(ctx, "agent.max_steps"), history, nil
 }
 
-func callAgentAPI(ctx context.Context, apiCfg *APIConfig, messages []Message, onChunk func(string)) error {
+func callAgentAPI(ctx context.Context, apiCfg *APIConfig, messages []Message, onChunk func(string)) (finishReason string, err error) {
 	// Agent 调用需要足够的输出 token 来生成工具调用 JSON。
 	// 如果用户未设置或设置过低，使用 8192 作为下限。
 	agentCfg := *apiCfg
@@ -186,20 +193,54 @@ func callAgentAPI(ctx context.Context, apiCfg *APIConfig, messages []Message, on
 		agentCfg.MaxTokens = 8192
 	}
 
-	_, err := CallAPIStreamMessages(ctx, &agentCfg, messages, onChunk)
-	if err != nil {
-		if ctx.Err() != nil {
-			return err
-		}
-		result, err2 := CallAPIMessages(ctx, &agentCfg, messages)
-		if err2 != nil {
-			return err
-		}
-		if onChunk != nil {
-			onChunk(result)
-		}
+	result, err := CallAPIStreamMessages(ctx, &agentCfg, messages, onChunk)
+	if err == nil {
+		return result.FinishReason, nil
 	}
-	return nil
+	if ctx.Err() != nil {
+		return "", err
+	}
+	syncResult, err2 := callAPIMessagesSync(ctx, &agentCfg, messages)
+	if err2 != nil {
+		return "", err
+	}
+	if syncResult.Content == "" {
+		return "", fmt.Errorf("API 返回空响应: %v", err)
+	}
+	if onChunk != nil {
+		onChunk(syncResult.Content)
+	}
+	return syncResult.FinishReason, nil
+}
+
+// agentEffectiveMaxTokens returns the max_tokens floor used for Agent API calls.
+func agentEffectiveMaxTokens(apiCfg *APIConfig) int {
+	if apiCfg == nil || apiCfg.MaxTokens < 8192 {
+		return 8192
+	}
+	return apiCfg.MaxTokens
+}
+
+// hasUnclosedToolCall reports whether content has <tool_call> without a matching close tag.
+func hasUnclosedToolCall(content string) bool {
+	idx := strings.Index(content, "<tool_call>")
+	if idx == -1 {
+		return false
+	}
+	after := content[idx+len("<tool_call>"):]
+	return !strings.Contains(after, "</tool_call>")
+}
+
+// isAgentOutputTruncated detects max_tokens truncation that would make tool-call parsing unsafe.
+// ponytail: relies on provider finish_reason=="length"; no JSON repair / silent partial args.
+func isAgentOutputTruncated(finishReason, content string, tc *ToolCall) bool {
+	if finishReason != "length" {
+		return false
+	}
+	if !strings.Contains(content, "<tool_call>") {
+		return false
+	}
+	return hasUnclosedToolCall(content) || tc == nil
 }
 
 func buildAgentSystemPrompt(ctx *AgentContext, toolDesc string) string {
@@ -491,7 +532,7 @@ func parseToolCall(content string) *ToolCall {
 
 	endIdx := strings.Index(content[idx:], "</tool_call>")
 	if endIdx == -1 {
-		// 标签未闭合（响应被截断），尝试从标签内解析不完整的 JSON
+		// 标签未闭合：可能是流式截断；不在此修复 JSON，由 finish_reason==length 时显式报错。
 		inner := strings.TrimSpace(content[idx+len("<tool_call>"):])
 		if tc := parseToolCallFromJSON(inner); tc != nil {
 			return tc
@@ -499,7 +540,6 @@ func parseToolCall(content string) *ToolCall {
 		if tc := parseToolCallJSON(inner); tc != nil {
 			return tc
 		}
-		// 最后 fallback
 		if tc := parseToolCallFunctionName(content); tc != nil {
 			return tc
 		}
@@ -646,25 +686,54 @@ func parseToolCallFromJSON(jsonStr string) *ToolCall {
 	return &ToolCall{Name: name, Arguments: args}
 }
 
+// ponytail: byte walk outside JSON strings only; truncating mid-\\ or \\u may miscount.
+// Used by extractJSON for string-aware object boundary detection.
+func walkJSONStructure(s string, onStruct func(i int, c byte)) (inString bool) {
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if c == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		onStruct(i, c)
+	}
+	return inString
+}
+
 func extractJSON(content string) string {
 	start := strings.Index(content, "{")
 	if start == -1 {
 		return ""
 	}
-
+	sub := content[start:]
 	depth := 0
-	for i := start; i < len(content); i++ {
-		if content[i] == '{' {
+	end := -1
+	walkJSONStructure(sub, func(i int, c byte) {
+		if c == '{' {
 			depth++
-		} else if content[i] == '}' {
+		} else if c == '}' {
 			depth--
 			if depth == 0 {
-				return content[start : i+1]
+				end = i + 1
 			}
 		}
+	})
+	if end == -1 {
+		return ""
 	}
-
-	return ""
+	return content[start : start+end]
 }
 
 func executeTool(call *ToolCall, tools []Tool, ctx *AgentContext) (string, string, []string) {

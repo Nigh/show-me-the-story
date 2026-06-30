@@ -272,6 +272,10 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "助理回复失败: %v",
 		LangEN: "Assistant reply failed: %v",
 	},
+	"log.agent_output_truncated": {
+		LangZH: "助理输出因 max_tokens=%d 被截断，工具调用已中止",
+		LangEN: "Assistant output truncated at max_tokens=%d — tool call aborted",
+	},
 	"log.chat_done": {
 		LangZH: "助理回复完成",
 		LangEN: "Assistant reply complete.",
@@ -283,6 +287,10 @@ var messageCatalog = map[string]map[string]string{
 	"log.project_created": {
 		LangZH: "项目「%s」创建成功",
 		LangEN: "Project \"%s\" created",
+	},
+	"log.project_imported": {
+		LangZH: "项目「%s」导入成功（模式: %s）",
+		LangEN: "Project \"%s\" imported successfully (mode: %s)",
 	},
 
 	// ---- Writing pipeline logs ----
@@ -397,6 +405,14 @@ var messageCatalog = map[string]map[string]string{
 	"log.prose_specific_revised": {
 		LangZH: "正文修订完毕，共 %d 字",
 		LangEN: "Targeted revision complete — %d characters",
+	},
+	"log.chapter_segment_revising": {
+		LangZH: "检测到 %d 处原文引用，正在定向修订对应自然段...",
+		LangEN: "Detected %d quoted passage(s) — revising only the matched paragraph(s)...",
+	},
+	"log.chapter_segment_fallback": {
+		LangZH: "局部修订无法完成（引用片段在原文未精确定位或段落数不匹配），回退到整章修订",
+		LangEN: "Local revision unavailable (quoted passage not located or paragraph count mismatch) — falling back to full-chapter revision",
 	},
 	"log.chapter_specific_done": {
 		LangZH: "第 %d 章定向修订完成（其余章节未受影响）。",
@@ -571,6 +587,10 @@ var messageCatalog = map[string]map[string]string{
 	"agent.api_failed": {
 		LangZH: "Agent API 调用失败: %v",
 		LangEN: "Agent API call failed: %v",
+	},
+	"agent.output_truncated": {
+		LangZH: "助理回复因输出 token 上限（max_tokens=%d）被截断，工具调用未完成。请在配置页增大 max_tokens，或缩短修改意见后点击「重试」重新发送。",
+		LangEN: "Assistant output was cut off at the max_tokens limit (%d). The tool call did not complete. Increase max_tokens on the Config page, shorten your message, then click Retry to resend.",
 	},
 	"agent.max_steps": {
 		LangZH: "已达到最大工具调用步骤限制。",

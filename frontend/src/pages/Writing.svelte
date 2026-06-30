@@ -102,7 +102,70 @@
   let reviseFeedback = '';
   let showRevise = false;
   let contentEl;
+  let reviseTextareaEl;
   let hasPolishSkills = false;
+
+  // 框选原文后的浮动「引用」按钮：null 表示隐藏
+  let quotePopover = null;
+
+  function checkContentSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) { quotePopover = null; return; }
+    const text = sel.toString().trim();
+    if (!text || text.length < 2) { quotePopover = null; return; }
+    const range = sel.getRangeAt(0);
+    if (!contentEl || !contentEl.contains(range.commonAncestorContainer)) {
+      quotePopover = null; return;
+    }
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) { quotePopover = null; return; }
+    quotePopover = {
+      text,
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+    };
+  }
+
+  function hideQuotePopover() { quotePopover = null; }
+
+  function insertQuoteToFeedback() {
+    if (!quotePopover) return;
+    const text = quotePopover.text;
+    const quoteLine = `> ${text}`;
+    // 若用户已在修改意见里写过内容，先确保引用行与原内容之间有空行分隔
+    const current = reviseFeedback;
+    let insertion;
+    if (current === '') {
+      insertion = quoteLine + '\n';
+    } else if (current.endsWith('\n')) {
+      insertion = quoteLine + '\n';
+    } else {
+      insertion = '\n' + quoteLine + '\n';
+    }
+    // 优先在 textarea 光标位置插入；否则追加到末尾
+    const ta = reviseTextareaEl;
+    if (ta && document.activeElement === ta && ta.selectionStart != null) {
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      reviseFeedback = current.slice(0, start) + insertion + current.slice(end);
+      requestAnimationFrame(() => {
+        ta.focus();
+        const pos = start + insertion.length;
+        ta.setSelectionRange(pos, pos);
+      });
+    } else {
+      reviseFeedback = current + insertion;
+      requestAnimationFrame(() => {
+        if (ta) { ta.focus(); const pos = reviseFeedback.length; ta.setSelectionRange(pos, pos); }
+      });
+    }
+    showRevise = true;
+    addToast($t('writing.toasts.quoteInserted', { n: text.length }), 'success');
+    // 清空选区并隐藏按钮
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    hideQuotePopover();
+  }
 
   // 流式输出时自动滚动到底部：合并到 rAF，每帧最多一次，避免高频强制重排
   let scrollPending = false;
@@ -120,6 +183,7 @@
     selectedChapter.set(i);
     showRevise = false;
     reviseFeedback = '';
+    hideQuotePopover();
   }
 
   async function doGenerate() {
@@ -363,12 +427,24 @@
                     {$t('writing.chapter.streamHint')}
                   </div>
                 {/if}
-                <div bind:this={contentEl} class="bg-base-300 rounded-lg p-4 text-[15px] chapter-content reading-area max-h-[calc(100vh-420px)] min-h-[200px] overflow-y-auto">
+                <!-- svelte-ignore a11y-no-static-element-interactions -->
+                <div bind:this={contentEl} class="bg-base-300 rounded-lg p-4 text-[15px] chapter-content reading-area max-h-[calc(100vh-420px)] min-h-[200px] overflow-y-auto"
+                     on:mouseup={checkContentSelection}
+                     on:scroll={hideQuotePopover}>
                   {displayContent}
                   {#if isStreamingThis}
                     <span class="inline-block w-2 h-4 bg-primary/70 animate-pulse ml-0.5 align-text-bottom"></span>
                   {/if}
                 </div>
+                {#if quotePopover}
+                  <button type="button"
+                    class="fixed z-50 btn btn-primary btn-xs shadow-lg"
+                    style="left: {quotePopover.x}px; top: {quotePopover.y}px; transform: translate(-50%, -100%); margin-top: -6px;"
+                    on:click={insertQuoteToFeedback}
+                    title={$t('writing.revise.quoteBtn.tip')}>
+                    {$t('writing.revise.quoteBtn')}
+                  </button>
+                {/if}
               {:else if ch.status === 'pending'}
                 <div class="bg-base-300 rounded-lg p-6 text-center text-sm text-base-content/40">
                   {#if isCurrent}
@@ -406,16 +482,18 @@
                   <textarea
                     class="textarea textarea-sm w-full h-20 text-sm"
                     bind:value={reviseFeedback}
+                    bind:this={reviseTextareaEl}
                     placeholder={$t('writing.revise.placeholder')}
                     disabled={$taskRunning}
                   ></textarea>
-                  <div class="flex justify-between items-center">
+                  <div class="flex justify-between items-center gap-2 flex-wrap">
                     <span class="text-xs text-base-content/40">
                       {#if !(isCurrent && ch.status === 'review')}
                         {$t('writing.revise.hintTargeted')}
                       {:else}
                         {$t('writing.revise.hintCurrent')}
                       {/if}
+                      <span class="ml-1 text-base-content/30">· {$t('writing.revise.quoteHint')}</span>
                     </span>
                     <div class="flex gap-2">
                       <button class="btn btn-ghost btn-xs" on:click={() => { showRevise = false; reviseFeedback = ''; }}>{$t('common.cancel')}</button>

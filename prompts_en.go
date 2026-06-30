@@ -93,6 +93,35 @@ Revision rules (strict):
 4. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
 5. Output the full revised chapter prose (including the unchanged portions). No chapter title, chapter number, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", "To be continued", "Here is the revised chapter", "Below is the full text". Do not add any preamble before the prose or any summary after it.`,
 
+	ChapterSegmentRevision: `You are the author of this novel. The user highlighted a passage in chapter {{.ChapterNum}} "{{.ChapterTitle}}" and gave revision feedback. Revise ONLY that passage; the rest of the chapter will be left untouched.
+
+[Core writing prompt]
+{{.CorePrompt}}
+
+[Story-so-far]
+{{.HistorySummary}}
+
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+{{.CharacterContext}}
+{{.WorldviewContext}}
+[Quoted passage from the user]
+{{.QuotedText}}
+
+[Passage to revise]
+{{.SegmentOriginal}}
+
+[Revision feedback]
+{{.UserFeedback}}
+
+Revision rules (strict):
+1. This is a "targeted local revision". Rewrite ONLY the [Passage to revise] above; do not output any other paragraphs of the chapter.
+2. Preserve the plot beats, character actions, and key information in the original passage. Make only the changes the feedback requires; do not expand, cut, or redirect the plot unless the feedback explicitly asks.
+3. The revised passage must stay consistent with the story-so-far and the unchanged portions of the chapter (names, timeline, established facts).
+4. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
+5. If [Passage to revise] contains multiple paragraphs separated by blank lines, output the SAME number of paragraphs in the SAME order, separated by blank lines.
+6. Output ONLY the revised passage prose. No chapter title, chapter number, recap of the quoted passage, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", "To be continued", "Here is the revised passage". Do not add any preamble before the prose or any summary after it.`,
+
 	ChapterSummary: `You are a precise novel narrative-state analyst. You distil literary text into the narrative elements and psychological beats that downstream chapters need.
 
 Compress the chapter below into a structured summary of 250 words or fewer.
