@@ -136,6 +136,8 @@ export default {
   'log.chapter_revise_failed': 'Chapter revision failed: {0}',
   'log.chapter_revised': 'Chapter revised.',
   'log.chapter_specific_revising': 'Targeted revision of chapter {0}...',
+  'log.chapter_segment_revising': 'Detected {0} quoted passage(s) — revising only the matched paragraph(s)...',
+  'log.chapter_segment_fallback': 'Local revision unavailable (quoted passage not located or paragraph count mismatch) — falling back to full-chapter revision',
   'log.smooth_transitions_cancelled': 'Transition smoothing cancelled (completed parts are preserved)',
   'log.smooth_transitions_failed': 'Transition smoothing failed: {0}',
   'log.chapter_deleted': 'Deleted chapter {0}.',

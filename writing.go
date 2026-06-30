@@ -721,7 +721,7 @@ func extractQuotedSentences(feedback string) (quotes []string, cleanFeedback str
 
 // findParagraphsContaining 在章节正文中找到包含任一引用句的自然段。
 // 段落优先按双换行切分；若原文不含空行则按单换行切分。
-// 返回升序去重的匹配段索引和段落切片。若任一引用句在原文中找不到匹配段，ok=false。
+// ponytail: substring match on naive paragraph split; first hit per quote; miss → errSegmentFallback / full-chapter revise.
 func findParagraphsContaining(content string, quotes []string) (matchedIdx []int, paragraphs []string, ok bool) {
 	paragraphs = strings.Split(content, "\n\n")
 	if len(paragraphs) <= 1 && strings.Contains(content, "\n") {
@@ -781,11 +781,7 @@ func reviseChapterSegment(ctx context.Context, apiCfg *APIConfig, cfg *Config, s
 
 	feedbackForAI := cleanFeedback
 	if strings.TrimSpace(feedbackForAI) == "" {
-		if NormalizeLanguage(lang) == LangEN {
-			feedbackForAI = "The user quoted this passage but gave no specific instruction. Apply minimal polish to the passage (tighten wording, sharpen sensory detail) and keep all plot beats intact."
-		} else {
-			feedbackForAI = "用户引用了这段原文但未说明具体修改意见，请对该段做最小化润色（精简措辞、强化感官细节），保留全部情节进展。"
-		}
+		feedbackForAI = SystemPromptFor(lang, "segment_revision_default_feedback")
 	}
 
 	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)

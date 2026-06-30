@@ -474,6 +474,10 @@ var systemPrompts = map[string]map[string]string{
 		LangZH: "\n你正在执行章节修订任务：只做修改意见要求的改动，其余原文保持不变，输出修改后的完整正文；不要添加任何元信息或说明性文字。",
 		LangEN: "\nYou are performing a chapter revision: make only the changes the feedback requires; leave everything else identical; output the full revised prose with no meta or explanatory text.",
 	},
+	"segment_revision_default_feedback": {
+		LangZH: "用户引用了这段原文但未说明具体修改意见，请对该段做最小化润色（精简措辞、强化感官细节），保留全部情节进展。",
+		LangEN: "The user quoted this passage but gave no specific instruction. Apply minimal polish to the passage (tighten wording, sharpen sensory detail) and keep all plot beats intact.",
+	},
 	"memory_manager": {
 		LangZH: "你是一位精准的小说叙事记忆管理员。请严格按照要求的JSON格式输出，不要添加任何额外文字。",
 		LangEN: "You are a precise narrative memory manager. Output strict JSON exactly as requested — no extra prose.",

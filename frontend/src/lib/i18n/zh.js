@@ -140,6 +140,8 @@ export default {
   'log.chapter_revise_failed': '章节修订失败: {0}',
   'log.chapter_revised': '章节已修订。',
   'log.chapter_specific_revising': '正在定向修订第 {0} 章...',
+  'log.chapter_segment_revising': '检测到 {0} 处原文引用，正在定向修订对应自然段...',
+  'log.chapter_segment_fallback': '局部修订无法完成（引用片段在原文未精确定位或段落数不匹配），回退到整章修订',
   'log.smooth_transitions_cancelled': '章节衔接优化已取消（已完成部分不会丢失）',
   'log.smooth_transitions_failed': '章节衔接优化失败: {0}',
   'log.chapter_deleted': '已删除第 {0} 章。',

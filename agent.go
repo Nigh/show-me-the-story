@@ -655,62 +655,9 @@ func parseToolCallFromJSON(jsonStr string) *ToolCall {
 	return &ToolCall{Name: name, Arguments: args}
 }
 
-func extractJSON(content string) string {
-	start := strings.Index(content, "{")
-	if start == -1 {
-		return ""
-	}
-
-	depth := 0
-	inString := false
-	escaped := false
-	for i := start; i < len(content); i++ {
-		c := content[i]
-		if escaped {
-			escaped = false
-			continue
-		}
-		if c == '\\' {
-			escaped = true
-			continue
-		}
-		if c == '"' {
-			inString = !inString
-			continue
-		}
-		if inString {
-			continue
-		}
-		if c == '{' {
-			depth++
-		} else if c == '}' {
-			depth--
-			if depth == 0 {
-				return content[start : i+1]
-			}
-		}
-	}
-
-	return ""
-}
-
-// repairTruncatedJSON 尝试补全被截断的 JSON 字符串。
-// 当 AI 响应被流式截断时，JSON 可能缺少结尾的 }} 和未闭合的字符串。
-// 本函数统计未闭合的花括号/方括号/字符串，追加对应闭字符后返回。
-func repairTruncatedJSON(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" || s[0] != '{' {
-		return s
-	}
-	// 若原样可解析，直接返回
-	var tmp interface{}
-	if json.Unmarshal([]byte(s), &tmp) == nil {
-		return s
-	}
-
-	depthBrace := 0
-	depthBracket := 0
-	inString := false
+// ponytail: byte walk outside JSON strings only; truncating mid-\\ or \\u may miscount.
+// Shared by extractJSON and repairTruncatedJSON — keep in sync.
+func walkJSONStructure(s string, onStruct func(i int, c byte)) (inString bool) {
 	escaped := false
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -718,7 +665,7 @@ func repairTruncatedJSON(s string) string {
 			escaped = false
 			continue
 		}
-		if c == '\\' {
+		if c == '\\' && inString {
 			escaped = true
 			continue
 		}
@@ -729,26 +676,69 @@ func repairTruncatedJSON(s string) string {
 		if inString {
 			continue
 		}
+		onStruct(i, c)
+	}
+	return inString
+}
+
+func extractJSON(content string) string {
+	start := strings.Index(content, "{")
+	if start == -1 {
+		return ""
+	}
+	sub := content[start:]
+	depth := 0
+	end := -1
+	walkJSONStructure(sub, func(i int, c byte) {
+		if c == '{' {
+			depth++
+		} else if c == '}' {
+			depth--
+			if depth == 0 {
+				end = i + 1
+			}
+		}
+	})
+	if end == -1 {
+		return ""
+	}
+	return content[start : start+end]
+}
+
+// repairTruncatedJSON appends closing quotes/brackets/braces for stream-truncated tool-call JSON.
+// ponytail: suffix append only; repaired JSON may parse with wrong semantics. Upgrade: retry API / resend tool_call.
+func repairTruncatedJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || s[0] != '{' {
+		return s
+	}
+	var tmp interface{}
+	if json.Unmarshal([]byte(s), &tmp) == nil {
+		return s
+	}
+
+	brace, bracket := 0, 0
+	inString := walkJSONStructure(s, func(_ int, c byte) {
 		switch c {
 		case '{':
-			depthBrace++
+			brace++
 		case '}':
-			depthBrace--
+			brace--
 		case '[':
-			depthBracket++
+			bracket++
 		case ']':
-			depthBracket--
+			bracket--
 		}
-	}
+	})
 
 	suffix := ""
 	if inString {
 		suffix += `"`
 	}
-	for i := 0; i < depthBracket; i++ {
+	for i := 0; i < bracket; i++ {
 		suffix += "]"
 	}
-	for i := 0; i < depthBrace; i++ {
+	for i := 0; i < brace; i++ {
 		suffix += "}"
 	}
 	if suffix == "" {
