@@ -39,6 +39,60 @@
   let localApiCfg = { base_url: '', url_strict: false, model: '', api_key: '', http_timeout_seconds: 300, max_tokens: 0, context_budget_tokens: 900000 };
   let localStoryCfg = { type: '', title: '', chapter_count: 30, target_words_per_chapter: 2500, writing_style: '', writing_pov: '', story_synopsis: '' };
   let testingApi = false;
+  let selectedProvider = 'custom';
+  let selectedModel = '';
+
+  const apiProviders = [
+    { id: 'custom', label: '自定义', base_url: '', models: [] },
+    { id: 'openai', label: 'OpenAI', base_url: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'] },
+    { id: 'anthropic', label: 'Anthropic', base_url: 'https://api.anthropic.com/v1', models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'] },
+    { id: 'google', label: 'Google Gemini', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'] },
+    { id: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'] },
+    { id: 'zhipu', label: '智谱AI', base_url: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4-plus', 'glm-4', 'glm-4-flash', 'glm-4-air'] },
+    { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen-long'] },
+    { id: 'doubao', label: '豆包', base_url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-pro-32k', 'doubao-pro-128k', 'doubao-lite-32k'] },
+    { id: 'moonshot', label: '月之暗面', base_url: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'] },
+    { id: 'siliconflow', label: '硅基流动', base_url: 'https://api.siliconflow.cn/v1', models: ['deepseek-ai/DeepSeek-V3', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen2.5-72B-Instruct'] },
+  ];
+
+  function detectProvider(url) {
+    const u = (url || '').trim().replace(/\/+$/, '');
+    for (const p of apiProviders) {
+      if (p.id === 'custom') continue;
+      const pb = p.base_url.replace(/\/+$/, '');
+      if (u === pb || u.startsWith(pb + '/')) return p.id;
+    }
+    return 'custom';
+  }
+
+  function onProviderChange() {
+    const p = apiProviders.find(x => x.id === selectedProvider);
+    if (!p || p.id === 'custom') return;
+    localApiCfg.base_url = p.base_url;
+    if (p.models.length > 0 && !p.models.includes(localApiCfg.model)) {
+      localApiCfg.model = p.models[0];
+    }
+    selectedModel = localApiCfg.model;
+  }
+
+  function onModelChange() {
+    localApiCfg.model = selectedModel;
+  }
+
+  function syncProviderFromUrl() {
+    const pid = detectProvider(localApiCfg.base_url);
+    selectedProvider = pid;
+    if (pid !== 'custom') {
+      const p = apiProviders.find(x => x.id === pid);
+      selectedModel = (p && p.models.length > 0 && p.models.includes(localApiCfg.model))
+        ? localApiCfg.model
+        : (p?.models[0] || '');
+    } else {
+      selectedModel = localApiCfg.model;
+    }
+  }
+
+  $: currentProviderModels = (apiProviders.find(p => p.id === selectedProvider)?.models || []);
 
   $: resolvedChatURL = resolveChatCompletionsURL(localApiCfg.base_url, !!localApiCfg.url_strict);
 
@@ -377,6 +431,14 @@
         <h3 class="card-title text-base">{$t('config.api.title')}</h3>
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
           <div class="col-span-2">
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.provider')}</span>
+            <select class="select select-sm w-full" bind:value={selectedProvider} on:change={onProviderChange} disabled={$taskRunning || testingApi}>
+              {#each apiProviders as p}
+                <option value={p.id}>{p.label}</option>
+              {/each}
+            </select>
+          </div>
+          <div class="col-span-2">
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.baseUrl')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localApiCfg.base_url} placeholder="https://api.openai.com/v1" disabled={$taskRunning || testingApi} />
             <label class="label cursor-pointer justify-start gap-2 py-1 px-0 min-h-0">
@@ -392,7 +454,15 @@
           </div>
           <div>
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.model')}</span>
-            <input type="text" class="input input-sm w-full" bind:value={localApiCfg.model} placeholder="gpt-4" disabled={$taskRunning || testingApi} />
+            {#if currentProviderModels.length > 0}
+              <select class="select select-sm w-full" bind:value={selectedModel} on:change={onModelChange} disabled={$taskRunning || testingApi}>
+                {#each currentProviderModels as m}
+                  <option value={m}>{m}</option>
+                {/each}
+              </select>
+            {:else}
+              <input type="text" class="input input-sm w-full" bind:value={localApiCfg.model} placeholder="gpt-4" disabled={$taskRunning || testingApi} />
+            {/if}
           </div>
           <div>
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.timeout')}</span>

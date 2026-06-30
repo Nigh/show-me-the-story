@@ -278,7 +278,8 @@ export default {
 
   // ---- Config page ----
   'config.api.title': 'API config',
-  'config.api.baseUrl': 'API base URL',
+  'config.api.provider': 'API Provider',
+  'config.api.baseUrl': 'API Base URL',
   'config.api.urlStrict': 'Strict URL mode',
   'config.api.urlStrictHint': 'When enabled, /v1 is not added; only /chat/completions is appended.',
   'config.api.resolvedUrl': 'Resolved endpoint',
