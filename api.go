@@ -37,9 +37,16 @@ type Message struct {
 
 type ChatResponse struct {
 	Choices []struct {
-		Message Message `json:"message"`
+		Message      Message `json:"message"`
+		FinishReason string  `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *tokenUsage `json:"usage,omitempty"`
+}
+
+// CompletionResult is the normalized result of a chat completion call.
+type CompletionResult struct {
+	Content      string
+	FinishReason string // e.g. "stop", "length"
 }
 
 func hasAPIVersionSegment(u string) bool {
@@ -165,27 +172,28 @@ func CallAPI(ctx context.Context, apiCfg *APIConfig, system, user string) (strin
 // 内部优先走流式并缓冲全文，使 token 计数在等待期间也能更新；流式不可用时回退同步请求。
 func CallAPIMessages(ctx context.Context, apiCfg *APIConfig, messages []Message) (string, error) {
 	result, err := CallAPIStreamMessages(ctx, apiCfg, messages, nil)
-	if err == nil && result != "" {
-		return result, nil
+	if err == nil && result.Content != "" {
+		return result.Content, nil
 	}
 	if ctx.Err() != nil {
-		if result != "" {
-			return result, ctx.Err()
+		if result.Content != "" {
+			return result.Content, ctx.Err()
 		}
 		return "", ctx.Err()
 	}
-	if result != "" {
-		return result, err
+	if result.Content != "" {
+		return result.Content, err
 	}
 	if err != nil && isFatalAPIError(err) {
 		return "", err
 	}
-	// ponytail: fallback for providers with broken stream; loses in-flight stream estimate only.
-	return callAPIMessagesSync(ctx, apiCfg, messages)
+	// ponytail: fallback for providers with broken stream; loses finish_reason + stream estimate.
+	syncResult, syncErr := callAPIMessagesSync(ctx, apiCfg, messages)
+	return syncResult.Content, syncErr
 }
 
 // callAPIMessagesSync 同步 HTTP 调用（仅作流式失败时的回退）。
-func callAPIMessagesSync(ctx context.Context, apiCfg *APIConfig, messages []Message) (string, error) {
+func callAPIMessagesSync(ctx context.Context, apiCfg *APIConfig, messages []Message) (CompletionResult, error) {
 	fullURL := normalizeURL(apiCfg)
 	tracker := taskTokensFromContext(ctx)
 	tracker.beginCall(messages)
@@ -198,12 +206,12 @@ func callAPIMessagesSync(ctx context.Context, apiCfg *APIConfig, messages []Mess
 
 	bts, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", err
+		return CompletionResult{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(bts))
 	if err != nil {
-		return "", err
+		return CompletionResult{}, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -215,22 +223,22 @@ func callAPIMessagesSync(ctx context.Context, apiCfg *APIConfig, messages []Mess
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return CompletionResult{}, err
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return CompletionResult{}, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API 响应错误，状态码: %d, 返回内容: %s", resp.StatusCode, string(bodyBytes))
+		return CompletionResult{}, fmt.Errorf("API 响应错误，状态码: %d, 返回内容: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var chatResp ChatResponse
 	if err := json.Unmarshal(bodyBytes, &chatResp); err != nil {
-		return "", err
+		return CompletionResult{}, err
 	}
 
 	if len(chatResp.Choices) > 0 {
@@ -242,9 +250,9 @@ func callAPIMessagesSync(ctx context.Context, apiCfg *APIConfig, messages []Mess
 				tracker.finishCall(0, 0, false, messages, content)
 			}
 		}
-		return content, nil
+		return CompletionResult{Content: content, FinishReason: chatResp.Choices[0].FinishReason}, nil
 	}
-	return "", fmt.Errorf("接口未响应有效 Choices 文本")
+	return CompletionResult{}, fmt.Errorf("接口未响应有效 Choices 文本")
 }
 
 func CallAPIWithRetry(ctx context.Context, apiCfg *APIConfig, system, user string) string {
@@ -311,19 +319,21 @@ type streamDelta struct {
 		Delta struct {
 			Content string `json:"content"`
 		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *tokenUsage `json:"usage,omitempty"`
 }
 
 func CallAPIStream(ctx context.Context, apiCfg *APIConfig, system, user string, onChunk func(string)) (string, error) {
-	return CallAPIStreamMessages(ctx, apiCfg, []Message{
+	result, err := CallAPIStreamMessages(ctx, apiCfg, []Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
 	}, onChunk)
+	return result.Content, err
 }
 
 // CallAPIStreamMessages 以完整的多轮消息数组调用 API（流式）。
-func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Message, onChunk func(string)) (string, error) {
+func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Message, onChunk func(string)) (CompletionResult, error) {
 	fullURL := normalizeURL(apiCfg)
 	tracker := taskTokensFromContext(ctx)
 	tracker.beginCall(messages)
@@ -338,12 +348,12 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Me
 
 	bts, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", err
+		return CompletionResult{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(bts))
 	if err != nil {
-		return "", err
+		return CompletionResult{}, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -355,22 +365,23 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Me
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return CompletionResult{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API 响应错误，状态码: %d, 返回内容: %s", resp.StatusCode, string(bodyBytes))
+		return CompletionResult{}, fmt.Errorf("API 响应错误，状态码: %d, 返回内容: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var fullContent strings.Builder
 	scanner := bufio.NewScanner(resp.Body)
 	var streamUsage *tokenUsage
+	var finishReason string
 
 	for scanner.Scan() {
 		if ctx.Err() != nil {
-			return fullContent.String(), ctx.Err()
+			return CompletionResult{Content: fullContent.String(), FinishReason: finishReason}, ctx.Err()
 		}
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -388,21 +399,26 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Me
 		if delta.Usage != nil {
 			streamUsage = delta.Usage
 		}
-		if len(delta.Choices) > 0 && delta.Choices[0].Delta.Content != "" {
-			chunk := delta.Choices[0].Delta.Content
-			fullContent.WriteString(chunk)
-			if tracker != nil {
-				tracker.updateStreamContent(fullContent.String())
+		if len(delta.Choices) > 0 {
+			if delta.Choices[0].FinishReason != "" {
+				finishReason = delta.Choices[0].FinishReason
 			}
-			if onChunk != nil {
-				onChunk(chunk)
+			if delta.Choices[0].Delta.Content != "" {
+				chunk := delta.Choices[0].Delta.Content
+				fullContent.WriteString(chunk)
+				if tracker != nil {
+					tracker.updateStreamContent(fullContent.String())
+				}
+				if onChunk != nil {
+					onChunk(chunk)
+				}
 			}
 		}
 	}
 
 	result := fullContent.String()
 	if result == "" {
-		return "", fmt.Errorf("流式响应为空")
+		return CompletionResult{}, fmt.Errorf("流式响应为空")
 	}
 	if tracker != nil {
 		if streamUsage != nil {
@@ -411,7 +427,7 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *APIConfig, messages []Me
 			tracker.finishCall(0, 0, false, messages, result)
 		}
 	}
-	return result, nil
+	return CompletionResult{Content: result, FinishReason: finishReason}, nil
 }
 
 func CallAPIStreamWithRetry(ctx context.Context, apiCfg *APIConfig, system, user string, onChunk func(string)) string {

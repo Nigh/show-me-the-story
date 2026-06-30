@@ -2,24 +2,17 @@ package main
 
 import "testing"
 
-func TestParseToolCallTruncatedJSON(t *testing.T) {
-	// 模拟 Bug 场景：AI 输出 <tool_call> 但响应被截断，
-	// 缺少 </tool_call> 和 JSON 结尾的 }}
-	// 注意：真实 AI 输出中 JSON 字符串内的换行是 \n 转义序列（两字符），非字面换行
+func TestParseToolCallTruncatedJSONNoRepair(t *testing.T) {
+	// 流式截断：缺 </tool_call> 且 JSON 不完整 — 不修复，parseToolCall 应返回 nil
 	truncated := `明白，开始修订第3章。 <tool_call> {"name":"revise_chapter","arguments":{"num":3,"feedback":"完全重写第3章，解决逻辑硬伤：\n\n1.【删掉借鞋借袜】男女鞋码差4-5码，借鞋穿不上；正常女生不会把袜子给陌生男性。这两个情节必须彻底删除。\n\n2.【新借口】周凯伪装成物业检修工。他提前在网上买了件类似物业维修的蓝色马甲，手里`
 
 	tc := parseToolCall(truncated)
-	if tc == nil {
-		t.Fatal("parseToolCall 返回 nil，未能识别截断的工具调用")
+	if tc != nil {
+		t.Fatalf("parseToolCall 不应修复截断 JSON，实际解析到工具: %s", tc.Name)
 	}
-	if tc.Name != "revise_chapter" {
-		t.Fatalf("工具名应为 revise_chapter，实际: %s", tc.Name)
-	}
-	t.Logf("成功识别截断的工具调用: %s", tc.Name)
 }
 
 func TestParseToolCallCompleteTag(t *testing.T) {
-	// 完整的 <tool_call>...</tool_call> 应正常解析
 	complete := `<tool_call>{"name":"search_project","arguments":{"query":"人物"}}</tool_call>`
 	tc := parseToolCall(complete)
 	if tc == nil {
@@ -31,7 +24,6 @@ func TestParseToolCallCompleteTag(t *testing.T) {
 }
 
 func TestParseToolCallTextBeforeTag(t *testing.T) {
-	// 标签前有解释文字（违反 prompt 但 AI 偶尔会这么做）
 	content := `好的，我来修改。 <tool_call>{"name":"revise_chapter","arguments":{"num":1,"feedback":"修改第一章"}}</tool_call>`
 	tc := parseToolCall(content)
 	if tc == nil {
@@ -42,35 +34,7 @@ func TestParseToolCallTextBeforeTag(t *testing.T) {
 	}
 }
 
-func TestRepairTruncatedJSON(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		ok    bool
-	}{
-		{"完整JSON", `{"name":"x","arguments":{"num":1}}`, true},
-		{"缺尾部}}", `{"name":"x","arguments":{"num":1,"feedback":"hello`, true},
-		{"缺尾部}字符串未闭", `{"name":"revise_chapter","arguments":{"num":3,"feedback":"test`, true},
-		{"空字符串", "", false},
-		{"非JSON", "hello world", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repaired := repairTruncatedJSON(tt.input)
-			if tt.ok {
-				// 验证修复后能被 parseToolCallFromJSON 解析
-				tc := parseToolCallFromJSON(repaired)
-				if tc == nil {
-					t.Fatalf("修复后仍无法解析: input=%q repaired=%q", tt.input, repaired)
-				}
-				t.Logf("修复成功: %s -> %s (工具: %s)", tt.name, repaired, tc.Name)
-			}
-		})
-	}
-}
-
 func TestExtractJSONStringAware(t *testing.T) {
-	// JSON 字符串内包含 } 字符，extractJSON 不应提前截断
 	content := `{"name":"x","arguments":{"feedback":"他说：} 这个符号"}}`
 	got := extractJSON(content)
 	tc := parseToolCallFromJSON(got)
@@ -79,5 +43,41 @@ func TestExtractJSONStringAware(t *testing.T) {
 	}
 	if tc.Name != "x" {
 		t.Fatalf("工具名应为 x，实际: %s", tc.Name)
+	}
+}
+
+func TestHasUnclosedToolCall(t *testing.T) {
+	if !hasUnclosedToolCall(`<tool_call>{"name":"x"}`) {
+		t.Fatal("应识别未闭合 tool_call")
+	}
+	if hasUnclosedToolCall(`<tool_call>{"name":"x"}</tool_call>`) {
+		t.Fatal("完整 tool_call 不应判为未闭合")
+	}
+	if hasUnclosedToolCall(`no tool here`) {
+		t.Fatal("无 tool_call 时应为 false")
+	}
+}
+
+func TestIsAgentOutputTruncated(t *testing.T) {
+	truncated := `前言 <tool_call> {"name":"revise_chapter","arguments":{"feedback":"hello`
+	if !isAgentOutputTruncated("length", truncated, nil) {
+		t.Fatal("finish_reason=length + 未闭合 tool_call + 解析失败 应判为截断错误")
+	}
+	if isAgentOutputTruncated("stop", truncated, nil) {
+		t.Fatal("finish_reason=stop 不应判为 token 截断")
+	}
+	complete := `<tool_call>{"name":"x","arguments":{}}</tool_call>`
+	tc := parseToolCall(complete)
+	if isAgentOutputTruncated("length", complete, tc) {
+		t.Fatal("完整 tool_call 即使 finish_reason=length 也不应报错（由 provider 误报时保守通过）")
+	}
+}
+
+func TestAgentEffectiveMaxTokens(t *testing.T) {
+	if agentEffectiveMaxTokens(&APIConfig{MaxTokens: 0}) != 8192 {
+		t.Fatal("Agent max_tokens 下限应为 8192")
+	}
+	if agentEffectiveMaxTokens(&APIConfig{MaxTokens: 16000}) != 16000 {
+		t.Fatal("应使用用户配置的 max_tokens")
 	}
 }
