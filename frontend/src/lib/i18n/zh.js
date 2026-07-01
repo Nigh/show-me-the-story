@@ -282,6 +282,7 @@ export default {
 
   // ---- Config page ----
   'config.api.title': 'API 配置',
+  'config.api.provider': 'API 供应商',
   'config.api.baseUrl': 'API Base URL',
   'config.api.urlStrict': '严格 URL 模式',
   'config.api.urlStrictHint': '开启后不会自动插入 /v1，仅在末尾补 /chat/completions。',
