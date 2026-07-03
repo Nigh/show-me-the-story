@@ -205,6 +205,42 @@ const arcMap = JSON.parse(fs.readFileSync(arcMapPath, "utf8"));
 if (!Array.isArray(arcMap.arcs)) {
   throw new Error("outline-2400-arc-map.json must contain arcs[]");
 }
+if (arcMap.arcs.length !== 80) {
+  throw new Error(`outline-2400-arc-map.json: arcs.length=${arcMap.arcs.length}, expected 80`);
+}
+
+function requireInteger(value, label) {
+  if (!Number.isInteger(value)) {
+    throw new Error(`${label} must be an integer`);
+  }
+}
+
+let expectedStart = 1;
+for (let i = 0; i < arcMap.arcs.length; i += 1) {
+  const arc = arcMap.arcs[i];
+  if (!arc || typeof arc !== "object" || Array.isArray(arc)) {
+    throw new Error(`arc index ${i} must be an object`);
+  }
+
+  requireInteger(arc.arc, `arc index ${i} arc`);
+  requireInteger(arc.start, `arc ${arc.arc} start`);
+  requireInteger(arc.end, `arc ${arc.arc} end`);
+
+  const expectedArc = i + 1;
+  if (arc.arc !== expectedArc) {
+    throw new Error(`arc index ${i} has arc=${arc.arc}, expected ${expectedArc}`);
+  }
+  if (arc.start !== expectedStart) {
+    throw new Error(`arc ${arc.arc} starts at ${arc.start}, expected ${expectedStart}`);
+  }
+  if (arc.end < arc.start) {
+    throw new Error(`arc ${arc.arc} has invalid range ${arc.start}-${arc.end}`);
+  }
+  expectedStart = arc.end + 1;
+}
+if (expectedStart !== 2401) {
+  throw new Error(`arc map ends at ${expectedStart - 1}, expected 2400`);
+}
 
 const chapters = [];
 for (const arc of arcMap.arcs) {
@@ -227,6 +263,9 @@ for (const arc of arcMap.arcs) {
     }
     chapters.push(chapter);
   }
+}
+if (chapters.length !== 2400) {
+  throw new Error(`merged chapters length=${chapters.length}, expected 2400`);
 }
 
 const payload = {
@@ -259,10 +298,24 @@ if (!outlinePath || !arcMapPath) {
   process.exit(2);
 }
 
-const outline = JSON.parse(fs.readFileSync(outlinePath, "utf8"));
-const arcMap = JSON.parse(fs.readFileSync(arcMapPath, "utf8"));
 const errors = [];
 const warnings = [];
+
+function readJson(filePath, label) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    errors.push(`${label} could not be read or parsed: ${error.message}`);
+    return undefined;
+  }
+}
+
+const outline = readJson(outlinePath, "outline");
+const arcMap = readJson(arcMapPath, "arc map");
+
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function requireString(value, label, minLength) {
   if (typeof value !== "string" || value.trim().length < minLength) {
@@ -270,64 +323,116 @@ function requireString(value, label, minLength) {
   }
 }
 
-requireString(outline.title, "title", 1);
-requireString(outline.core_prompt, "core_prompt", 80);
-requireString(outline.story_synopsis, "story_synopsis", 160);
-
-if (!Array.isArray(outline.chapters)) {
-  errors.push("chapters must be an array");
-} else {
-  if (outline.chapters.length !== 2400) {
-    errors.push(`chapters.length=${outline.chapters.length}, expected 2400`);
+function requireInteger(value, label) {
+  if (!Number.isInteger(value)) {
+    errors.push(`${label} must be an integer`);
+    return false;
   }
-  const seen = new Set();
-  const requiredLabels = ["核心事件：", "修仙推进：", "人物推进：", "高层/伏笔：", "后果钩子："];
-  for (let i = 0; i < outline.chapters.length; i += 1) {
-    const chapter = outline.chapters[i];
-    const expectedNum = i + 1;
-    if (chapter.num !== expectedNum) {
-      errors.push(`chapter index ${i} has num=${chapter.num}, expected ${expectedNum}`);
+  return true;
+}
+
+function chapterText(chapter) {
+  if (!isObject(chapter)) {
+    return "";
+  }
+  return `${typeof chapter.title === "string" ? chapter.title : ""}\n${typeof chapter.outline === "string" ? chapter.outline : ""}`;
+}
+
+if (!isObject(outline)) {
+  errors.push("outline must be an object");
+} else {
+  requireString(outline.title, "title", 1);
+  requireString(outline.core_prompt, "core_prompt", 80);
+  requireString(outline.story_synopsis, "story_synopsis", 160);
+
+  if (!Array.isArray(outline.chapters)) {
+    errors.push("chapters must be an array");
+  } else {
+    if (outline.chapters.length !== 2400) {
+      errors.push(`chapters.length=${outline.chapters.length}, expected 2400`);
     }
-    if (seen.has(chapter.num)) {
-      errors.push(`duplicate chapter num ${chapter.num}`);
-    }
-    seen.add(chapter.num);
-    requireString(chapter.title, `chapter ${expectedNum} title`, 1);
-    requireString(chapter.outline, `chapter ${expectedNum} outline`, 180);
-    for (const label of requiredLabels) {
-      if (typeof chapter.outline !== "string" || !chapter.outline.includes(label)) {
-        errors.push(`chapter ${expectedNum} outline missing label ${label}`);
+    const seen = new Set();
+    const requiredLabels = ["核心事件：", "修仙推进：", "人物推进：", "高层/伏笔：", "后果钩子："];
+    for (let i = 0; i < outline.chapters.length; i += 1) {
+      const chapter = outline.chapters[i];
+      const expectedNum = i + 1;
+      if (!isObject(chapter)) {
+        errors.push(`chapter ${expectedNum} must be an object`);
+        continue;
+      }
+      if (chapter.num !== expectedNum) {
+        errors.push(`chapter index ${i} has num=${chapter.num}, expected ${expectedNum}`);
+      }
+      if (seen.has(chapter.num)) {
+        errors.push(`duplicate chapter num ${chapter.num}`);
+      }
+      seen.add(chapter.num);
+      requireString(chapter.title, `chapter ${expectedNum} title`, 1);
+      requireString(chapter.outline, `chapter ${expectedNum} outline`, 180);
+      for (const label of requiredLabels) {
+        if (typeof chapter.outline !== "string" || !chapter.outline.includes(label)) {
+          errors.push(`chapter ${expectedNum} outline missing label ${label}`);
+        }
       }
     }
   }
 }
 
-if (!Array.isArray(arcMap.arcs)) {
-  errors.push("arc map must contain arcs[]");
+if (!isObject(arcMap)) {
+  errors.push("arc map must be an object");
 } else {
-  if (arcMap.arcs.length !== 80) {
-    errors.push(`arc count=${arcMap.arcs.length}, expected 80`);
-  }
-  let expectedStart = 1;
-  for (const arc of arcMap.arcs) {
-    if (arc.start !== expectedStart) {
-      errors.push(`arc ${arc.arc} starts at ${arc.start}, expected ${expectedStart}`);
+  if (!Array.isArray(arcMap.arcs)) {
+    errors.push("arc map must contain arcs[]");
+  } else {
+    if (arcMap.arcs.length !== 80) {
+      errors.push(`arc count=${arcMap.arcs.length}, expected 80`);
     }
-    if (arc.end < arc.start) {
-      errors.push(`arc ${arc.arc} has invalid range ${arc.start}-${arc.end}`);
+    let expectedStart = 1;
+    for (let i = 0; i < arcMap.arcs.length; i += 1) {
+      const arc = arcMap.arcs[i];
+      const expectedArc = i + 1;
+      if (!isObject(arc)) {
+        errors.push(`arc index ${i} must be an object`);
+        continue;
+      }
+
+      const arcLabel = Number.isInteger(arc.arc) ? `arc ${arc.arc}` : `arc index ${i}`;
+      const hasArc = requireInteger(arc.arc, `${arcLabel} arc`);
+      requireInteger(arc.part, `${arcLabel} part`);
+      const hasStart = requireInteger(arc.start, `${arcLabel} start`);
+      const hasEnd = requireInteger(arc.end, `${arcLabel} end`);
+
+      if (hasArc) {
+        if (arc.arc < 1 || arc.arc > 80) {
+          errors.push(`arc index ${i} has arc=${arc.arc}, expected 1..80`);
+        }
+        if (arc.arc !== expectedArc) {
+          errors.push(`arc index ${i} has arc=${arc.arc}, expected ${expectedArc}`);
+        }
+      }
+      if (hasStart && arc.start !== expectedStart) {
+        errors.push(`${arcLabel} starts at ${arc.start}, expected ${expectedStart}`);
+      }
+      if (hasStart && hasEnd) {
+        if (arc.end < arc.start) {
+          errors.push(`${arcLabel} has invalid range ${arc.start}-${arc.end}`);
+        } else {
+          expectedStart = arc.end + 1;
+        }
+      }
+      for (const key of ["title", "cultivation", "ground_line", "high_line", "burden_bearer", "end_state"]) {
+        requireString(arc[key], `${arcLabel} ${key}`, 4);
+      }
     }
-    for (const key of ["title", "cultivation", "ground_line", "high_line", "burden_bearer", "end_state"]) {
-      requireString(arc[key], `arc ${arc.arc} ${key}`, 4);
+    if (expectedStart !== 2401) {
+      errors.push(`arc map ends at ${expectedStart - 1}, expected 2400`);
     }
-    expectedStart = arc.end + 1;
-  }
-  if (expectedStart !== 2401) {
-    errors.push(`arc map ends at ${expectedStart - 1}, expected 2400`);
   }
 }
 
-const allText = Array.isArray(outline.chapters)
-  ? outline.chapters.map((chapter) => `${chapter.title}\n${chapter.outline}`).join("\n")
+const chapters = isObject(outline) && Array.isArray(outline.chapters) ? outline.chapters : [];
+const allText = chapters.length > 0
+  ? chapters.map(chapterText).join("\n")
   : "";
 const requiredAnchors = [
   "房租", "裁员", "医院", "网贷", "短视频", "识气", "立基", "结我丹", "出元神",
@@ -351,30 +456,34 @@ const partRanges = [
   [1801, 2150, "越界"],
   [2151, 2400, "道外"],
 ];
-if (Array.isArray(outline.chapters)) {
+if (chapters.length > 0) {
   for (const [start, end, anchor] of partRanges) {
-    const partText = outline.chapters.slice(start - 1, end).map((chapter) => `${chapter.title}\n${chapter.outline}`).join("\n");
+    const partText = chapters.slice(start - 1, end).map(chapterText).join("\n");
     if (!partText.includes(anchor)) {
       errors.push(`part ${start}-${end} does not mention "${anchor}"`);
     }
   }
 }
 
-if (Array.isArray(outline.chapters)) {
-  const lengths = outline.chapters.map((chapter) => [...chapter.outline].length);
-  const min = Math.min(...lengths);
-  const max = Math.max(...lengths);
-  const avg = Math.round(lengths.reduce((sum, value) => sum + value, 0) / lengths.length);
-  if (min < 180) warnings.push(`shortest outline has ${min} chars`);
-  if (max > 1200) warnings.push(`longest outline has ${max} chars`);
-  console.log(JSON.stringify({
-    outline: outlinePath,
-    chapters: outline.chapters.length,
-    outline_length: { min, max, avg },
-    warnings,
-    errors,
-  }, null, 2));
+const lengths = chapters
+  .filter((chapter) => isObject(chapter) && typeof chapter.outline === "string")
+  .map((chapter) => [...chapter.outline].length);
+const outlineLength = { min: null, max: null, avg: null };
+if (lengths.length > 0) {
+  outlineLength.min = Math.min(...lengths);
+  outlineLength.max = Math.max(...lengths);
+  outlineLength.avg = Math.round(lengths.reduce((sum, value) => sum + value, 0) / lengths.length);
+  if (outlineLength.min < 180) warnings.push(`shortest outline has ${outlineLength.min} chars`);
+  if (outlineLength.max > 1200) warnings.push(`longest outline has ${outlineLength.max} chars`);
 }
+
+console.log(JSON.stringify({
+  outline: outlinePath,
+  chapters: chapters.length,
+  outline_length: outlineLength,
+  warnings,
+  errors,
+}, null, 2));
 
 if (errors.length > 0) {
   process.exit(1);

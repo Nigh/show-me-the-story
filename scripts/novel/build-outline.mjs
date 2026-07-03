@@ -15,6 +15,42 @@ const arcMap = JSON.parse(fs.readFileSync(arcMapPath, "utf8"));
 if (!Array.isArray(arcMap.arcs)) {
   throw new Error("outline-2400-arc-map.json must contain arcs[]");
 }
+if (arcMap.arcs.length !== 80) {
+  throw new Error(`outline-2400-arc-map.json: arcs.length=${arcMap.arcs.length}, expected 80`);
+}
+
+function requireInteger(value, label) {
+  if (!Number.isInteger(value)) {
+    throw new Error(`${label} must be an integer`);
+  }
+}
+
+let expectedStart = 1;
+for (let i = 0; i < arcMap.arcs.length; i += 1) {
+  const arc = arcMap.arcs[i];
+  if (!arc || typeof arc !== "object" || Array.isArray(arc)) {
+    throw new Error(`arc index ${i} must be an object`);
+  }
+
+  requireInteger(arc.arc, `arc index ${i} arc`);
+  requireInteger(arc.start, `arc ${arc.arc} start`);
+  requireInteger(arc.end, `arc ${arc.arc} end`);
+
+  const expectedArc = i + 1;
+  if (arc.arc !== expectedArc) {
+    throw new Error(`arc index ${i} has arc=${arc.arc}, expected ${expectedArc}`);
+  }
+  if (arc.start !== expectedStart) {
+    throw new Error(`arc ${arc.arc} starts at ${arc.start}, expected ${expectedStart}`);
+  }
+  if (arc.end < arc.start) {
+    throw new Error(`arc ${arc.arc} has invalid range ${arc.start}-${arc.end}`);
+  }
+  expectedStart = arc.end + 1;
+}
+if (expectedStart !== 2401) {
+  throw new Error(`arc map ends at ${expectedStart - 1}, expected 2400`);
+}
 
 const chapters = [];
 for (const arc of arcMap.arcs) {
@@ -37,6 +73,9 @@ for (const arc of arcMap.arcs) {
     }
     chapters.push(chapter);
   }
+}
+if (chapters.length !== 2400) {
+  throw new Error(`merged chapters length=${chapters.length}, expected 2400`);
 }
 
 const payload = {
