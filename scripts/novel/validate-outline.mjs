@@ -26,6 +26,22 @@ function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function expectedArcContract(arcNum) {
+  if (arcNum >= 1 && arcNum <= 60) {
+    const start = (arcNum - 1) * 30 + 1;
+    return { part: Math.ceil(arcNum / 10), start, end: start + 29 };
+  }
+  if (arcNum >= 61 && arcNum <= 70) {
+    const start = 1801 + (arcNum - 61) * 35;
+    return { part: 7, start, end: start + 34 };
+  }
+  if (arcNum >= 71 && arcNum <= 80) {
+    const start = 2151 + (arcNum - 71) * 25;
+    return { part: 8, start, end: start + 24 };
+  }
+  return null;
+}
+
 function requireString(value, label, minLength) {
   if (typeof value !== "string" || value.trim().length < minLength) {
     errors.push(`${label} must be a string with at least ${minLength} characters`);
@@ -107,9 +123,10 @@ if (!isObject(arcMap)) {
 
       const arcLabel = Number.isInteger(arc.arc) ? `arc ${arc.arc}` : `arc index ${i}`;
       const hasArc = requireInteger(arc.arc, `${arcLabel} arc`);
-      requireInteger(arc.part, `${arcLabel} part`);
+      const hasPart = requireInteger(arc.part, `${arcLabel} part`);
       const hasStart = requireInteger(arc.start, `${arcLabel} start`);
       const hasEnd = requireInteger(arc.end, `${arcLabel} end`);
+      const contract = hasArc ? expectedArcContract(arc.arc) : null;
 
       if (hasArc) {
         if (arc.arc < 1 || arc.arc > 80) {
@@ -117,6 +134,17 @@ if (!isObject(arcMap)) {
         }
         if (arc.arc !== expectedArc) {
           errors.push(`arc index ${i} has arc=${arc.arc}, expected ${expectedArc}`);
+        }
+        if (contract) {
+          if (hasPart && arc.part !== contract.part) {
+            errors.push(`arc ${arc.arc} has part=${arc.part}, expected ${contract.part}`);
+          }
+          if (hasStart && arc.start !== contract.start) {
+            errors.push(`arc ${arc.arc} starts at ${arc.start}, expected ${contract.start}`);
+          }
+          if (hasEnd && arc.end !== contract.end) {
+            errors.push(`arc ${arc.arc} ends at ${arc.end}, expected ${contract.end}`);
+          }
         }
       }
       if (hasStart && arc.start !== expectedStart) {

@@ -201,7 +201,30 @@ const arcMapPath = path.join(workDir, "outline-2400-arc-map.json");
 const batchDir = path.join(workDir, "batches");
 const outPath = path.join(workDir, "outline-2400.json");
 
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function expectedArcContract(arcNum) {
+  if (arcNum >= 1 && arcNum <= 60) {
+    const start = (arcNum - 1) * 30 + 1;
+    return { part: Math.ceil(arcNum / 10), start, end: start + 29 };
+  }
+  if (arcNum >= 61 && arcNum <= 70) {
+    const start = 1801 + (arcNum - 61) * 35;
+    return { part: 7, start, end: start + 34 };
+  }
+  if (arcNum >= 71 && arcNum <= 80) {
+    const start = 2151 + (arcNum - 71) * 25;
+    return { part: 8, start, end: start + 24 };
+  }
+  return null;
+}
+
 const arcMap = JSON.parse(fs.readFileSync(arcMapPath, "utf8"));
+if (!isObject(arcMap)) {
+  throw new Error("outline-2400-arc-map.json must be an object");
+}
 if (!Array.isArray(arcMap.arcs)) {
   throw new Error("outline-2400-arc-map.json must contain arcs[]");
 }
@@ -223,15 +246,26 @@ for (let i = 0; i < arcMap.arcs.length; i += 1) {
   }
 
   requireInteger(arc.arc, `arc index ${i} arc`);
+  requireInteger(arc.part, `arc ${arc.arc} part`);
   requireInteger(arc.start, `arc ${arc.arc} start`);
   requireInteger(arc.end, `arc ${arc.arc} end`);
 
   const expectedArc = i + 1;
+  const contract = expectedArcContract(arc.arc);
   if (arc.arc !== expectedArc) {
     throw new Error(`arc index ${i} has arc=${arc.arc}, expected ${expectedArc}`);
   }
-  if (arc.start !== expectedStart) {
-    throw new Error(`arc ${arc.arc} starts at ${arc.start}, expected ${expectedStart}`);
+  if (!contract) {
+    throw new Error(`arc index ${i} has arc=${arc.arc}, expected 1..80`);
+  }
+  if (arc.part !== contract.part) {
+    throw new Error(`arc ${arc.arc} has part=${arc.part}, expected ${contract.part}`);
+  }
+  if (arc.start !== contract.start) {
+    throw new Error(`arc ${arc.arc} starts at ${arc.start}, expected ${contract.start}`);
+  }
+  if (arc.end !== contract.end) {
+    throw new Error(`arc ${arc.arc} ends at ${arc.end}, expected ${contract.end}`);
   }
   if (arc.end < arc.start) {
     throw new Error(`arc ${arc.arc} has invalid range ${arc.start}-${arc.end}`);
@@ -246,6 +280,9 @@ const chapters = [];
 for (const arc of arcMap.arcs) {
   const batchPath = path.join(batchDir, `arc-${String(arc.arc).padStart(3, "0")}.json`);
   const batch = JSON.parse(fs.readFileSync(batchPath, "utf8"));
+  if (!isObject(batch)) {
+    throw new Error(`${batchPath}: batch must be an object`);
+  }
   if (batch.arc !== arc.arc) {
     throw new Error(`${batchPath}: arc=${batch.arc}, expected ${arc.arc}`);
   }
@@ -315,6 +352,22 @@ const arcMap = readJson(arcMapPath, "arc map");
 
 function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function expectedArcContract(arcNum) {
+  if (arcNum >= 1 && arcNum <= 60) {
+    const start = (arcNum - 1) * 30 + 1;
+    return { part: Math.ceil(arcNum / 10), start, end: start + 29 };
+  }
+  if (arcNum >= 61 && arcNum <= 70) {
+    const start = 1801 + (arcNum - 61) * 35;
+    return { part: 7, start, end: start + 34 };
+  }
+  if (arcNum >= 71 && arcNum <= 80) {
+    const start = 2151 + (arcNum - 71) * 25;
+    return { part: 8, start, end: start + 24 };
+  }
+  return null;
 }
 
 function requireString(value, label, minLength) {
@@ -398,9 +451,10 @@ if (!isObject(arcMap)) {
 
       const arcLabel = Number.isInteger(arc.arc) ? `arc ${arc.arc}` : `arc index ${i}`;
       const hasArc = requireInteger(arc.arc, `${arcLabel} arc`);
-      requireInteger(arc.part, `${arcLabel} part`);
+      const hasPart = requireInteger(arc.part, `${arcLabel} part`);
       const hasStart = requireInteger(arc.start, `${arcLabel} start`);
       const hasEnd = requireInteger(arc.end, `${arcLabel} end`);
+      const contract = hasArc ? expectedArcContract(arc.arc) : null;
 
       if (hasArc) {
         if (arc.arc < 1 || arc.arc > 80) {
@@ -408,6 +462,17 @@ if (!isObject(arcMap)) {
         }
         if (arc.arc !== expectedArc) {
           errors.push(`arc index ${i} has arc=${arc.arc}, expected ${expectedArc}`);
+        }
+        if (contract) {
+          if (hasPart && arc.part !== contract.part) {
+            errors.push(`arc ${arc.arc} has part=${arc.part}, expected ${contract.part}`);
+          }
+          if (hasStart && arc.start !== contract.start) {
+            errors.push(`arc ${arc.arc} starts at ${arc.start}, expected ${contract.start}`);
+          }
+          if (hasEnd && arc.end !== contract.end) {
+            errors.push(`arc ${arc.arc} ends at ${arc.end}, expected ${contract.end}`);
+          }
         }
       }
       if (hasStart && arc.start !== expectedStart) {
