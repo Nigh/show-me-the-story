@@ -485,7 +485,8 @@ if (!isObject(arcMap)) {
           expectedStart = arc.end + 1;
         }
       }
-      for (const key of ["title", "cultivation", "ground_line", "high_line", "burden_bearer", "end_state"]) {
+      requireString(arc.title, `${arcLabel} title`, 2);
+      for (const key of ["cultivation", "ground_line", "high_line", "burden_bearer", "end_state"]) {
         requireString(arc[key], `${arcLabel} ${key}`, 4);
       }
     }
