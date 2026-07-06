@@ -57,21 +57,103 @@
 
   // v3: /api/progress 不再携带正文，选中章节的正文按需拉取，content_rev 变化时刷新
   let chapterContent = '';
+  let chapterBlocks = [];
   let loadedNum = -1;
   let loadedRev = null;
   $: if (ch) maybeLoadContent(ch);
+  function applyChapter(num, full) {
+    if (loadedNum !== num) return;
+    chapterContent = full.content || '';
+    chapterBlocks = full.blocks || [];
+    loadedRev = full.content_rev || '';
+  }
   async function maybeLoadContent(c) {
     const rev = c.content_rev || '';
     if (c.num === loadedNum && rev === loadedRev) return;
     loadedNum = c.num;
     loadedRev = rev;
-    if (!rev) { chapterContent = ''; return; }
+    if (!rev) { chapterContent = ''; chapterBlocks = []; return; }
     try {
       const full = await api('GET', '/api/chapters/' + c.num);
-      if (loadedNum === c.num) chapterContent = full.content || '';
+      applyChapter(c.num, full);
     } catch (e) {}
   }
   $: hasContent = !!(ch?.content_rev);
+
+  // —— Block 编辑（v3）——
+  let editingBlockId = null;   // 正在内联编辑的 block
+  let editingText = '';
+  let revisingBlockId = null;  // 正在填写 AI 修订意见的 block
+  let blockFeedback = '';
+  let insertAfterId = null;    // 正在其后插入新 block 的 id（0 = 开头）
+  let insertText = '';
+
+  function startBlockEdit(b) {
+    editingBlockId = b.id;
+    editingText = b.text;
+    revisingBlockId = null;
+    insertAfterId = null;
+  }
+  function startBlockRevise(b) {
+    revisingBlockId = b.id;
+    blockFeedback = '';
+    editingBlockId = null;
+    insertAfterId = null;
+  }
+  function startBlockInsert(afterId) {
+    insertAfterId = afterId;
+    insertText = '';
+    editingBlockId = null;
+    revisingBlockId = null;
+  }
+  function cancelBlockOps() {
+    editingBlockId = null;
+    revisingBlockId = null;
+    insertAfterId = null;
+  }
+
+  async function saveBlockEdit() {
+    if (editingBlockId == null || !editingText.trim() || !ch) return;
+    try {
+      const full = await api('PUT', `/api/chapters/${ch.num}/blocks/${editingBlockId}`, { text: editingText });
+      applyChapter(ch.num, full);
+      cancelBlockOps();
+      addToast($t('writing.block.saved'), 'success');
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  function deleteBlock(b) {
+    if (!ch) return;
+    confirmModal.set({
+      message: $t('writing.block.deleteConfirm'),
+      onConfirm: async () => {
+        try {
+          const full = await api('DELETE', `/api/chapters/${ch.num}/blocks/${b.id}`);
+          applyChapter(ch.num, full);
+          addToast($t('writing.block.deleted'), 'success');
+        } catch (e) { addToast(e.message, 'error'); }
+      },
+    });
+  }
+
+  async function saveBlockInsert() {
+    if (insertAfterId == null || !insertText.trim() || !ch) return;
+    try {
+      const full = await api('POST', `/api/chapters/${ch.num}/blocks`, { after_id: insertAfterId, text: insertText });
+      applyChapter(ch.num, full);
+      cancelBlockOps();
+      addToast($t('writing.block.inserted'), 'success');
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  async function submitBlockRevise() {
+    if (revisingBlockId == null || !blockFeedback.trim() || !ch) return;
+    try {
+      await api('POST', `/api/chapters/${ch.num}/blocks/${revisingBlockId}/revise`, { feedback: blockFeedback });
+      addToast($t('writing.block.reviseStarted'), 'info');
+      cancelBlockOps();
+    } catch (e) { addToast(e.message, 'error'); }
+  }
 
   // 流式期间 $streamingContent 只含尾部窗口（性能保护），全文在生成结束后按需拉取
   $: displayContent = isStreamingThis ? $streamingContent : chapterContent;
@@ -203,6 +285,7 @@
     showRevise = false;
     reviseFeedback = '';
     hideQuotePopover();
+    cancelBlockOps();
   }
 
   async function doGenerate() {
@@ -448,9 +531,51 @@
                 <div bind:this={contentEl} class="bg-base-300 rounded-lg p-4 text-[15px] chapter-content reading-area max-h-[calc(100vh-420px)] min-h-[200px] overflow-y-auto"
                      on:mouseup={checkContentSelection}
                      on:scroll={hideQuotePopover}>
-                  {displayContent}
                   {#if isStreamingThis}
+                    {displayContent}
                     <span class="inline-block w-2 h-4 bg-primary/70 animate-pulse ml-0.5 align-text-bottom"></span>
+                  {:else if chapterBlocks.length > 0}
+                    <div class="space-y-3">
+                      {#each chapterBlocks as b (b.id)}
+                        <div class="group relative rounded hover:bg-base-100/40 -mx-2 px-2 py-0.5">
+                          {#if editingBlockId === b.id}
+                            <textarea class="textarea textarea-sm w-full text-[15px] leading-relaxed" rows={Math.max(3, Math.ceil(b.text.length / 40))} bind:value={editingText} disabled={$taskRunning}></textarea>
+                            <div class="flex gap-2 justify-end mt-1">
+                              <button class="btn btn-ghost btn-xs" on:click={cancelBlockOps}>{$t('common.cancel')}</button>
+                              <button class="btn btn-primary btn-xs" on:click={saveBlockEdit} disabled={$taskRunning || !editingText.trim()}>{$t('common.save')}</button>
+                            </div>
+                          {:else}
+                            <div class="whitespace-pre-wrap {b.type === 'scene_break' ? 'text-center text-base-content/40' : ''}">{b.text}</div>
+                            <div class="absolute right-1 top-0.5 hidden group-hover:flex gap-1 bg-base-200/90 rounded shadow px-1 py-0.5">
+                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.edit')} disabled={$taskRunning} on:click={() => startBlockEdit(b)}>✏️</button>
+                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.revise')} disabled={$taskRunning} on:click={() => startBlockRevise(b)}>🤖</button>
+                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.insertAfter')} disabled={$taskRunning} on:click={() => startBlockInsert(b.id)}>➕</button>
+                              <button class="btn btn-ghost btn-xs px-1.5 text-error" title={$t('writing.block.delete')} disabled={$taskRunning} on:click={() => deleteBlock(b)}>🗑</button>
+                            </div>
+                          {/if}
+                          {#if revisingBlockId === b.id}
+                            <div class="bg-base-100 rounded p-2 mt-1 space-y-1">
+                              <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={blockFeedback} placeholder={$t('writing.block.revisePlaceholder')} disabled={$taskRunning}></textarea>
+                              <div class="flex gap-2 justify-end">
+                                <button class="btn btn-ghost btn-xs" on:click={cancelBlockOps}>{$t('common.cancel')}</button>
+                                <button class="btn btn-primary btn-xs" on:click={submitBlockRevise} disabled={$taskRunning || !blockFeedback.trim()}>{$t('writing.block.reviseSubmit')}</button>
+                              </div>
+                            </div>
+                          {/if}
+                          {#if insertAfterId === b.id}
+                            <div class="bg-base-100 rounded p-2 mt-1 space-y-1">
+                              <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={insertText} placeholder={$t('writing.block.insertPlaceholder')} disabled={$taskRunning}></textarea>
+                              <div class="flex gap-2 justify-end">
+                                <button class="btn btn-ghost btn-xs" on:click={cancelBlockOps}>{$t('common.cancel')}</button>
+                                <button class="btn btn-primary btn-xs" on:click={saveBlockInsert} disabled={$taskRunning || !insertText.trim()}>{$t('writing.block.insertSubmit')}</button>
+                              </div>
+                            </div>
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  {:else}
+                    {displayContent}
                   {/if}
                 </div>
                 {#if quotePopover}

@@ -20,6 +20,12 @@ type ChapterState struct {
 	// ContentRev is a content hash for API responses; the frontend uses it to
 	// invalidate its per-chapter content cache. Never persisted.
 	ContentRev string `json:"content_rev,omitempty"`
+	// Blocks is the editable-block view of Content (one block per paragraph,
+	// stable IDs). Persisted in the chapter file, stripped from progress.json
+	// and /api/progress; ships with GET /api/chapters/{num}.
+	Blocks      []Block `json:"blocks,omitempty"`
+	NextBlockID int     `json:"next_block_id,omitempty"`
+	BlockSep    string  `json:"block_sep,omitempty"`
 }
 
 type ForeshadowStatus string
@@ -144,6 +150,9 @@ func SaveProgress(path string, p *Progress) error {
 	meta.Chapters = make([]ChapterState, len(p.Chapters))
 	for i, ch := range p.Chapters {
 		ch.Content = ""
+		ch.Blocks = nil
+		ch.NextBlockID = 0
+		ch.BlockSep = ""
 		meta.Chapters[i] = ch
 	}
 	data, err := json.MarshalIndent(&meta, "", "  ")

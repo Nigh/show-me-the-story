@@ -17,9 +17,12 @@ import (
 
 // chapterFile is the on-disk shape of chapters/NNNNNN.json.
 type chapterFile struct {
-	Num     int    `json:"num"`
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	Num         int     `json:"num"`
+	Title       string  `json:"title"`
+	Content     string  `json:"content"`
+	Blocks      []Block `json:"blocks,omitempty"`
+	NextBlockID int     `json:"next_block_id,omitempty"`
+	BlockSep    string  `json:"block_sep,omitempty"`
 }
 
 func chaptersDir(progressPath string) string {
@@ -84,7 +87,11 @@ func saveChapterFiles(progressPath string, p *Progress) error {
 			continue
 		}
 		ch.WordCount = countProseUnits(ch.Content)
-		data, err := json.MarshalIndent(chapterFile{Num: ch.Num, Title: ch.Title, Content: ch.Content}, "", "  ")
+		syncChapterBlocks(ch)
+		data, err := json.MarshalIndent(chapterFile{
+			Num: ch.Num, Title: ch.Title, Content: ch.Content,
+			Blocks: ch.Blocks, NextBlockID: ch.NextBlockID, BlockSep: ch.BlockSep,
+		}, "", "  ")
 		if err != nil {
 			return fmt.Errorf("序列化第 %d 章失败: %w", ch.Num, err)
 		}
@@ -137,6 +144,12 @@ func loadChapterContents(progressPath string, p *Progress) {
 			continue
 		}
 		ch.Content = cf.Content
+		ch.Blocks = cf.Blocks
+		ch.NextBlockID = cf.NextBlockID
+		ch.BlockSep = cf.BlockSep
+		if len(ch.Blocks) == 0 && ch.Content != "" {
+			syncChapterBlocks(ch)
+		}
 		if ch.WordCount == 0 && ch.Content != "" {
 			ch.WordCount = countProseUnits(ch.Content)
 		}
@@ -171,6 +184,9 @@ func progressView(p *Progress) *Progress {
 			ch.WordCount = 0
 		}
 		ch.Content = ""
+		ch.Blocks = nil
+		ch.NextBlockID = 0
+		ch.BlockSep = ""
 		cp.Chapters[i] = ch
 	}
 	if len(p.MemoryEntries) > 0 {

@@ -108,6 +108,14 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "章节 %s 不存在",
 		LangEN: "Chapter %s not found",
 	},
+	"block_not_found": {
+		LangZH: "指定的段落 block 不存在",
+		LangEN: "The specified block does not exist",
+	},
+	"block_text_required": {
+		LangZH: "block 内容不能为空",
+		LangEN: "Block text is required",
+	},
 	"phase_not_outline": {
 		LangZH: "当前不在大纲阶段",
 		LangEN: "Not in outline phase",

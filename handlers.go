@@ -479,6 +479,168 @@ func (h *Handlers) GetChapterContent(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, ch)
 }
 
+// —— Block 编辑（v3）——
+
+// parseChapterBlockIDs extracts {num} and {id} path values.
+func parseChapterBlockIDs(r *http.Request) (num, id int, err error) {
+	if _, err = fmt.Sscanf(r.PathValue("num"), "%d", &num); err != nil {
+		return
+	}
+	_, err = fmt.Sscanf(r.PathValue("id"), "%d", &id)
+	return
+}
+
+// blockEditChapter locates the chapter, runs edit, saves, and responds with
+// the updated chapter (incl. blocks).
+func (h *Handlers) blockEditChapter(w http.ResponseWriter, r *http.Request, num int, edit func(ch *ChapterState) error) {
+	idx := findChapterIdx(h.state, num)
+	if idx < 0 {
+		h.writeErrorReq(w, r, http.StatusNotFound, "chapter_n_not_found", num)
+		return
+	}
+	ch := &h.state.Chapters[idx]
+	if len(ch.Blocks) == 0 && ch.Content != "" {
+		syncChapterBlocks(ch)
+	}
+	if err := edit(ch); err != nil {
+		if err == errBlockNotFound {
+			h.writeErrorReq(w, r, http.StatusNotFound, "block_not_found")
+		} else {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
+		}
+		return
+	}
+	if err := SaveProgress(h.progressPath, h.state); err != nil {
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		return
+	}
+	SaveChapterMarkdown(h.projectDir(), *ch, h.state.Title)
+	h.broadcastProgress()
+	resp := *ch
+	if resp.Content != "" {
+		resp.WordCount = countProseUnits(resp.Content)
+		resp.ContentRev = fmt.Sprintf("%x", hashContent(resp.Content))
+	}
+	h.writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handlers) PutChapterBlock(w http.ResponseWriter, r *http.Request) {
+	if h.rejectIfTaskRunning(w, r) {
+		return
+	}
+	num, id, err := parseChapterBlockIDs(r)
+	if err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_chapter_num")
+		return
+	}
+	var body struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Text) == "" {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "block_text_required")
+		return
+	}
+	h.blockEditChapter(w, r, num, func(ch *ChapterState) error {
+		return UpdateBlock(ch, id, body.Text)
+	})
+}
+
+func (h *Handlers) DeleteChapterBlock(w http.ResponseWriter, r *http.Request) {
+	if h.rejectIfTaskRunning(w, r) {
+		return
+	}
+	num, id, err := parseChapterBlockIDs(r)
+	if err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_chapter_num")
+		return
+	}
+	h.blockEditChapter(w, r, num, func(ch *ChapterState) error {
+		return DeleteBlock(ch, id)
+	})
+}
+
+func (h *Handlers) PostChapterBlockInsert(w http.ResponseWriter, r *http.Request) {
+	if h.rejectIfTaskRunning(w, r) {
+		return
+	}
+	numStr := r.PathValue("num")
+	var num int
+	if _, err := fmt.Sscanf(numStr, "%d", &num); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_chapter_num")
+		return
+	}
+	var body struct {
+		AfterID int    `json:"after_id"`
+		Text    string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Text) == "" {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "block_text_required")
+		return
+	}
+	h.blockEditChapter(w, r, num, func(ch *ChapterState) error {
+		_, err := InsertBlockAfter(ch, body.AfterID, body.Text)
+		return err
+	})
+}
+
+// PostChapterBlockRevise runs an async AI revision scoped to one block.
+func (h *Handlers) PostChapterBlockRevise(w http.ResponseWriter, r *http.Request) {
+	num, id, err := parseChapterBlockIDs(r)
+	if err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_chapter_num")
+		return
+	}
+
+	var body struct {
+		Feedback string `json:"feedback"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Feedback) == "" {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_feedback")
+		return
+	}
+
+	idx := findChapterIdx(h.state, num)
+	if idx < 0 {
+		h.writeErrorReq(w, r, http.StatusNotFound, "chapter_n_not_found", num)
+		return
+	}
+	if len(h.state.Chapters[idx].Blocks) == 0 && h.state.Chapters[idx].Content != "" {
+		syncChapterBlocks(&h.state.Chapters[idx])
+	}
+	if findBlockIdx(&h.state.Chapters[idx], id) < 0 {
+		h.writeErrorReq(w, r, http.StatusNotFound, "block_not_found")
+		return
+	}
+
+	if !h.tryStartTask() {
+		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
+		return
+	}
+
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("block_revision")
+		ctx := h.taskCtx
+
+		h.logger.InfoKey("log.block_revising", num, id)
+		err := ReviseBlockAction(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, num, id, body.Feedback, h.settings, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.WarnKey("log.chapter_revise_cancelled")
+			} else {
+				h.logger.ErrorKey("log.chapter_revise_failed", err)
+			}
+			h.logger.TaskEnd("block_revision", false)
+			return
+		}
+
+		h.logger.TaskEnd("block_revision", true)
+		h.broadcastProgress()
+	}()
+
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
 // GetBookExport streams the whole book as plain text.
 func (h *Handlers) GetBookExport(w http.ResponseWriter, r *http.Request) {
 	lang := LangZH
