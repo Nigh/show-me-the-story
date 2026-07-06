@@ -95,12 +95,27 @@ type MemoryEntry struct {
 	Snippet string `json:"snippet,omitempty"`
 }
 
+// Arc is a volume-level unit of the hierarchical outline (v3). Chapter
+// outlines are generated arc by arc so books with 1000+ chapters never need
+// a single outline call. Status is derived from the chapters in range.
+type Arc struct {
+	ID      int    `json:"id"`
+	Title   string `json:"title"`
+	Goal    string `json:"goal"`
+	StartCh int    `json:"start_ch"`
+	EndCh   int    `json:"end_ch"`
+	// Summary is filled by AI once every chapter in range is accepted; it
+	// replaces per-chapter context for completed arcs in later prompts.
+	Summary string `json:"summary,omitempty"`
+}
+
 type Progress struct {
 	Phase                       string                   `json:"phase"`
 	Title                       string                   `json:"title"`
 	CorePrompt                  string                   `json:"core_prompt"`
 	StorySynopsis               string                   `json:"story_synopsis"`
 	Chapters                    []ChapterState           `json:"chapters"`
+	Arcs                        []Arc                    `json:"arcs,omitempty"`
 	CurrentChapterIndex         int                      `json:"current_chapter_index"`
 	StoryConfigSnapshot         *StoryConfig             `json:"story_config_snapshot,omitempty"`
 	Foreshadows                 []Foreshadow             `json:"foreshadows,omitempty"`

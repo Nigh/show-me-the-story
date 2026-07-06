@@ -530,6 +530,46 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "叙事记忆保存失败",
 		LangEN: "Failed to save narrative memory",
 	},
+	"log.arc_skeleton_generating": {
+		LangZH: "正在生成全书卷骨架...",
+		LangEN: "Generating book arc skeleton...",
+	},
+	"log.arc_outline_generating": {
+		LangZH: "正在生成第 %d 卷章纲...",
+		LangEN: "Generating chapter outlines for arc %d...",
+	},
+	"log.arc_task_cancelled": {
+		LangZH: "卷任务已取消",
+		LangEN: "Arc task cancelled",
+	},
+	"log.arc_task_failed": {
+		LangZH: "卷任务失败: %s",
+		LangEN: "Arc task failed: %s",
+	},
+	"log.arc_skeleton_done": {
+		LangZH: "卷骨架生成完成：共 %d 卷 / %d 章",
+		LangEN: "Arc skeleton generated: %d arcs / %d chapters",
+	},
+	"log.arc_outline_done": {
+		LangZH: "第 %d 卷章纲生成完成（%d 章）",
+		LangEN: "Arc %d chapter outlines generated (%d chapters)",
+	},
+	"log.arc_summary_generating": {
+		LangZH: "正在生成第 %d 卷卷摘要...",
+		LangEN: "Generating summary for arc %d...",
+	},
+	"log.arc_summary_failed": {
+		LangZH: "第 %d 卷卷摘要生成失败：%v（不影响写作）",
+		LangEN: "Arc %d summary generation failed: %v (writing unaffected)",
+	},
+	"log.arc_summary_done": {
+		LangZH: "第 %d 卷卷摘要已生成",
+		LangEN: "Arc %d summary saved",
+	},
+	"log.arc_save_failed": {
+		LangZH: "保存进度失败：%v",
+		LangEN: "Failed to save progress: %v",
+	},
 	"log.postprocess_material": {
 		LangZH: "全书材料：约 %d 字，预估 %d tokens，诊断模式：%s",
 		LangEN: "Book material: ~%d chars, ~%d tokens, diagnosis mode: %s",

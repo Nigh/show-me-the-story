@@ -8,7 +8,8 @@
   $: displayTitle = $config?.story?.title || p?.title || '';
   $: displaySynopsis = $config?.story?.story_synopsis || p?.story_synopsis || '';
   $: chapters = p?.chapters || [];
-  $: hasOutline = chapters.length > 0;
+  $: arcs = p?.arcs || [];
+  $: hasOutline = chapters.length > 0 || arcs.length > 0;
   $: hasAccepted = chapters.some(c => c.status === 'accepted');
   $: inOutlinePhase = p?.phase === 'outline';
   $: pendingCount = chapters.filter(c => c.status === 'pending').length;
@@ -37,6 +38,49 @@
     try {
       await api('POST', '/api/outline/generate');
       addToast($t('outline.toasts.outlineStarted'), 'info');
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  // 卷（arc）操作
+  let arcReqOpenId = -1;
+  let arcRequirements = '';
+  let showAppendArc = false;
+  let appendArcTitle = '';
+  let appendArcGoal = '';
+  let appendArcCount = 20;
+
+  function arcChapterCounts(arc) {
+    const inRange = chapters.filter(c => c.num >= arc.start_ch && c.num <= arc.end_ch);
+    return { outlined: inRange.length, total: arc.end_ch - arc.start_ch + 1 };
+  }
+
+  async function generateSkeleton() {
+    try {
+      await api('POST', '/api/arcs/skeleton');
+      addToast($t('outline.toasts.skeletonStarted'), 'info');
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  async function generateArcOutline(arc) {
+    try {
+      await api('POST', `/api/arcs/${arc.id}/outline`, { requirements: arcReqOpenId === arc.id ? arcRequirements.trim() : '' });
+      addToast($t('outline.toasts.arcOutlineStarted'), 'info');
+      arcReqOpenId = -1;
+      arcRequirements = '';
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  async function appendArc() {
+    try {
+      await api('POST', '/api/arcs/append', {
+        title: appendArcTitle.trim(),
+        goal: appendArcGoal.trim(),
+        chapter_count: Number(appendArcCount) || 20,
+      });
+      addToast($t('outline.toasts.arcAppendStarted'), 'info');
+      showAppendArc = false;
+      appendArcTitle = '';
+      appendArcGoal = '';
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -150,8 +194,10 @@
       <p class="text-sm text-base-content/35 mb-6">{$t('outline.empty.hint')}</p>
       <div class="flex justify-center gap-2">
         <button class="btn btn-primary btn-sm" on:click={generateOutline} disabled={$taskRunning}>{$t('outline.btn.generate')}</button>
+        <button class="btn btn-secondary btn-sm" on:click={generateSkeleton} disabled={$taskRunning}>{$t('outline.btn.skeleton')}</button>
         <button class="btn btn-ghost btn-sm" on:click={() => showImport = !showImport} disabled={$taskRunning}>{$t('outline.btn.import')}</button>
       </div>
+      <p class="text-xs text-base-content/35 mt-2">{$t('outline.empty.arcHint')}</p>
     </div>
 
     {#if showImport}
@@ -291,6 +337,59 @@
         {/if}
       </div>
     </div>
+
+    <!-- 卷结构（层级大纲） -->
+    {#if arcs.length > 0}
+      <div class="card bg-base-200 shadow-sm">
+        <div class="card-body p-4 gap-2">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-semibold text-base-content/60">{$t('outline.arcs.title')} <span class="font-normal text-base-content/35">({arcs.length})</span></h4>
+            <button class="btn btn-ghost btn-xs" on:click={() => showAppendArc = !showAppendArc} disabled={$taskRunning}>{$t('outline.arcs.append')}</button>
+          </div>
+
+          {#if showAppendArc}
+            <div class="bg-base-300 rounded-lg p-3 space-y-2">
+              <div class="flex gap-2">
+                <input type="text" class="input input-sm flex-1" bind:value={appendArcTitle} placeholder={$t('outline.arcs.appendTitle')} disabled={$taskRunning} />
+                <input type="number" min="1" max="100" class="input input-sm w-20" bind:value={appendArcCount} disabled={$taskRunning} title={$t('outline.arcs.appendCount')} />
+              </div>
+              <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={appendArcGoal} placeholder={$t('outline.arcs.appendGoal')} disabled={$taskRunning}></textarea>
+              <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost btn-xs" on:click={() => showAppendArc = false}>{$t('common.cancel')}</button>
+                <button class="btn btn-primary btn-xs" on:click={appendArc} disabled={$taskRunning}>{$t('outline.arcs.appendSubmit')}</button>
+              </div>
+            </div>
+          {/if}
+
+          <div class="space-y-1.5">
+            {#each arcs as arc, i (arc.id)}
+              {@const counts = arcChapterCounts(arc)}
+              <div class="bg-base-300 rounded-lg p-2.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-bold text-base-content/40 shrink-0">{$t('outline.arcs.volLabel', { n: i + 1 })}</span>
+                  <span class="text-sm font-medium flex-1 min-w-0 truncate">{arc.title}</span>
+                  <span class="text-xs text-base-content/40 shrink-0">{$t('outline.arcs.range', { start: arc.start_ch, end: arc.end_ch })}</span>
+                  <span class="badge badge-xs {counts.outlined >= counts.total ? 'badge-success' : 'badge-ghost'}">{$t('outline.arcs.outlined', { n: counts.outlined, total: counts.total })}</span>
+                  {#if arc.summary}
+                    <span class="badge badge-xs badge-info">{$t('outline.arcs.summaryDone')}</span>
+                  {/if}
+                  <button class="btn btn-primary btn-xs shrink-0" on:click={() => generateArcOutline(arc)} disabled={$taskRunning}>
+                    {counts.outlined > 0 ? $t('outline.arcs.regenOutline') : $t('outline.arcs.genOutline')}
+                  </button>
+                  <button class="btn btn-ghost btn-xs shrink-0" on:click={() => { arcReqOpenId = arcReqOpenId === arc.id ? -1 : arc.id; arcRequirements = ''; }} disabled={$taskRunning}>+</button>
+                </div>
+                {#if arc.goal}
+                  <p class="text-xs text-base-content/50 mt-1 line-clamp-2">{arc.goal}</p>
+                {/if}
+                {#if arcReqOpenId === arc.id}
+                  <textarea class="textarea textarea-sm w-full h-14 text-sm mt-2" bind:value={arcRequirements} placeholder={$t('outline.arcs.reqPlaceholder')} disabled={$taskRunning}></textarea>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <!-- 章节大纲列表 -->
     <div class="card bg-base-200 shadow-sm">

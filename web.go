@@ -57,6 +57,9 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	mux.HandleFunc("POST /api/outline/generate-continuation", h.PostOutlineGenerateContinuation)
 	mux.HandleFunc("POST /api/outline/characters/confirm", h.PostOutlineCharactersConfirm)
 	mux.HandleFunc("PUT /api/outline/{num}", h.PutChapterOutline)
+	mux.HandleFunc("POST /api/arcs/skeleton", h.PostArcSkeleton)
+	mux.HandleFunc("POST /api/arcs/{id}/outline", h.PostArcOutline)
+	mux.HandleFunc("POST /api/arcs/append", h.PostArcAppend)
 
 	mux.HandleFunc("GET /api/chapters/{num}", h.GetChapterContent)
 	mux.HandleFunc("PUT /api/chapters/{num}/blocks/{id}", h.PutChapterBlock)

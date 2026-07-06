@@ -70,6 +70,9 @@ type PromptsConfig struct {
 	BookConsistencyCheck          string `json:"book_consistency_check"`
 	BookRoadmap                   string `json:"book_roadmap"`
 	MemoryUpdate                  string `json:"memory_update"`
+	ArcSkeleton                   string `json:"arc_skeleton"`
+	ArcChapterOutline             string `json:"arc_chapter_outline"`
+	ArcSummary                    string `json:"arc_summary"`
 }
 
 func DefaultAPIConfig() *APIConfig {
@@ -261,6 +264,15 @@ func (p *PromptsConfig) applyDefaults(lang string) {
 	}
 	if p.MemoryUpdate == "" {
 		p.MemoryUpdate = defaults.MemoryUpdate
+	}
+	if p.ArcSkeleton == "" {
+		p.ArcSkeleton = defaults.ArcSkeleton
+	}
+	if p.ArcChapterOutline == "" {
+		p.ArcChapterOutline = defaults.ArcChapterOutline
+	}
+	if p.ArcSummary == "" {
+		p.ArcSummary = defaults.ArcSummary
 	}
 }
 
