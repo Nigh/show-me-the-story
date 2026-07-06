@@ -45,7 +45,6 @@ type Handlers struct {
 	taskTokens  *TaskTokenUsage
 	autoConfirm bool // 自动确认模式：章节生成完成后自动确认并继续生成下一章
 
-	pendingContinueContent string
 	lastChatMessage        string      // 缓存最后发送的聊天消息，用于重试
 	lastReconcileBody      StoryConfig // 缓存最后的设定协调请求
 }
@@ -1729,87 +1728,103 @@ func (h *Handlers) PostForeshadowsConfirm(w http.ResponseWriter, r *http.Request
 	h.writeJSON(w, http.StatusOK, h.state.Foreshadows)
 }
 
-func (h *Handlers) PostContinueImport(w http.ResponseWriter, r *http.Request) {
+// —— v3 导入流水线 handlers ——
+
+// PostImportSplit 本地切章预览（同步，无 AI）。不持久化任何内容。
+func (h *Handlers) PostImportSplit(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w, r) {
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Content) == "" {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_content")
+		return
+	}
+	chapters, _ := splitImportContent(body.Content)
+	h.writeJSON(w, http.StatusOK, map[string]any{"chapters": buildImportPreview(chapters)})
+}
+
+// PostImportStart 开始导入流水线（异步）：切章落盘 → 元信息分析 → 逐章大纲/摘要（断点续跑）→ 分卷汇总。
+func (h *Handlers) PostImportStart(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w, r) {
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Content) == "" {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_content")
+		return
+	}
+	if len(h.state.Chapters) > 0 {
+		h.writeErrorReq(w, r, http.StatusConflict, "import_project_not_empty")
+		return
+	}
 	if !h.tryStartTask() {
 		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
 		return
 	}
-
-	var body struct {
-		Content string `json:"content"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Content == "" {
-		h.endTask()
-		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_content")
-		return
-	}
-
 	go func() {
 		defer h.endTask()
-		h.logger.TaskStart("continue_analysis")
+		h.logger.TaskStart("import_pipeline")
 		ctx := h.taskCtx
-
-		h.logger.InfoKey("log.continue_analyzing")
-		analysis, err := AnalyzeExistingContent(ctx, h.apiCfg, h.cfg, body.Content)
-
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.continue_analyze_cancelled")
-				h.logger.TaskEnd("continue_analysis", false)
-			} else {
-				h.logger.ErrorKey("log.continue_analyze_failed", err)
-				h.logger.TaskEnd("continue_analysis", false)
-			}
-			return
-		}
-
-		h.pendingContinueContent = body.Content
-
-		h.logger.SuccessKey("log.continue_analyze_done", len(analysis.Chapters))
-		h.logger.TaskEnd("continue_analysis", true)
-		h.logger.ContinueAnalysisResult(analysis)
+		err := ImportStartAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, body.Content, h.progressPath, h.cfgPath, ImportStatePath(h.projectDir()), h.logger)
+		h.finishImportTask(ctx, err)
 	}()
-
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
-func (h *Handlers) PostContinueConfirm(w http.ResponseWriter, r *http.Request) {
-	if h.isTaskRunning() {
+// PostImportResume 从断点恢复导入流水线（异步）。
+func (h *Handlers) PostImportResume(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w, r) {
+		return
+	}
+	if LoadImportState(ImportStatePath(h.projectDir())) == nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "import_nothing_to_resume")
+		return
+	}
+	if !h.tryStartTask() {
 		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
 		return
 	}
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("import_pipeline")
+		ctx := h.taskCtx
+		err := ImportResumeAction(ctx, h.apiCfg, h.cfg, h.state, ImportStatePath(h.projectDir()), h.progressPath, h.cfgPath, h.logger)
+		h.finishImportTask(ctx, err)
+	}()
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
 
-	if h.state.Phase != "outline" {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "continue_reset_first")
+func (h *Handlers) finishImportTask(ctx context.Context, err error) {
+	if err != nil {
+		if ctx.Err() != nil {
+			h.logger.WarnKey("log.import_task_cancelled")
+		} else {
+			h.logger.ErrorKey("log.import_task_failed", err.Error())
+		}
+		h.logger.TaskEnd("import_pipeline", false)
+		h.broadcastProgress()
 		return
 	}
+	h.logger.TaskEnd("import_pipeline", true)
+	h.broadcastProgress()
+}
 
-	if h.pendingContinueContent == "" {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "continue_analyze_first")
+// GetImportStatus 查询导入断点状态（同步）。
+func (h *Handlers) GetImportStatus(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w, r) {
 		return
 	}
-
-	var analysis ContinueAnalysis
-	if err := json.NewDecoder(r.Body).Decode(&analysis); err != nil {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
+	st := LoadImportState(ImportStatePath(h.projectDir()))
+	if st == nil {
+		h.writeJSON(w, http.StatusOK, map[string]any{"active": false})
 		return
 	}
-
-	if len(analysis.Chapters) == 0 {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "analysis_no_chapters")
-		return
-	}
-
-	content := h.pendingContinueContent
-	h.pendingContinueContent = ""
-
-	if err := ImportContinueAction(h.cfg, h.state, &analysis, content, h.progressPath, h.cfgPath); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "continue_import_failed", err.Error())
-		return
-	}
-
-	h.logger.SuccessKey("log.continue_import_done")
-	h.writeJSON(w, http.StatusOK, progressView(h.state))
+	h.writeJSON(w, http.StatusOK, st)
 }
 
 func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *http.Request) {

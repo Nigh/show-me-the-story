@@ -29,7 +29,6 @@ export const autoConfirm = writable(false);
 export const chatSessions = writable(null);
 export const currentChatSession = writable(null);
 
-export const continueAnalysis = writable(null);
 export const editingChapterNum = writable(-1);
 export const editingCharID = writable(null);
 export const editingWvID = writable(null);

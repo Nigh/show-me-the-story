@@ -58,7 +58,6 @@ type PromptsConfig struct {
 	OutlineRevision               string `json:"outline_revision"`
 	ForeshadowPlanning            string `json:"foreshadow_planning"`
 	ForeshadowUpdate              string `json:"foreshadow_update"`
-	ContentAnalysis               string `json:"content_analysis"`
 	ContinuationOutlineGeneration string `json:"continuation_outline_generation"`
 	SettingsReconciliation        string `json:"settings_reconciliation"`
 	TransitionSmoothing           string `json:"transition_smoothing"`
@@ -73,6 +72,8 @@ type PromptsConfig struct {
 	ArcSkeleton                   string `json:"arc_skeleton"`
 	ArcChapterOutline             string `json:"arc_chapter_outline"`
 	ArcSummary                    string `json:"arc_summary"`
+	ImportMetaAnalysis            string `json:"import_meta_analysis"`
+	ImportChapterAnalysis         string `json:"import_chapter_analysis"`
 }
 
 func DefaultAPIConfig() *APIConfig {
@@ -229,9 +230,6 @@ func (p *PromptsConfig) applyDefaults(lang string) {
 	if p.ForeshadowUpdate == "" {
 		p.ForeshadowUpdate = defaults.ForeshadowUpdate
 	}
-	if p.ContentAnalysis == "" {
-		p.ContentAnalysis = defaults.ContentAnalysis
-	}
 	if p.ContinuationOutlineGeneration == "" {
 		p.ContinuationOutlineGeneration = defaults.ContinuationOutlineGeneration
 	}
@@ -273,6 +271,12 @@ func (p *PromptsConfig) applyDefaults(lang string) {
 	}
 	if p.ArcSummary == "" {
 		p.ArcSummary = defaults.ArcSummary
+	}
+	if p.ImportMetaAnalysis == "" {
+		p.ImportMetaAnalysis = defaults.ImportMetaAnalysis
+	}
+	if p.ImportChapterAnalysis == "" {
+		p.ImportChapterAnalysis = defaults.ImportChapterAnalysis
 	}
 }
 

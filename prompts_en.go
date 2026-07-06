@@ -272,38 +272,6 @@ Return JSON:
 Only return foreshadows whose state changed. Omit any foreshadow not touched in this chapter.
 Output strict JSON only.`,
 
-	ContentAnalysis: `You are a professional novel analysis editor. Analyse the existing novel text, extract story metadata, and produce per-chapter outline + summary entries.
-
-Return JSON in this structure:
-{
-  "title": "Novel title",
-  "story_type": "Genre (fantasy/urban/sci-fi/mystery, etc.)",
-  "core_prompt": "Core writing prompt (system-level guideline for downstream chapters)",
-  "story_synopsis": "Synopsis",
-  "writing_style": "Writing-style description",
-  "writing_pov": "Narrative POV (e.g. third-person limited, first-person heroine, alternating first-person leads)",
-  "chapters": [
-    {
-      "num": 1,
-      "title": "Chapter title",
-      "outline": "Chapter outline (what happens, 100-200 words)",
-      "summary": "Structured summary (for downstream story-so-far, under 200 words: core events, psychological arc, state changes, key details)"
-    }
-  ]
-}
-
-Requirements:
-1. Detect chapter boundaries (common formats: "Chapter X", "# Chapter X", blank-line separators, etc.).
-2. For each chapter produce: outline (what happens) and summary (structured story-so-far for downstream chapters).
-3. summary should retain continuation-relevant state: core events, psychological arc, key details, emotional palette.
-4. Extract story metadata: genre, writing style, narrative POV, character settings, worldview.
-5. Generate core_prompt and story_synopsis to guide downstream writing.
-
-[Existing novel text]
-{{.ExistingContent}}
-
-Output strict JSON only.`,
-
 	ContinuationOutlineGeneration: `You are a professional novel-planning editor. Based on existing chapters' outlines and summaries, produce the outline for the next chapters.
 
 [Title] {{.Title}}
@@ -725,4 +693,35 @@ Requirements:
 2. Must preserve: one-time events (first meetings, identity reveals, relationship milestones, major deaths), changes in the protagonist's power/status/understanding, and unresolved hooks or foreshadowing left at arc end
 3. Compress side plots to a sentence; drop details with no narrative continuity value
 4. Output the summary text only, nothing else`,
+
+	ImportMetaAnalysis: `You are a professional fiction editor. The user is importing a published novel. Below are an opening excerpt and the chapter title list. Analyze them and extract the work's metadata.
+
+[Opening excerpt]
+{{.OpeningExcerpt}}
+
+[Chapter titles]
+{{.ChapterTitles}}
+
+Return JSON:
+{
+  "title": "book title (inferred from the text; leave empty if unclear)",
+  "story_type": "genre (e.g. urban fantasy, epic fantasy, mystery)",
+  "core_prompt": "core writing prompt: 100-200 words capturing the work's core premise and appeal, used as guidance for AI continuation",
+  "story_synopsis": "story synopsis (150-300 words based on the existing content)",
+  "writing_style": "writing style description (40-120 words: diction, pacing, atmosphere)",
+  "writing_pov": "narrative POV (e.g. third person limited, first person male lead)"
+}
+Return strict JSON only, nothing else.`,
+
+	ImportChapterAnalysis: `You are a precise narrative analyst. Below is the text of chapter {{.ChapterNum}} "{{.ChapterTitle}}" of "{{.Title}}". Produce a chapter outline and a recap summary to serve as context for later continuation.
+
+[Chapter text]
+{{.ChapterContent}}
+
+Return JSON:
+{
+  "outline": "chapter outline ({{.OutlineMinWords}}-{{.OutlineMaxWords}} words: opening scene, core conflict, key turn, characters on stage and their roles, end-of-chapter direction)",
+  "summary": "recap summary (100-250 words, including a [Character updates] item: characters appearing this chapter, first meetings, identity reveals, relationship milestones and other one-time events must be recorded explicitly)"
+}
+Return strict JSON only, nothing else.`,
 }

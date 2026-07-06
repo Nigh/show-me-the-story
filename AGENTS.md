@@ -54,7 +54,8 @@ task dev                              # 编译并启动 Go 后端
                   ├─ writing_length.go ← 章节正文字数区间计算 + 生成/重写/压缩扩展 + 超限警告
                   ├─ prose_units.go   ← 正文字数统计（CJK 逐字 + 拉丁 token 计 1，连接符 . , - # 内吸收）
                   ├─ foreshadow.go  ← 伏笔系统
-                  ├─ continue.go    ← 续写功能（导入分析）
+                  ├─ continue.go    ← 续写大纲生成
+                  ├─ importer.go    ← 导入流水线（本地切章 + 逐章分析 + 断点续跑）
                   ├─ reconcile.go   ← 设定协调逻辑（AI 自动兼容新旧设定）
                   ├─ config_guard.go ← 用户已填配置保护：冲突检测、pending 提案持久化、合并应用
                   ├─ settings.go    ← 结构化设定（角色/世界观/组织/关系）CRUD + 持久化
@@ -96,7 +97,9 @@ task dev                              # 编译并启动 Go 后端
 | `foreshadow.go` | `SuggestForeshadows`、`UpdateForeshadows`、伏笔格式化注入、伏笔告警、`BuildForeshadowRoadmapMarkdown`、`SaveForeshadowRoadmap`、`syncForeshadowsAfterChapter`、`NextForeshadowID` |
 | `foreshadow_consistency.go` | `CheckForeshadowOutlineConsistency`、`RunForeshadowOutlineCheckAndSave`（大纲/伏笔变更后自动检查，报告写入 `progress.last_foreshadow_outline_report`） |
 | `writing_conflict.go` | `analyzeWritingConflict`、`WritingConflictError`、事实核查多次失败后的根因分析与用户处理选项 |
-| `continue.go` | `AnalyzeExistingContent`、`ImportContinueAction`、`GenerateContinuationOutline`、`splitContentByChapters` |
+| `continue.go` | `GenerateContinuationOutline`（生成后续大纲；导入流水线见 `importer.go`） |
+| `importer.go` | **v3 导入流水线**：`splitImportContent`（本地切章：标题正则 + 无标题按 ~6000 字块切分）、`buildImportPreview`、`ImportState`/`Load/SaveImportState`（`import.json` 断点）、`ImportStartAction`（切章落盘为 accepted → 元信息分析 → 逐章 outline/summary，每章一个检查点）、`ImportResumeAction`（断点续跑，跳过已处理章节）、`createImportArcs`（≥40 章自动分卷 30 章/卷 + `EnsureArcSummaries`） |
+| `importer_test.go` | 导入单测：标题切章/前言提取、无标题分块、预览构建、断点 roundtrip、自动分卷 |
 | `reconcile.go` | `ReconcileSettingsAction`（保持用户提交的 `newSettings`，AI 调整差异写入 pending 提案）、`regeneratePendingOutlines`、设定协调逻辑 |
 | `config_guard.go` | `ConfigFieldChange`/`PendingConfigChanges` 结构体，`collectStoryConfigConflicts`、`applyStoryConfigMerge`、`applyOutlineMetaWithGuard`、`Load/SavePendingConfigChanges`（`pending_config_changes.json`）、`applySelectedPendingChanges` |
 | `settings.go` | `Character`、`WorldviewEntry`、`Organization`、`Relation`、`ProjectSettings` 结构体，`LoadProjectSettings`、`SaveProjectSettings`、`buildCharacterContext`、`buildWorldviewContext` |
@@ -143,7 +146,7 @@ task dev                              # 编译并启动 Go 后端
 | `src/lib/i18n/zh.js`, `en.js` | 扁平 key 字典；新增可见文案必须同时在两个文件加 key |
 | `src/pages/Projects.svelte` | 项目选择页：新建项目（名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`）+ 项目列表（每项显示语言 badge，可选择/删除）；选中项目后 `setLocale(project.language)` |
 | `src/pages/Config.svelte` | 配置页：API 配置（含 `url_strict` 严格 URL 模式、解析后 endpoint 预览、上下文预算 tokens）、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、写作风格与叙述视角、AI 配置变更确认面板（`ConfigChangePanel`）、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；任务运行时所有输入控件禁用 |
-| `src/pages/Outline.svelte` | 大纲页：直接操作按钮（生成/确认/修订意见/删除/生成后续大纲）+ **卷结构面板**（生成卷骨架、按卷生成/重生成章纲（可附本卷补充要求）、追加新卷）+ 导入续写 + pending 章节内联编辑 + 流式预览 + 标题/梗概展示优先 config（`preferUserValue` 一致）+ `ConfigChangePanel` + 未登记大纲人物确认面板（SSE `outline_character_suggestions`） |
+| `src/pages/Outline.svelte` | 大纲页：直接操作按钮（生成/确认/修订意见/删除/生成后续大纲）+ **卷结构面板**（生成卷骨架、按卷生成/重生成章纲（可附本卷补充要求）、追加新卷）+ **导入流水线**（本地切章预览 → 开始导入 → 断点恢复横幅，`GET /api/import/status` 探测）+ pending 章节内联编辑 + 流式预览 + 标题/梗概展示优先 config（`preferUserValue` 一致）+ `ConfigChangePanel` + 未登记大纲人物确认面板（SSE `outline_character_suggestions`） |
 | `src/components/ConfigChangePanel.svelte` | AI 配置变更确认面板：展示 pending 提案（当前 vs 建议）、勾选采纳 / 全部忽略；SSE `config_change_proposal` 触发 |
 | `src/pages/Writing.svelte` | 写作页（v3：正文按需经 `GET /api/chapters/{num}` 拉取，`content_rev` 变化时刷新缓存；字数展示用索引里的 `word_count`；导出走 `GET /api/export/txt`；正文以 block 列表渲染，hover 出现 编辑/AI 修订/插入/删除 工具条，内联编辑与段落级 AI 修订）：章节列表（状态点）+ 直接操作（生成/确认/修改意见/去AI味，自动区分当前章修订与定向修订）+ 正文框选后浮动「引用到修改意见」按钮（插入 `> ` 引用行，触发段落级修订）+ 事实核查冲突处理面板（`pending_writing_conflict`，可选修改大纲/伏笔/重试/保留稿进入审核）+ 自动确认模式开关（toggle，随时可开关）+ 伏笔追踪摘要卡片（活跃/超期/临近回收）+ 优化章节衔接（进度卡片工具栏小按钮，已确认 ≥ 2 章时显示）+ 导出 TXT + 复制 + 上下章导航 + 流式尾部窗口展示（含「仅显示最新内容」提示；任务进行中当前章显示 taskTokenUsage，空闲时以 `countProseUnits` 显示正文字数）+ rAF 自动滚动（自动确认模式下自动跟随正在生成的章节）+ 全书完成后展示 `PostProcessPanel` |
 | `src/components/TaskTokenBadge.svelte` | 任务 token 展示（`↑ prompt ↓ completion tokens`）；对 `taskTokenUsage` 更新做线性 rAF 插值，动画时长 = `TOKEN_POLL_INTERVAL_MS`；目标值低于当前显示值时该维度从 0 重新向上插值（新一段统计或估算修正）；供 ChatPanel / App 顶栏 / Writing 页复用 |
@@ -422,20 +425,30 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 - 数据持久化：项目目录 `postprocess.json`（报告、工单、执行状态）
 - 单独重跑：`POST /api/postprocess/consistency`（仅核查）、`POST /api/postprocess/roadmap`（仅路线图）
 
-## 续写功能流程
+## 导入流水线（v3）
 
 ```
-大纲页空状态 → 点击"导入已有内容" → 展开 textarea
-  → 粘贴已有文本 → POST /api/continue/import (异步分析)
-  → SSE continue_analysis 事件返回 ContinueAnalysis
-  → 大纲页展示可编辑的元数据 + 章节大纲/摘要
-  → 用户编辑后点击"确认导入" → POST /api/continue/confirm
-  → ImportContinueAction：设置 Phase="outline"，已有章节 status=accepted
-  → 大纲页显示已导入的 accepted 章节 + "生成后续大纲"按钮
-  → POST /api/outline/generate-continuation (异步)
-  → 追加续写章节为 pending
-  → 确认大纲 → 进入写作阶段
+大纲页空状态 → 「导入已有内容」→ 粘贴全文
+  → POST /api/import/split（同步本地切章，无 AI）
+      标题正则：第X章/回、Chapter N、序章/楔子/尾声/Prologue/Epilogue；
+      无标题文本按 ~6000 字块切分（段落对齐，占位标题）
+  → 前端展示切章预览（章号/标题/字数/正文摘录），确认无误
+  → POST /api/import/start（异步，任务锁内）：
+      0. 切章落盘：全部章节 status=accepted 含正文，Phase="outline"（检查点零）
+      1. 元信息分析（ImportMetaAnalysis prompt：开篇节选 + 章节标题表 →
+         title/type/core_prompt/synopsis/style/pov；只填 config 空字段，用户已填值优先；
+         失败仅告警不阻塞）
+      2. 逐章处理：ImportChapterAnalysis prompt（正文截前 6000 字）→ outline + summary，
+         每章完成立即 SaveProgress + import.json 游标 +1（断点）
+      3. ≥40 章自动分卷（每卷 30 章，尾卷 <10 章并入前卷）→ EnsureArcSummaries 卷摘要
+      4. 完成删除 import.json
+  → 任务可随时 POST /api/task/stop；再次进入大纲页显示恢复横幅
+  → POST /api/import/resume 从断点继续（跳过已有 outline+summary 的章节）
+  → 导入完成后「生成后续大纲」（POST /api/outline/generate-continuation）
+     或「追加新卷」（POST /api/arcs/append）继续创作
 ```
+
+断点文件 `import.json`（项目目录）：`{active, total, cursor, meta_done, preamble}`；`GET /api/import/status` 查询。导入要求空项目（已有章节返回 409）。
 
 ## 设定协调流程
 
@@ -532,8 +545,10 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | POST | `/api/foreshadows` | 同步 | 手动创建伏笔 |
 | PUT | `/api/foreshadows/{id}` | 同步 | 更新伏笔 |
 | DELETE | `/api/foreshadows/{id}` | 同步 | 删除伏笔 |
-| POST | `/api/continue/import` | 异步 | 分析已有内容 |
-| POST | `/api/continue/confirm` | 同步 | 确认续写导入 |
+| POST | `/api/import/split` | 同步 | 本地切章预览（无 AI，不持久化） |
+| POST | `/api/import/start` | 异步 | 开始导入流水线（切章落盘 → 元信息 → 逐章分析 → 分卷汇总；仅空项目） |
+| POST | `/api/import/resume` | 异步 | 从断点恢复导入 |
+| GET | `/api/import/status` | 同步 | 查询导入断点状态（`{active, total, cursor, ...}`） |
 | GET | `/api/skills` | 同步 | 获取所有技能及启用状态 |
 | PUT | `/api/skills/{id}/toggle` | 同步 | 切换技能启用/禁用 |
 | GET | `/api/chat/sessions` | 同步 | 获取会话列表 |
@@ -558,7 +573,6 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | `outline_character_suggestions` | `OutlineCharacterSuggestion[]` | 大纲中出现但未在角色管理登记的人物建议 |
 | `foreshadow_outline_conflicts` | `ForeshadowOutlineReport` | 伏笔与大纲一致性检查发现冲突 |
 | `writing_conflict` | `WritingConflict` | 事实核查多次失败且无法自动调和，等待用户选择处理方向 |
-| `continue_analysis` | `ContinueAnalysis` | 续写分析结果 |
 | `settings_reconciled` | `{explanation, changed_fields}` | 设定协调完成 |
 | `config_change_proposal` | `ConfigFieldChange[]` | AI 建议修改用户已填配置字段（需用户在配置/大纲页确认采纳） |
 | `chat_chunk` | `{session_id, text}` | 助理流式回复 |
@@ -583,7 +597,8 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | `OutlineRevision` | `outline_revision` | 大纲修订 |
 | `ForeshadowPlanning` | `foreshadow_planning` | 伏笔规划 |
 | `ForeshadowUpdate` | `foreshadow_update` | 伏笔状态更新 |
-| `ContentAnalysis` | `content_analysis` | 续写内容分析 |
+| `ImportMetaAnalysis` | `import_meta_analysis` | 导入元信息分析（开篇节选 + 章节标题表 → 书名/类型/核心提示词/梗概/风格/视角） |
+| `ImportChapterAnalysis` | `import_chapter_analysis` | 导入逐章分析（单章正文 → 章节大纲 + 前情摘要，含【人物动态】一次性事件） |
 | `ContinuationOutlineGeneration` | `continuation_outline_generation` | 续写大纲生成 |
 | `SettingsReconciliation` | `settings_reconciliation` | 设定协调 |
 | `TransitionSmoothing` | `transition_smoothing` | 章节衔接优化（判断 + 最小化重写开头片段，无需修改时输出 NO_CHANGE） |

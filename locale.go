@@ -280,21 +280,13 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "请先生成大纲",
 		LangEN: "Generate an outline first",
 	},
-	"continue_reset_first": {
-		LangZH: "续写前请先重置进度",
-		LangEN: "Reset progress before importing continuation",
+	"import_project_not_empty": {
+		LangZH: "项目已有章节，只能在空项目中导入",
+		LangEN: "Project already has chapters; import only works in an empty project",
 	},
-	"continue_analyze_first": {
-		LangZH: "请先分析内容",
-		LangEN: "Analyse the content first",
-	},
-	"analysis_no_chapters": {
-		LangZH: "分析结果中没有任何章节",
-		LangEN: "Analysis result contains no chapters",
-	},
-	"continue_import_failed": {
-		LangZH: "导入续写失败: %s",
-		LangEN: "Failed to import continuation: %s",
+	"import_nothing_to_resume": {
+		LangZH: "没有待恢复的导入任务",
+		LangEN: "No interrupted import to resume",
 	},
 	"book_not_complete": {
 		LangZH: "全书尚未完成（需所有章节已确认）",

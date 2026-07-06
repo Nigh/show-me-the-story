@@ -180,26 +180,6 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "伏笔建议生成完成，共 %d 条",
 		LangEN: "Foreshadow suggestions ready (%d items)",
 	},
-	"log.continue_analyzing": {
-		LangZH: "正在分析已有内容...",
-		LangEN: "Analysing existing content...",
-	},
-	"log.continue_analyze_cancelled": {
-		LangZH: "内容分析已取消",
-		LangEN: "Content analysis cancelled",
-	},
-	"log.continue_analyze_failed": {
-		LangZH: "内容分析失败: %s",
-		LangEN: "Content analysis failed: %s",
-	},
-	"log.continue_analyze_done": {
-		LangZH: "内容分析完成，发现 %d 章",
-		LangEN: "Content analysis complete — found %d chapters",
-	},
-	"log.continue_import_done": {
-		LangZH: "续写导入完成，已进入大纲阶段。",
-		LangEN: "Continuation import complete — entered outline phase.",
-	},
 	"log.continuation_outline_generating": {
 		LangZH: "正在生成续写大纲...",
 		LangEN: "Generating continuation outline...",
@@ -569,6 +549,46 @@ var messageCatalog = map[string]map[string]string{
 	"log.arc_save_failed": {
 		LangZH: "保存进度失败：%v",
 		LangEN: "Failed to save progress: %v",
+	},
+	"log.import_split_done": {
+		LangZH: "本地切章完成：共 %d 章，开始逐章分析",
+		LangEN: "Local split done: %d chapters, starting per-chapter analysis",
+	},
+	"log.import_resuming": {
+		LangZH: "从断点恢复导入：已完成 %d / %d 章",
+		LangEN: "Resuming import from checkpoint: %d / %d chapters done",
+	},
+	"log.import_meta_done": {
+		LangZH: "作品元信息分析完成：《%s》",
+		LangEN: "Metadata analysis done: \"%s\"",
+	},
+	"log.import_meta_failed": {
+		LangZH: "作品元信息分析失败：%v（不影响章节处理）",
+		LangEN: "Metadata analysis failed: %v (chapter processing unaffected)",
+	},
+	"log.import_chapter_done": {
+		LangZH: "第 %d / %d 章分析完成",
+		LangEN: "Chapter %d / %d analyzed",
+	},
+	"log.import_arcs_created": {
+		LangZH: "章节较多，已自动分为 %d 卷，正在生成卷摘要...",
+		LangEN: "Long book: grouped into %d arcs, generating arc summaries...",
+	},
+	"log.import_cancelled": {
+		LangZH: "导入已暂停（已完成 %d / %d 章，可随时恢复）",
+		LangEN: "Import paused (%d / %d chapters done, resume anytime)",
+	},
+	"log.import_done": {
+		LangZH: "导入完成：共 %d 章，可开始续写",
+		LangEN: "Import complete: %d chapters, ready for continuation",
+	},
+	"log.import_task_cancelled": {
+		LangZH: "导入任务已取消（进度已保存，可恢复）",
+		LangEN: "Import task cancelled (progress saved, resumable)",
+	},
+	"log.import_task_failed": {
+		LangZH: "导入任务失败: %s（进度已保存，可恢复）",
+		LangEN: "Import task failed: %s (progress saved, resumable)",
 	},
 	"log.postprocess_material": {
 		LangZH: "全书材料：约 %d 字，预估 %d tokens，诊断模式：%s",
