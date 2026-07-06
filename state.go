@@ -11,9 +11,15 @@ type ChapterState struct {
 	Num     int    `json:"num"`
 	Title   string `json:"title"`
 	Outline string `json:"outline"`
-	Content string `json:"content"`
+	Content string `json:"content,omitempty"`
 	Summary string `json:"summary"`
 	Status  string `json:"status"` // pending | writing | review | accepted
+	// WordCount is the prose-unit count of Content, refreshed on save so the
+	// frontend can show word counts without fetching full chapter content.
+	WordCount int `json:"word_count,omitempty"`
+	// ContentRev is a content hash for API responses; the frontend uses it to
+	// invalidate its per-chapter content cache. Never persisted.
+	ContentRev string `json:"content_rev,omitempty"`
 }
 
 type ForeshadowStatus string
@@ -78,6 +84,9 @@ type MemoryEntry struct {
 	Category string `json:"category"` // character | location | item | event | promise | other
 	Chapter  int    `json:"chapter"`
 	Position int    `json:"position"`
+	// Snippet is resolved server-side for API responses (chapter content no
+	// longer travels with /api/progress); never persisted.
+	Snippet string `json:"snippet,omitempty"`
 }
 
 type Progress struct {
@@ -103,6 +112,8 @@ const (
 	StatusAccepted = "accepted"
 )
 
+// LoadProgress loads project metadata from path (progress.json) and chapter
+// prose from the chapters/ directory next to it (v3 storage layout).
 func LoadProgress(path string) (*Progress, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -117,11 +128,25 @@ func LoadProgress(path string) (*Progress, error) {
 		return nil, fmt.Errorf("解析进度文件失败: %w", err)
 	}
 
+	loadChapterContents(path, &p)
 	return &p, nil
 }
 
+// SaveProgress persists chapter prose to per-chapter files (only chapters
+// whose content changed since load/last save are rewritten), then writes the
+// metadata file without prose content.
 func SaveProgress(path string, p *Progress) error {
-	data, err := json.MarshalIndent(p, "", "  ")
+	if err := saveChapterFiles(path, p); err != nil {
+		return err
+	}
+
+	meta := *p
+	meta.Chapters = make([]ChapterState, len(p.Chapters))
+	for i, ch := range p.Chapters {
+		ch.Content = ""
+		meta.Chapters[i] = ch
+	}
+	data, err := json.MarshalIndent(&meta, "", "  ")
 	if err != nil {
 		return fmt.Errorf("序列化进度失败: %w", err)
 	}

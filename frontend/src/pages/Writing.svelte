@@ -54,11 +54,30 @@
   $: ch = $selectedChapter >= 0 && $selectedChapter < chapters.length ? chapters[$selectedChapter] : null;
   $: isCurrent = ch && currentIdx === $selectedChapter;
   $: isStreamingThis = $streamingChapterIdx === $selectedChapter && $streamingContent;
-  // 流式期间 $streamingContent 只含尾部窗口（性能保护），全文在生成结束后由 progress 拉取
-  $: displayContent = isStreamingThis ? $streamingContent : (ch?.content || '');
-  $: chapterWordCount = ch?.content ? countProseUnits(ch.content) : 0;
+
+  // v3: /api/progress 不再携带正文，选中章节的正文按需拉取，content_rev 变化时刷新
+  let chapterContent = '';
+  let loadedNum = -1;
+  let loadedRev = null;
+  $: if (ch) maybeLoadContent(ch);
+  async function maybeLoadContent(c) {
+    const rev = c.content_rev || '';
+    if (c.num === loadedNum && rev === loadedRev) return;
+    loadedNum = c.num;
+    loadedRev = rev;
+    if (!rev) { chapterContent = ''; return; }
+    try {
+      const full = await api('GET', '/api/chapters/' + c.num);
+      if (loadedNum === c.num) chapterContent = full.content || '';
+    } catch (e) {}
+  }
+  $: hasContent = !!(ch?.content_rev);
+
+  // 流式期间 $streamingContent 只含尾部窗口（性能保护），全文在生成结束后按需拉取
+  $: displayContent = isStreamingThis ? $streamingContent : chapterContent;
+  $: chapterWordCount = ch?.word_count || (chapterContent ? countProseUnits(chapterContent) : 0);
   $: showTaskTokens = $taskRunning && isCurrent;
-  $: totalWords = chapters.reduce((sum, c) => sum + (c.content ? countProseUnits(c.content) : 0), 0);
+  $: totalWords = chapters.reduce((sum, c) => sum + (c.word_count || 0), 0);
 
   $: foreshadows = p?.foreshadows || [];
   $: fsActive = foreshadows.filter(f => f.status === 'planted' || f.status === 'progressing');
@@ -233,29 +252,27 @@
   }
 
   async function copyContent() {
-    if (!ch?.content) return;
+    if (!chapterContent) return;
     try {
-      await navigator.clipboard.writeText(ch.content);
+      await navigator.clipboard.writeText(chapterContent);
       addToast($t('writing.toasts.copied'), 'success');
     } catch (e) { addToast($t('common.copy.failed'), 'error'); }
   }
 
-  function exportBook() {
-    const written = chapters.filter(c => c.content);
+  async function exportBook() {
+    const written = chapters.filter(c => c.content_rev);
     if (written.length === 0) { addToast($t('writing.toasts.exportEmpty'), 'error'); return; }
-    const titleStr = p.title || $t('common.untitled');
-    const parts = [$t('writing.export.bookTitle', { title: titleStr }) + '\n'];
-    for (const c of written) {
-      parts.push('\n\n' + $t('writing.export.chapterHeader', { num: c.num, title: c.title }) + '\n\n' + c.content);
-    }
-    const blob = new Blob([parts.join('')], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${p.title || $t('writing.export.defaultName')}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    addToast($t('writing.toasts.exportDone', { n: written.length }), 'success');
+    try {
+      const r = await fetch('/api/export/txt');
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${p.title || $t('writing.export.defaultName')}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast($t('writing.toasts.exportDone', { n: written.length }), 'success');
+    } catch (e) { addToast(e.message, 'error'); }
   }
 
   function prevChapter() { if ($selectedChapter > 0) selectChapter($selectedChapter - 1); }
@@ -463,7 +480,7 @@
                 {#if ch.status === 'review' && isCurrent}
                   <button class="btn btn-success btn-sm" on:click={doConfirm} disabled={$taskRunning}>{$t('writing.btn.confirm')}</button>
                 {/if}
-                {#if ch.content && ch.status !== 'writing'}
+                {#if hasContent && ch.status !== 'writing'}
                   <button class="btn btn-ghost btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('writing.btn.revise')}</button>
                   {#if hasPolishSkills}
                     <button class="btn btn-ghost btn-sm" on:click={doPolish} disabled={$taskRunning} title={$t('writing.btn.polish.tip')}>{$t('writing.btn.polish')}</button>
