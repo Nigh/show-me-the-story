@@ -14,8 +14,29 @@ import (
 // in the requested language.
 func buildOutlineConstraintsForLang(state *Progress, idx int, lang string) string {
 	var past, future strings.Builder
+	// Arc-aware compression: chapters inside a summarized arc collapse to one
+	// arc-summary line, so 1000-chapter books don't inject every past outline.
+	summarized := func(num int) *Arc {
+		arc := arcForChapterNum(state, num)
+		if arc != nil && arc.Summary != "" {
+			return arc
+		}
+		return nil
+	}
+	var lastArc *Arc
 	for i := 0; i < idx && i < len(state.Chapters); i++ {
 		ch := state.Chapters[i]
+		if arc := summarized(ch.Num); arc != nil {
+			if arc != lastArc {
+				if NormalizeLanguage(lang) == LangEN {
+					past.WriteString(fmt.Sprintf("[Arc \"%s\" (ch.%d-%d) summary] %s\n", arc.Title, arc.StartCh, arc.EndCh, arc.Summary))
+				} else {
+					past.WriteString(fmt.Sprintf("【《%s》卷（第%d~%d章）卷摘要】%s\n", arc.Title, arc.StartCh, arc.EndCh, arc.Summary))
+				}
+				lastArc = arc
+			}
+			continue
+		}
 		if strings.TrimSpace(ch.Outline) == "" {
 			continue
 		}

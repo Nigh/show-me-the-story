@@ -641,4 +641,88 @@ Return JSON:
 
 Only return entries that changed. If this chapter has no memorable new details, return {"new_memories": [], "updates": []}.
 Return JSON only, nothing else.`,
+
+	ArcSkeleton: `You are a senior development editor who specializes in structuring very long novels. Design the volume-level skeleton for the following book (each arc is a self-contained story stage; chapter outlines will be generated arc by arc later).
+
+[Story type] {{.StoryType}}
+[Synopsis] {{.StorySynopsis}}
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+[Planned total chapters] {{.ChapterCount}} chapters (about {{.TargetWords}} words each)
+
+[Registered characters]
+{{.CharacterList}}
+
+Design requirements:
+1. Every arc needs a clear stage goal: where the protagonist starts, the core conflict, where they end up, plus an end-of-arc hook
+2. The chapter_count values MUST sum to exactly {{.ChapterCount}}; 10-50 chapters per arc is recommended — longer books get more arcs
+3. Arcs must escalate: power/status/scope upgrades and conflict shifts need a clear through-line
+4. Each goal field is 100-250 words and must name the arc's key events, key characters and causal chain — no vague descriptions
+
+Return JSON:
+{
+  "title": "book title",
+  "story_synopsis": "synopsis (keep the provided one's intent; refine if useful)",
+  "arcs": [
+    {"title": "arc title", "goal": "stage goal and through-line", "chapter_count": 30}
+  ]
+}
+Return JSON only, nothing else.`,
+
+	ArcChapterOutline: `You are a professional story-development editor. This long novel advances arc by arc; generate the chapter-by-chapter outline for one arc.
+
+[Title] {{.Title}}
+[Story type] {{.StoryType}}
+[Core writing prompt] {{.CorePrompt}}
+[Synopsis] {{.StorySynopsis}}
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+
+[Previously — progress of earlier arcs/chapters]
+{{.PreviousContext}}
+
+[This arc] Arc {{.ArcIndex}}: "{{.ArcTitle}}"
+[Arc stage goal] {{.ArcGoal}}
+
+[Upcoming arcs — this arc must NOT spend their key events early]
+{{.FutureArcs}}
+
+[Registered characters]
+{{.CharacterList}}
+
+[Extra user requirements]
+{{.UserRequirements}}
+
+Generate outlines for this arc's {{.NewChapterCount}} chapters, from chapter {{.StartNum}} to chapter {{.EndNum}}.
+
+Return JSON:
+{
+  "chapters": [
+    {"num": {{.StartNum}}, "title": "chapter title", "outline": "chapter outline"},
+    ...
+  ]
+}
+
+Notes:
+1. Outlines must continue the story from [Previously], accomplish the arc goal within the arc, and end in a state that hands off naturally to the next arc
+2. Each outline field must be {{.OutlineMinWords}}-{{.OutlineMaxWords}} words of concrete plot development — no vague summaries
+3. Every chapter outline must include: opening scene; core conflict; key turn; characters on stage and their roles; end-of-chapter hook
+4. Prefer [Registered characters]; mark new characters as "first appearance" with a one-line note
+5. One-time events that already happened (first meetings, identity reveals) must not be re-scheduled; key events of later arcs must not happen early
+6. Return JSON only, nothing else`,
+
+	ArcSummary: `You are a precise narrative analyst. Below are the chapter summaries of one completed arc. Compress them into a single arc-level summary that later arcs will use as prior context for outlining and writing.
+
+[Title] {{.Title}}
+[Arc {{.ArcIndex}}] "{{.ArcTitle}}" (chapters {{.StartNum}}-{{.EndNum}})
+[Arc stage goal] {{.ArcGoal}}
+
+[Chapter summaries]
+{{.ChapterSummaries}}
+
+Requirements:
+1. 300-600 words, chronological through-line: starting state -> key event chain -> end state
+2. Must preserve: one-time events (first meetings, identity reveals, relationship milestones, major deaths), changes in the protagonist's power/status/understanding, and unresolved hooks or foreshadowing left at arc end
+3. Compress side plots to a sentence; drop details with no narrative continuity value
+4. Output the summary text only, nothing else`,
 }

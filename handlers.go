@@ -1293,6 +1293,7 @@ func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
 	h.state.CorePrompt = ""
 	h.state.StorySynopsis = ""
 	h.state.Chapters = nil
+	h.state.Arcs = nil
 	h.state.StoryConfigSnapshot = nil
 	h.state.CurrentChapterIndex = 0
 
@@ -2902,6 +2903,139 @@ func saveAgentSteps(session *ChatSession, steps []AgentStep) {
 			})
 		}
 	}
+}
+
+// —— v3 层级大纲（卷）handlers ——
+
+// PostArcSkeleton 生成全书卷级骨架（异步）。
+func (h *Handlers) PostArcSkeleton(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w, r) {
+		return
+	}
+	for _, ch := range h.state.Chapters {
+		if ch.Status == StatusAccepted || ch.Status == StatusWriting || ch.Status == StatusReview {
+			h.writeErrorReq(w, r, http.StatusConflict, "accepted_chapter_present")
+			return
+		}
+	}
+	if !h.tryStartTask() {
+		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
+		return
+	}
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("arc_skeleton")
+		ctx := h.taskCtx
+		h.logger.InfoKey("log.arc_skeleton_generating")
+		err := GenerateArcSkeletonAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.cfgPath, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.WarnKey("log.arc_task_cancelled")
+			} else {
+				h.logger.ErrorKey("log.arc_task_failed", err.Error())
+			}
+			h.logger.TaskEnd("arc_skeleton", false)
+			return
+		}
+		h.state.Phase = "outline"
+		if err := SaveProgress(h.progressPath, h.state); err != nil {
+			h.logger.ErrorKey("log.arc_task_failed", err.Error())
+		}
+		h.logger.TaskEnd("arc_skeleton", true)
+		h.broadcastProgress()
+	}()
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// PostArcOutline 为指定卷生成逐章大纲（异步）。
+func (h *Handlers) PostArcOutline(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w, r) {
+		return
+	}
+	var arcID int
+	if _, err := fmt.Sscanf(r.PathValue("id"), "%d", &arcID); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_request_body")
+		return
+	}
+	var body struct {
+		Requirements string `json:"requirements"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if !h.tryStartTask() {
+		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
+		return
+	}
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("arc_outline")
+		ctx := h.taskCtx
+		ai := arcIndexByID(h.state, arcID)
+		h.logger.InfoKey("log.arc_outline_generating", ai+1)
+		err := GenerateArcOutlineAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, arcID, body.Requirements, h.progressPath, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.WarnKey("log.arc_task_cancelled")
+			} else {
+				h.logger.ErrorKey("log.arc_task_failed", err.Error())
+			}
+			h.logger.TaskEnd("arc_outline", false)
+			return
+		}
+		h.logger.TaskEnd("arc_outline", true)
+		h.broadcastProgress()
+	}()
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// PostArcAppend 追加新卷并生成其章纲（异步）：超长篇/无限连载的增量续写入口。
+func (h *Handlers) PostArcAppend(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureProject(w, r) {
+		return
+	}
+	var body struct {
+		Title        string `json:"title"`
+		Goal         string `json:"goal"`
+		ChapterCount int    `json:"chapter_count"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_request_body")
+		return
+	}
+	if !h.tryStartTask() {
+		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
+		return
+	}
+	go func() {
+		defer h.endTask()
+		h.logger.TaskStart("arc_append")
+		ctx := h.taskCtx
+		err := AppendArcAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, body.Title, body.Goal, body.ChapterCount, h.progressPath, h.logger)
+		if err != nil {
+			if ctx.Err() != nil {
+				h.logger.WarnKey("log.arc_task_cancelled")
+			} else {
+				h.logger.ErrorKey("log.arc_task_failed", err.Error())
+			}
+			h.logger.TaskEnd("arc_append", false)
+			return
+		}
+		// 更新全书计划章节数，保持 config 与实际结构一致。
+		last := h.state.Arcs[len(h.state.Arcs)-1]
+		if last.EndCh > h.cfg.Story.ChapterCount {
+			h.cfg.Story.ChapterCount = last.EndCh
+			if h.state.StoryConfigSnapshot != nil {
+				snapshot := h.cfg.Story
+				h.state.StoryConfigSnapshot = &snapshot
+			}
+			if err := saveConfig(h.cfgPath, h.cfg); err != nil {
+				h.logger.ErrorKey("log.arc_task_failed", err.Error())
+			}
+			SaveProgress(h.progressPath, h.state)
+		}
+		h.logger.TaskEnd("arc_append", true)
+		h.broadcastProgress()
+	}()
+	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
 func writeFileAtomic(path string, data []byte) error {

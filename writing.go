@@ -135,6 +135,11 @@ func GenerateChapterAction(ctx context.Context, apiCfg *APIConfig, cfg *Config, 
 
 	logger.InfoKey("log.chapter_start", ch.Num, ch.Title)
 
+	// v3 层级大纲：懒生成已完结卷的卷摘要（失败只告警，不阻塞写作）。
+	if len(state.Arcs) > 0 {
+		EnsureArcSummaries(ctx, apiCfg, cfg, state, progressPath, logger)
+	}
+
 	// 写前检查：本章大纲若已与实际写出的剧情冲突（如大纲安排初遇但前文已认识），
 	// 先最小化修订大纲再动笔，避免按过时大纲写出矛盾内容。
 	if i > 0 {
