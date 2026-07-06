@@ -1,0 +1,727 @@
+package config
+
+// DefaultPromptsEN holds English versions of every prompt template.
+// Used when a project's language is set to "en".
+var DefaultPromptsEN = PromptsConfig{
+	OutlineGeneration: `You are a professional novel-planning editor. Generate a novel outline that satisfies the constraints below.
+
+Return JSON in exactly this structure:
+{
+  "title": "Novel title",
+  "core_prompt": "Core writing prompt (a system-level guideline that will steer every later chapter)",
+  "story_synopsis": "Synopsis of the story",
+  "chapters": [
+    {"num": 1, "title": "Chapter title", "outline": "Outline for this chapter"},
+    ...
+  ]
+}
+
+[Story type] {{.StoryType}}
+[Chapter count] {{.ChapterCount}}
+[Prose words per chapter] {{.TargetWords}}
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+[Synopsis] {{.StorySynopsis}}
+
+[Registered characters]
+{{.CharacterList}}
+
+Rules:
+1. The outline must cover the full story arc, from inciting incident to resolution.
+2. Each chapter's outline field must be {{.OutlineMinWords}}–{{.OutlineMaxWords}} characters (excluding the chapter title), with concrete plot beats — no vague one-liners.
+3. Each chapter outline must cover, in order: opening scene/location; core conflict or goal; key turning point; characters appearing (with roles); chapter ending or hook.
+4. Prefer [Registered characters]. Add unlisted characters only when necessary; mark their debut with "first appearance" plus a one-line role/relationship, and never in an earlier chapter.
+5. One-time events such as first meetings and identity reveals must happen in exactly one chapter — never repeat them.
+6. core_prompt should bundle the directives that guide the whole novel, including writing style and narrative POV, and must require a consistent POV throughout.
+7. If [Story type], [Writing style], [Narrative POV], or [Synopsis] were provided by the user and are non-empty, echo those values verbatim in the JSON — do not rewrite or expand them.
+8. Output strict JSON only. No extra prose.`,
+
+	ChapterWriting: `Write the prose for chapter {{.ChapterNum}} of the novel "{{.Title}}".
+
+[Core writing prompt]
+{{.CorePrompt}}
+
+[Synopsis]
+{{.StorySynopsis}}
+
+[Story-so-far (rolling recap of recent chapters — continue from this state strictly)]
+{{.HistorySummary}}
+
+{{.PreviousEnding}}{{.Foreshadows}}{{.Memory}}{{.OutlineConstraints}}[Task for this chapter]
+Chapter title: "{{.ChapterTitle}}"
+Outline: {{.ChapterOutline}}
+
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+{{.CharacterContext}}
+{{.WorldviewContext}}
+Writing rules:
+1. Strictly continue from the character states, timeline, and established facts in the story-so-far. Do not contradict them.
+2. Stay inside this chapter's outline. Do not borrow material from later chapters.
+3. Do NOT preemptively introduce characters, first meetings, identity reveals, or other one-time events that the outline assigns to later chapters — and do not hint at or spoil them.
+4. One-time events already played out (first meetings, identity reveals, relationships established) must be treated as established facts and never re-enacted in this chapter.
+5. Do not re-summarise the story-so-far. Open straight into this chapter's scene. If a previous-chapter ending is provided, your opening must seamlessly continue its setting, time, and mood without re-establishing what's already there.
+6. Each character's dialogue must match their established voice; do not let everyone sound alike.
+7. Drive the plot with concrete action, sensory detail, and dialogue. Avoid abstract, summarising narration.
+8. Close on a natural cliffhanger or emotional hook. Do not write meta lines like "to be continued".
+9. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
+10. Chapter length must stay within {{.TargetWordsMin}}–{{.TargetWordsMax}} words (target {{.TargetWords}}). Exceeding the upper limit is unacceptable. Cover only this chapter's outline — compress description rather than advancing into later chapters.
+11. Output ONLY the chapter prose — no chapter title, chapter number, outline recap, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", "To be continued", "Here is the revised chapter", "Below is the full text". Do not add any preamble before the prose or any summary after it.`,
+
+	ChapterRevision: `You are the author of this novel. Revise chapter {{.ChapterNum}} "{{.ChapterTitle}}" according to the feedback below.
+
+[Core writing prompt]
+{{.CorePrompt}}
+
+[Story-so-far]
+{{.HistorySummary}}
+
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+{{.CharacterContext}}
+{{.WorldviewContext}}
+[Current chapter text]
+{{.OriginalContent}}
+
+[Revision feedback]
+{{.UserFeedback}}
+
+Revision rules (strict):
+1. This is a "revision", not a "rewrite". Change only what the feedback requires; leave everything else exactly as written (wording, paragraph structure).
+2. The revised chapter must remain consistent with the story-so-far and the unchanged portions (names, timeline, established facts).
+3. Do not alter the chapter's overall plot direction unless the feedback explicitly requests it.
+4. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
+5. Output the full revised chapter prose (including the unchanged portions). No chapter title, chapter number, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", "To be continued", "Here is the revised chapter", "Below is the full text". Do not add any preamble before the prose or any summary after it.`,
+
+	ChapterSegmentRevision: `You are the author of this novel. The user highlighted a passage in chapter {{.ChapterNum}} "{{.ChapterTitle}}" and gave revision feedback. Revise ONLY that passage; the rest of the chapter will be left untouched.
+
+[Core writing prompt]
+{{.CorePrompt}}
+
+[Story-so-far]
+{{.HistorySummary}}
+
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+{{.CharacterContext}}
+{{.WorldviewContext}}
+[Quoted passage from the user]
+{{.QuotedText}}
+
+[Passage to revise]
+{{.SegmentOriginal}}
+
+[Revision feedback]
+{{.UserFeedback}}
+
+Revision rules (strict):
+1. This is a "targeted local revision". Rewrite ONLY the [Passage to revise] above; do not output any other paragraphs of the chapter.
+2. Preserve the plot beats, character actions, and key information in the original passage. Make only the changes the feedback requires; do not expand, cut, or redirect the plot unless the feedback explicitly asks.
+3. The revised passage must stay consistent with the story-so-far and the unchanged portions of the chapter (names, timeline, established facts).
+4. Keep the narrative POV strictly consistent: follow [Narrative POV] throughout; do not switch person or viewpoint subject unless the POV spec explicitly allows alternation.
+5. If [Passage to revise] contains multiple paragraphs separated by blank lines, output the SAME number of paragraphs in the SAME order, separated by blank lines.
+6. Output ONLY the revised passage prose. No chapter title, chapter number, recap of the quoted passage, author notes, dividers, or meta lines such as "Chapter X", "(Chapter X text)", "End of chapter", "To be continued", "Here is the revised passage". Do not add any preamble before the prose or any summary after it.`,
+
+	ChapterSummary: `You are a precise novel narrative-state analyst. You distil literary text into the narrative elements and psychological beats that downstream chapters need.
+
+Compress the chapter below into a structured summary of 250 words or fewer.
+
+Use exactly this format:
+
+[Chapter core] One sentence describing what happens (or the protagonist's current state).
+[Character beats] Characters that appear and how their relationships move. Explicitly note one-time events such as "A and B meet for the first time" or "B's identity is revealed". If nothing changes, write "no new progress".
+[Psychological arc] The protagonist's current mental state, emotional tone, and any pivotal internal turn.
+[State changes] What changed about the protagonist (outward: appearance/clothing/behaviour; inward: attitude/perception) compared to the previous chapter. If nothing changed, write "carries over from previous chapter".
+[Key details] One or two details with the highest narrative continuation value that later chapters may reference.
+[Emotional palette] Two or three words capturing the chapter's mood.
+
+[Chapter text]
+{{.ChapterContent}}`,
+
+	FactCheck: `You are a strict novel fact-checker. Your task is to detect objective factual contradictions in the chapter.
+
+Check whether the chapter below contradicts the story-so-far or the outline arc.
+
+[Story-so-far]
+{{.HistorySummary}}
+
+[Chapter outline]
+{{.ChapterOutline}}
+
+{{.OutlineConstraints}}{{.Memory}}[Chapter under review]
+{{.ChapterContent}}
+
+Scope (only the following count as problems, nothing else):
+1. Character names or honorifics inconsistent with prior text.
+2. Timeline contradictions (e.g. previous text ended at night, this chapter inexplicably reverts to morning of the same day).
+3. Facts that directly contradict established events (a dead character reappearing without explanation, a destroyed object intact again).
+4. Character abilities or identity directly clashing with established setting.
+5. Premature introduction of characters, first meetings, identity reveals, or other events that the outline assigns to later chapters.
+6. One-time events already played out in prior chapters being re-enacted as new in this chapter.
+
+Notes:
+- Style, pacing, scene-length choices, and plot plausibility are subjective issues — always PASS them.
+- New information that neither the story-so-far nor the outline mentions is not a contradiction.
+- Only solid objective contradictions warrant FAIL. When in doubt, PASS.
+
+Return JSON only (no other text):
+{"result": "PASS", "issues": []}
+or
+{"result": "FAIL", "issues": ["concrete contradiction 1", "concrete contradiction 2"]}`,
+
+	OutlineRevision: `You are a novel-planning editor. The user gave revision feedback on the outline. Revise accordingly.
+
+[Current outline]
+{{.CurrentOutline}}
+
+[User feedback]
+{{.UserFeedback}}
+
+[Locked chapters (must not be changed)]
+{{.LockedChapters}}
+
+[Registered characters]
+{{.CharacterList}}
+
+Return the revised full outline as JSON:
+{
+  "title": "Novel title",
+  "core_prompt": "Core writing prompt",
+  "story_synopsis": "Synopsis",
+  "chapters": [
+    {"num": 1, "title": "Chapter title", "outline": "Outline for this chapter"},
+    ...
+  ]
+}
+
+Rules:
+1. Locked chapter contents may not be changed; only unlocked chapters may be edited.
+2. Keep the total chapter count and numbering unchanged unless the feedback explicitly requires adding or removing chapters.
+3. Return chapters unrelated to the feedback verbatim. Do not refactor them while you're at it.
+4. Unlocked chapter outlines must be {{.OutlineMinWords}}–{{.OutlineMaxWords}} characters with concrete beats (scene, conflict, turning point, characters, hook); prefer [Registered characters].
+5. Output strict JSON only. No extra prose.`,
+
+	ForeshadowPlanning: `You are a senior narrative architect who specialises in foreshadow design. Design a foreshadow plan for the novel outline below.
+
+[Title] {{.Title}}
+[Core writing prompt] {{.CorePrompt}}
+[Synopsis] {{.StorySynopsis}}
+
+[Full outline]
+{{.Outline}}
+
+Design 3 to 8 foreshadows following these principles:
+1. Each foreshadow should serve the main plot or character arc, not exist for mystery's sake.
+2. Each foreshadow has a clear "plant point" (chapter it is seeded) and "payoff point" (chapter where it is expected to be resolved).
+3. Foreshadows may interconnect into a web of clues.
+4. Vary the types: objects, hinted dialogue, environmental detail, contradictions in behaviour, unexplained phenomena, etc.
+5. Spread payoff points across different chapters; do not cluster them.
+6. Foreshadows can begin as early as chapter 1, but most should be planted in the middle and paid off in the latter half.
+
+Return JSON:
+{
+  "foreshadows": [
+    {
+      "name": "Short label (under 10 words)",
+      "description": "Detailed description: how it is planted, what it hints at, what the 'oh-I-see' feeling should be when it pays off",
+      "plant_chapter": chapter_number,
+      "target_chapter": expected_payoff_chapter
+    }
+  ]
+}
+
+Output strict JSON only.`,
+
+	ForeshadowUpdate: `You are a strict foreshadow tracker. Update the foreshadow system based on the just-completed chapter.
+
+[Title] {{.Title}}
+
+[Current foreshadows]
+{{.Foreshadows}}
+
+[Chapter info]
+Chapter number: {{.ChapterNum}}
+Chapter title: "{{.ChapterTitle}}"
+
+[Chapter text]
+{{.ChapterContent}}
+
+[Story-so-far]
+{{.HistorySummary}}
+
+For each foreshadow, decide whether its state changed in this chapter:
+
+1. First time it is hinted/planted in this chapter → status = "planted".
+2. New clue or progress in this chapter → status = "progressing".
+3. Fully revealed/resolved in this chapter → status = "resolved".
+4. Not present in this chapter → keep the existing status.
+5. Distinguish "true resolution" from "mere progress": only mark resolved when the mystery is fully unveiled.
+
+Return JSON:
+{
+  "updates": [
+    {
+      "id": foreshadow_id,
+      "status": "new state if changed",
+      "event": "one-sentence description of what this chapter did with this foreshadow",
+      "resolution": "how it was resolved, if status = resolved"
+    }
+  ]
+}
+
+Only return foreshadows whose state changed. Omit any foreshadow not touched in this chapter.
+Output strict JSON only.`,
+
+	ContinuationOutlineGeneration: `You are a professional novel-planning editor. Based on existing chapters' outlines and summaries, produce the outline for the next chapters.
+
+[Title] {{.Title}}
+[Story type] {{.StoryType}}
+[Core writing prompt] {{.CorePrompt}}
+[Synopsis] {{.StorySynopsis}}
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+
+[Existing chapters]
+{{.ExistingOutline}}
+
+[Registered characters]
+{{.CharacterList}}
+
+Produce outlines for {{.NewChapterCount}} more chapters, starting at chapter {{.StartNum}}.
+
+Return JSON:
+{
+  "chapters": [
+    {"num": {{.StartNum}}, "title": "Chapter title", "outline": "Outline for this chapter"},
+    ...
+  ]
+}
+
+Rules:
+1. The outlines must continue the existing storyline coherently.
+2. Each outline field must be {{.OutlineMinWords}}–{{.OutlineMaxWords}} characters with concrete plot beats — no vague summaries.
+3. Cover opening scene, core conflict, turning point, characters with roles, and ending hook.
+4. Prefer [Registered characters]; mark new ones with "first appearance" plus a one-line description.
+5. One-time events already used in prior chapters (first meeting, identity reveal, etc.) must not be re-scheduled.
+6. Output strict JSON only.`,
+
+	OutlineCharacterCheck: `You are a strict story-settings editor. Compare characters appearing in the full chapter outline against the registered character list.
+
+[Title] {{.Title}}
+
+[Registered characters]
+{{.RegisteredCharacters}}
+
+[Full outline]
+{{.Outline}}
+
+[Confirmed chapter summaries (helps judge who already appeared in prose)]
+{{.AcceptedSummaries}}
+
+Tasks:
+1. Find characters who appear in the outline but are NOT in [Registered characters] (including those marked "first appearance" or unnamed-in-settings proper names).
+2. Ignore crowd labels ("villagers", "guards") and generic "someone/mysterious figure" unless the outline gives a proper name.
+3. Do not report names already listed under [Registered characters].
+
+Return JSON only:
+{
+  "has_suggestions": true,
+  "summary": "brief note",
+  "suggestions": [
+    {
+      "name": "Character name",
+      "chapter_num": 5,
+      "description": "one-line note extracted from the outline",
+      "role": "relationship or narrative role (optional)"
+    }
+  ]
+}
+
+If everything matches:
+{"has_suggestions": false, "summary": "Outline characters match registered list", "suggestions": []}`,
+
+	TransitionSmoothing: `You are a senior novel editor in charge of polishing chapter-to-chapter transitions. Below are the end of the previous chapter and the opening of the current chapter. Decide whether the opening naturally continues from the previous ending.
+
+[Previous chapter ending]
+{{.PrevTail}}
+
+[Opening of current chapter (chapter {{.ChapterNum}} "{{.ChapterTitle}}")]
+{{.Opening}}
+
+[Chapter outline (for context only — do not expand it)]
+{{.ChapterOutline}}
+
+Rules (strict):
+1. If the opening already continues naturally from the previous ending (scene transition, timeline, character state, emotional tone all coherent), output exactly the single word NO_CHANGE and nothing else.
+2. If the transition is rough (abrupt scene jump, re-establishing what already happened, character-state break), rewrite the opening above so it seamlessly continues from the previous ending.
+3. The rewrite is "minimal": keep every plot beat and piece of information in the opening, similar length to the original, only adjust the bridging beats, transitional sentences, and necessary detail.
+4. Output only the rewritten opening prose — no title, explanation, prefix/suffix marker, or previous-chapter content. Do not continue past the opening.`,
+
+	OutlineConsistencyCheck: `You are a strict novel-planning editor. Before drafting this chapter's prose, check whether this chapter's outline already conflicts with the actual prior storyline.
+
+[Story-so-far (already happened, cannot be changed)]
+{{.HistorySummary}}
+
+{{.PreviousEnding}}[Outline under check]
+Chapter {{.ChapterNum}} "{{.ChapterTitle}}": {{.ChapterOutline}}
+
+Checklist (objective conflicts only):
+1. Outline schedules a "first meeting" between characters who already know each other in prior text.
+2. Outline assumes a precondition (character state, location, possessed item, knowledge) that contradicts prior text.
+3. Outline schedules an event that has already happened in prior text.
+
+Rules:
+- If no conflict: conflict = false, revised_outline left empty.
+- If there is a conflict: conflict = true, and provide a revised outline for this chapter that keeps its original plot goals, characters, and role in the overall arc — only the minimum changes needed to make it compatible with prior text (e.g. change "first meeting" to "reunion").
+- Do not expand new plot. Do not change the chapter's length tier. When unsure, treat as no conflict.
+
+Return JSON only (no other text):
+{"conflict": false, "issues": [], "revised_outline": ""}
+or
+{"conflict": true, "issues": ["conflict description"], "revised_outline": "revised outline for this chapter"}`,
+
+	ForeshadowOutlineConsistency: `You are a strict narrative-consistency editor. Check whether the foreshadow plan matches the full chapter outline.
+
+[Title] {{.Title}}
+[Full outline]
+{{.Outline}}
+
+[Foreshadow list]
+{{.Foreshadows}}
+
+[Summaries of confirmed chapters]
+{{.AcceptedSummaries}}
+
+Checklist (objective issues only):
+1. Each active foreshadow (not resolved/abandoned) has reasonable planting space in its plant_chapter outline.
+2. The target_chapter outline has plot space to pay off that foreshadow (logical fit, not word-for-word match).
+3. Foreshadow description structurally contradicts the outline (cannot be achieved on this story path).
+4. plant_chapter / target_chapter exceed the actual chapter count.
+5. Confirmed-chapter summaries clearly contradict the foreshadow plan.
+
+Return JSON only (no other text):
+{
+  "has_conflicts": false,
+  "conflicts": [],
+  "summary": "one-sentence summary"
+}
+or
+{
+  "has_conflicts": true,
+  "conflicts": [
+    {
+      "foreshadow_id": 1,
+      "foreshadow_name": "short name",
+      "conflict_type": "missing_payoff|weak_payoff|missing_plant|structural|out_of_range",
+      "description": "specific conflict",
+      "suggested_fix": "revise_outline|adjust_foreshadow|abandon"
+    }
+  ],
+  "summary": "one-sentence summary"
+}
+
+When unsure, treat as no conflict.`,
+
+	WritingConflictAnalysis: `You are a senior novel editor. Fact-checking has failed repeatedly for this chapter. Diagnose the root cause and recommend next steps.
+
+[Chapter]
+Chapter {{.ChapterNum}} "{{.ChapterTitle}}"
+
+[Chapter outline]
+{{.ChapterOutline}}
+
+[Story-so-far]
+{{.HistorySummary}}
+
+{{.OutlineConstraints}}{{.Foreshadows}}[Accumulated fact-check failures]
+{{.FailedIssues}}
+
+[Current draft excerpt (reference)]
+{{.ContentExcerpt}}
+
+Tasks:
+1. Decide whether failures come from irreconcilable contradictions among outline, foreshadows, and prior story.
+2. If reconcilable without changing outline/foreshadows: provide extra_constraints text to inject into the writing prompt so the next draft can pass fact-check.
+3. If not reconcilable: explain why and whether the user should edit the outline or adjust foreshadows.
+
+Return JSON only (no other text):
+{
+  "reconcilable": true,
+  "summary": "one-sentence root cause",
+  "root_cause": "foreshadow_outline|outline_history|foreshadow_history|mixed|other",
+  "extra_constraints": "full constraint text (required when reconcilable is true)",
+  "suggested_actions": [
+    {"id": "edit_outline", "label": "Edit chapter outline", "description": "..."},
+    {"id": "adjust_foreshadow", "label": "Adjust foreshadows", "description": "..."},
+    {"id": "force_review", "label": "Keep draft for manual review", "description": "..."}
+  ]
+}
+
+When reconcilable is false, leave extra_constraints empty. suggested_actions must include edit_outline, adjust_foreshadow, and force_review.`,
+
+	SettingsReconciliation: `You are a professional novel-consistency editor. The user changed the story settings, but some chapters are already confirmed. Check whether the new settings are consistent with the existing chapters, and auto-adjust the settings to remain compatible.
+
+[User's new settings]
+Story type: {{.NewType}}
+Writing style: {{.NewWritingStyle}}
+Narrative POV: {{.NewWritingPOV}}
+Synopsis: {{.NewStorySynopsis}}
+
+[Summaries of existing confirmed chapters]
+{{.ExistingSummaries}}
+
+Return the adjusted settings as JSON:
+{
+  "type": "...",
+  "writing_style": "...",
+  "writing_pov": "...",
+  "story_synopsis": "...",
+  "explanation": "Describe what was adjusted and why"
+}
+
+Adjustment principles:
+1. Existing chapters cannot be changed; the settings must be compatible with them.
+2. Preserve the user's intent as much as possible.
+3. Where conflicts are irreconcilable, prefer existing content and adjust the new settings minimally.
+4. Non-conflicting parts keep the user's new settings.`,
+
+	BookDiagnosis: `You are a senior editor-in-chief for serialised fiction, specialising in full-novel reviews after the manuscript is complete.
+
+[Task]
+Read the materials below and produce a "Full-Novel Optimisation Diagnostic Report". Only diagnose this round — do not rewrite prose.
+
+{{.ModeNote}}
+
+=== Settings and style ===
+{{.SettingsText}}
+
+=== Chapter summary index ===
+{{.SummaryIndex}}
+
+=== Full novel text ===
+{{.FullText}}
+
+[Output format (strict)]
+## 1. Overall assessment (under 200 words)
+## 2. Structure and pacing (point out dragging sections, peak sections, lull sections — anchor every issue to a chapter number)
+## 3. Characterisation and dialogue (flat archetypes, inconsistent voice, completeness of protagonist arc)
+## 4. Setting and logic faults (timeline, power level, geography, foreshadow misses or wrong payoffs)
+## 5. Style and AI fingerprints (cliches, parallel-clause pile-ups, emotion labelling, overly written dialogue)
+## 6. Prioritised fix list (P0/P1/P2; every entry must contain: chapter number, issue type, one-line description, suggested fix)
+- P0 = logic/setting error that blocks reading
+- P1 = style/pacing problem with clear quality impact
+- P2 = polish
+
+[Constraints]
+- No vague generalities. Every issue must anchor to a specific chapter.
+- Do not output rewritten prose.
+- When unsure, mark "needs close re-read".`,
+
+	BookConsistencyCheck: `You are a strict novel fact-checker. Check the entire novel for consistency with its settings.
+
+{{.VolumeNote}}
+
+=== Settings ===
+{{.SettingsText}}
+
+=== Chapter summary index (whole novel) ===
+{{.SummaryIndex}}
+
+=== Prose (this volume) ===
+{{.FullText}}
+
+[Audit dimensions]
+1. Timeline contradictions (age, season, event order)
+2. Character-setting contradictions (appearance, abilities, address, relationships)
+3. Inconsistent geography / organisations / props
+4. Foreshadows: planted-but-never-paid, wrong payoffs, one-time events re-enacted (e.g. a first meeting written twice)
+5. Transition breaks between chapters (previous ending and current opening do not match)
+
+[Output format]
+Use a Markdown table:
+| Severity | Chapter | Original excerpt (<= 30 words) | Contradiction description | Suggested fix (minimum change) |
+
+Severity: critical / major / minor
+Do not rewrite the prose, only describe the fix.`,
+
+	BookRoadmap: `You are a senior novel editor. Based on the diagnostic and consistency reports below, produce an executable revision task list.
+
+[Diagnostic report]
+{{.DiagnosisReport}}
+
+[Consistency report]
+{{.ConsistencyReport}}
+
+[Requirements]
+1. Merge duplicates and sort by chapter number.
+2. At most 3 revision items per chapter; anything beyond goes to round two.
+3. type takes values: logic, transition, style, rhythm, dialogue, polish (AI-flavour removal).
+4. priority takes values: P0 / P1 / P2.
+5. feedback must be ready-to-use revision instructions (50 to 150 words) emphasising minimum changes.
+6. **Merge all issues for the same chapter into ONE task** (at most one items entry per chapter).
+7. Suggested execution order: transitions -> P0 logic -> style polish.
+
+[Output format]
+JSON only, nothing else:
+{"items": [{"chapter_num": 1, "type": "logic", "priority": "P0", "feedback": "concrete revision instruction", "selected": true}]}`,
+
+	MemoryUpdate: `You are a precise narrative memory manager for a novel. Your task is to extract key narrative details from the latest chapter and maintain a cross-chapter long-term memory store.
+
+The memory store bridges the gap left by the rolling summary (which only covers the last 5 chapters) — recording specific details that outlines and summaries do not capture but that matter for future writing.
+
+[Novel title] {{.Title}}
+[Chapter number] Chapter {{.ChapterNum}}
+[Chapter title] {{.ChapterTitle}}
+
+[Chapter outline]
+{{.ChapterOutline}}
+
+[Chapter prose]
+{{.ChapterContent}}
+
+[Existing memory store]
+{{.ExistingMemory}}
+
+[Memory token budget] {{.MemoryMaxTokens}} tokens
+
+Extraction rules:
+1. Only extract **specific narrative details NOT in the outline** — high-level plot points already in the outline do not need memorising.
+2. Focus on these categories:
+   - character: speech tics, habits, appearance details, subtle emotional shifts
+   - location: place names, scene layout, environmental features
+   - item: key props, keepsakes, their appearance and backstory
+   - event: specific promises, agreements, or information exchanged in dialogue
+   - promise: commitments a character made to others or themselves, unfinished obligations
+   - other: any other detail with narrative continuity value
+3. Each memory is a single sentence, with the approximate paragraph number in the original chapter (1-indexed, split by paragraph breaks).
+4. If an existing memory entry is superseded or contradicted by this chapter, mark it for deletion in updates.
+5. If the total memory exceeds the token budget (~{{.MemoryMaxTokens}} tokens), merge or remove the least important entries in the response.
+
+Return JSON:
+{
+  "new_memories": [
+    {"content": "memory description", "category": "category", "position": paragraph_number}
+  ],
+  "updates": [
+    {"id": existing_memory_id, "action": "delete", "reason": "reason for deletion"}
+  ]
+}
+
+Only return entries that changed. If this chapter has no memorable new details, return {"new_memories": [], "updates": []}.
+Return JSON only, nothing else.`,
+
+	ArcSkeleton: `You are a senior development editor who specializes in structuring very long novels. Design the volume-level skeleton for the following book (each arc is a self-contained story stage; chapter outlines will be generated arc by arc later).
+
+[Story type] {{.StoryType}}
+[Synopsis] {{.StorySynopsis}}
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+[Planned total chapters] {{.ChapterCount}} chapters (about {{.TargetWords}} words each)
+
+[Registered characters]
+{{.CharacterList}}
+
+Design requirements:
+1. Every arc needs a clear stage goal: where the protagonist starts, the core conflict, where they end up, plus an end-of-arc hook
+2. The chapter_count values MUST sum to exactly {{.ChapterCount}}; 10-50 chapters per arc is recommended — longer books get more arcs
+3. Arcs must escalate: power/status/scope upgrades and conflict shifts need a clear through-line
+4. Each goal field is 100-250 words and must name the arc's key events, key characters and causal chain — no vague descriptions
+
+Return JSON:
+{
+  "title": "book title",
+  "story_synopsis": "synopsis (keep the provided one's intent; refine if useful)",
+  "arcs": [
+    {"title": "arc title", "goal": "stage goal and through-line", "chapter_count": 30}
+  ]
+}
+Return JSON only, nothing else.`,
+
+	ArcChapterOutline: `You are a professional story-development editor. This long novel advances arc by arc; generate the chapter-by-chapter outline for one arc.
+
+[Title] {{.Title}}
+[Story type] {{.StoryType}}
+[Core writing prompt] {{.CorePrompt}}
+[Synopsis] {{.StorySynopsis}}
+[Writing style] {{.WritingStyle}}
+[Narrative POV] {{.WritingPOV}}
+
+[Previously — progress of earlier arcs/chapters]
+{{.PreviousContext}}
+
+[This arc] Arc {{.ArcIndex}}: "{{.ArcTitle}}"
+[Arc stage goal] {{.ArcGoal}}
+
+[Upcoming arcs — this arc must NOT spend their key events early]
+{{.FutureArcs}}
+
+[Registered characters]
+{{.CharacterList}}
+
+[Extra user requirements]
+{{.UserRequirements}}
+
+Generate outlines for this arc's {{.NewChapterCount}} chapters, from chapter {{.StartNum}} to chapter {{.EndNum}}.
+
+Return JSON:
+{
+  "chapters": [
+    {"num": {{.StartNum}}, "title": "chapter title", "outline": "chapter outline"},
+    ...
+  ]
+}
+
+Notes:
+1. Outlines must continue the story from [Previously], accomplish the arc goal within the arc, and end in a state that hands off naturally to the next arc
+2. Each outline field must be {{.OutlineMinWords}}-{{.OutlineMaxWords}} words of concrete plot development — no vague summaries
+3. Every chapter outline must include: opening scene; core conflict; key turn; characters on stage and their roles; end-of-chapter hook
+4. Prefer [Registered characters]; mark new characters as "first appearance" with a one-line note
+5. One-time events that already happened (first meetings, identity reveals) must not be re-scheduled; key events of later arcs must not happen early
+6. Return JSON only, nothing else`,
+
+	ArcSummary: `You are a precise narrative analyst. Below are the chapter summaries of one completed arc. Compress them into a single arc-level summary that later arcs will use as prior context for outlining and writing.
+
+[Title] {{.Title}}
+[Arc {{.ArcIndex}}] "{{.ArcTitle}}" (chapters {{.StartNum}}-{{.EndNum}})
+[Arc stage goal] {{.ArcGoal}}
+
+[Chapter summaries]
+{{.ChapterSummaries}}
+
+Requirements:
+1. 300-600 words, chronological through-line: starting state -> key event chain -> end state
+2. Must preserve: one-time events (first meetings, identity reveals, relationship milestones, major deaths), changes in the protagonist's power/status/understanding, and unresolved hooks or foreshadowing left at arc end
+3. Compress side plots to a sentence; drop details with no narrative continuity value
+4. Output the summary text only, nothing else`,
+
+	ImportMetaAnalysis: `You are a professional fiction editor. The user is importing a published novel. Below are an opening excerpt and the chapter title list. Analyze them and extract the work's metadata.
+
+[Opening excerpt]
+{{.OpeningExcerpt}}
+
+[Chapter titles]
+{{.ChapterTitles}}
+
+Return JSON:
+{
+  "title": "book title (inferred from the text; leave empty if unclear)",
+  "story_type": "genre (e.g. urban fantasy, epic fantasy, mystery)",
+  "core_prompt": "core writing prompt: 100-200 words capturing the work's core premise and appeal, used as guidance for AI continuation",
+  "story_synopsis": "story synopsis (150-300 words based on the existing content)",
+  "writing_style": "writing style description (40-120 words: diction, pacing, atmosphere)",
+  "writing_pov": "narrative POV (e.g. third person limited, first person male lead)"
+}
+Return strict JSON only, nothing else.`,
+
+	ImportChapterAnalysis: `You are a precise narrative analyst. Below is the text of chapter {{.ChapterNum}} "{{.ChapterTitle}}" of "{{.Title}}". Produce a chapter outline and a recap summary to serve as context for later continuation.
+
+[Chapter text]
+{{.ChapterContent}}
+
+Return JSON:
+{
+  "outline": "chapter outline ({{.OutlineMinWords}}-{{.OutlineMaxWords}} words: opening scene, core conflict, key turn, characters on stage and their roles, end-of-chapter direction)",
+  "summary": "recap summary (100-250 words, including a [Character updates] item: characters appearing this chapter, first meetings, identity reveals, relationship milestones and other one-time events must be recorded explicitly)"
+}
+Return strict JSON only, nothing else.`,
+}
