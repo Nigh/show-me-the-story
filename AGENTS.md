@@ -79,6 +79,8 @@ task dev                              # 编译并启动 Go 后端
 | `state.go` | `Progress`、`ChapterState`（含 `WordCount` 字数、`ContentRev` 内容修订号）、`Foreshadow`、`MemoryEntry`（含 API 响应专用 `Snippet`）结构体，`LoadProgress`、`SaveProgress`（v3 分文件存储，见 `storage.go`）、`ChapterMarkdownPath`、`SaveChapterMarkdown(projectDir, ...)`、`ForeshadowRoadmapPath`（项目目录 `Foreshadows.md`） |
 | `storage.go` | **v3 存储层**：章节正文按章存 `chapters/NNNNNN.json`，`progress.json` 只存元数据（不含正文）；`saveChapterFiles`（fnv 内容哈希脏检查，仅重写变更章节 + 清理孤儿文件）、`loadChapterContents`、`ResetProgressFiles`（重置进度含章节目录）、`progressView`（API 响应视图：剥离正文、附 `word_count`/`content_rev`、解析记忆 `snippet`） |
 | `storage_test.go` | 存储层单测：roundtrip、脏检查不重写未变章节、孤儿清理、`progressView` 剥离正文 |
+| `blocks.go` | **v3 Block 模型**：`Block{ID,Type,Text}`（type: paragraph/dialogue/scene_break 仅展示提示）；`syncChapterBlocks`（从 Content 派生 blocks，未变段落 ID 稳定，`\n\n` 分段、无空行退化 `\n`，sep 存 `BlockSep`）、`rebuildContentFromBlocks`、`UpdateBlock`/`DeleteBlock`/`InsertBlockAfter`（块编辑后重建 Content）、`ReviseBlockAction`（复用 `ChapterSegmentRevision` prompt 对单 block AI 修订，输出含空行时下次 sync 自动拆块）。内存中 Content 仍是唯一事实源，AI 流程不感知 blocks；sync 挂在 `saveChapterFiles`（变更章节落盘前）与 `loadChapterContents`（旧章节文件无 blocks 时） |
+| `blocks_test.go` | Block 单测：ID 稳定性、单换行回退、CRUD 重建正文、多段拆分、随章节文件持久化 |
 | `api.go` | `resolveChatCompletionsURL`/`normalizeURL`（`url_strict` 时仅补 `/chat/completions`；否则路径含 `/vN` 只补 `/chat/completions`，裸域名补 `/v1/chat/completions`）、`CompletionResult`（含 `FinishReason`）、`CallAPI`/`CallAPIMessages`（**内部优先流式缓冲**，失败时回退 `callAPIMessagesSync`）、`CallAPIStream`/`CallAPIStreamMessages`（流式，解析 `finish_reason` + `stream_options.include_usage`）、`CallAPIWithRetry`/`CallAPIWithRetryLog`（无限重试）、`CallAPIStreamWithRetry`/`CallAPIStreamWithRetryLog`，`validateAPIConfig`、`isFatalAPIError`（401/403/404 致命，网络超时可重试）；所有调用经 `taskCtx` 时自动累计 token（优先 API `usage`，否则 rune 估算） |
 | `api_url_test.go` | `resolveChatCompletionsURL` 表驱动测试（z.ai v4、strict、DeepSeek、完整 URL） |
 | `outline.go` | `generateOutline`（注入 settings 角色列表 + 按 `target_words_per_chapter` 计算大纲字数下限，不足时自动重试）、`reviseOutline`、`GenerateOutlineAction`（存在已确认章节时拒绝整体重新生成；完成后 `runOutlinePostProcessChecks`）、`ReviseOutlineAction`、`ConfirmOutlineAction`、`EditChapterOutline`、`cleanJSONResponse` |
@@ -141,7 +143,7 @@ task dev                              # 编译并启动 Go 后端
 | `src/pages/Config.svelte` | 配置页：API 配置（含 `url_strict` 严格 URL 模式、解析后 endpoint 预览、上下文预算 tokens）、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、写作风格与叙述视角、AI 配置变更确认面板（`ConfigChangePanel`）、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；任务运行时所有输入控件禁用 |
 | `src/pages/Outline.svelte` | 大纲页：直接操作按钮（生成/确认/修订意见/删除/生成后续大纲）+ 导入续写 + pending 章节内联编辑 + 流式预览 + 标题/梗概展示优先 config（`preferUserValue` 一致）+ `ConfigChangePanel` + 未登记大纲人物确认面板（SSE `outline_character_suggestions`） |
 | `src/components/ConfigChangePanel.svelte` | AI 配置变更确认面板：展示 pending 提案（当前 vs 建议）、勾选采纳 / 全部忽略；SSE `config_change_proposal` 触发 |
-| `src/pages/Writing.svelte` | 写作页（v3：正文按需经 `GET /api/chapters/{num}` 拉取，`content_rev` 变化时刷新缓存；字数展示用索引里的 `word_count`；导出走 `GET /api/export/txt`）：章节列表（状态点）+ 直接操作（生成/确认/修改意见/去AI味，自动区分当前章修订与定向修订）+ 正文框选后浮动「引用到修改意见」按钮（插入 `> ` 引用行，触发段落级修订）+ 事实核查冲突处理面板（`pending_writing_conflict`，可选修改大纲/伏笔/重试/保留稿进入审核）+ 自动确认模式开关（toggle，随时可开关）+ 伏笔追踪摘要卡片（活跃/超期/临近回收）+ 优化章节衔接（进度卡片工具栏小按钮，已确认 ≥ 2 章时显示）+ 导出 TXT + 复制 + 上下章导航 + 流式尾部窗口展示（含「仅显示最新内容」提示；任务进行中当前章显示 taskTokenUsage，空闲时以 `countProseUnits` 显示正文字数）+ rAF 自动滚动（自动确认模式下自动跟随正在生成的章节）+ 全书完成后展示 `PostProcessPanel` |
+| `src/pages/Writing.svelte` | 写作页（v3：正文按需经 `GET /api/chapters/{num}` 拉取，`content_rev` 变化时刷新缓存；字数展示用索引里的 `word_count`；导出走 `GET /api/export/txt`；正文以 block 列表渲染，hover 出现 编辑/AI 修订/插入/删除 工具条，内联编辑与段落级 AI 修订）：章节列表（状态点）+ 直接操作（生成/确认/修改意见/去AI味，自动区分当前章修订与定向修订）+ 正文框选后浮动「引用到修改意见」按钮（插入 `> ` 引用行，触发段落级修订）+ 事实核查冲突处理面板（`pending_writing_conflict`，可选修改大纲/伏笔/重试/保留稿进入审核）+ 自动确认模式开关（toggle，随时可开关）+ 伏笔追踪摘要卡片（活跃/超期/临近回收）+ 优化章节衔接（进度卡片工具栏小按钮，已确认 ≥ 2 章时显示）+ 导出 TXT + 复制 + 上下章导航 + 流式尾部窗口展示（含「仅显示最新内容」提示；任务进行中当前章显示 taskTokenUsage，空闲时以 `countProseUnits` 显示正文字数）+ rAF 自动滚动（自动确认模式下自动跟随正在生成的章节）+ 全书完成后展示 `PostProcessPanel` |
 | `src/components/TaskTokenBadge.svelte` | 任务 token 展示（`↑ prompt ↓ completion tokens`）；对 `taskTokenUsage` 更新做线性 rAF 插值，动画时长 = `TOKEN_POLL_INTERVAL_MS`；目标值低于当前显示值时该维度从 0 重新向上插值（新一段统计或估算修正）；供 ChatPanel / App 顶栏 / Writing 页复用 |
 | `src/pages/Foreshadows.svelte` | 伏笔页：统计概览 + AI 设计伏笔 + 手动 CRUD + AI 建议确认面板（SSE `foreshadow_suggestions`）+ 伏笔-大纲冲突报告卡片（`last_foreshadow_outline_report`）+ 列表/章节时间线/路线图文档三视图 + 复制/下载 `Foreshadows.md` |
 | `src/pages/Memory.svelte` | 叙事记忆页（只读）：从 `progress.memory_entries` 展示统计（条数/覆盖章节/token 上限/内容字数）+ 列表/按章节时间线两视图 + 分类/章节筛选 + 原文片段预览（v3：片段由后端在 `snippet` 字段解析下发）+ 刷新/复制 |
@@ -445,7 +447,11 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | POST | `/api/config/apply-changes` | 同步 | 采纳选中的 pending 配置变更 |
 | DELETE | `/api/config/pending-changes` | 同步 | 清空 pending 配置变更提案 |
 | GET | `/api/progress` | 同步 | 获取进度（v3：章节不含正文，含 `word_count`/`content_rev`） |
-| GET | `/api/chapters/{num}` | 同步 | 获取单章完整正文 |
+| GET | `/api/chapters/{num}` | 同步 | 获取单章完整正文（含 `blocks`） |
+| PUT | `/api/chapters/{num}/blocks/{id}` | 同步 | 手动编辑单个 block 文本（保持 ID） |
+| DELETE | `/api/chapters/{num}/blocks/{id}` | 同步 | 删除单个 block |
+| POST | `/api/chapters/{num}/blocks` | 同步 | 在指定 block 后插入新 block（`after_id`=0 表示开头） |
+| POST | `/api/chapters/{num}/blocks/{id}/revise` | 异步 | AI 修订单个 block（任务名 `block_revision`） |
 | GET | `/api/export/txt` | 同步 | 导出全书 TXT（text/plain） |
 | DELETE | `/api/progress` | 同步 | 重置进度（含 `chapters/` 目录） |
 | GET | `/api/status` | 同步 | 获取状态摘要 |

@@ -402,6 +402,14 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "正文修订完毕，共 %d 字",
 		LangEN: "Targeted revision complete — %d characters",
 	},
+	"log.block_revising": {
+		LangZH: "正在修订第 %d 章的段落 block #%d...",
+		LangEN: "Revising chapter %d, block #%d...",
+	},
+	"log.block_revised": {
+		LangZH: "第 %d 章 block #%d 修订完成",
+		LangEN: "Chapter %d block #%d revised",
+	},
 	"log.chapter_segment_revising": {
 		LangZH: "检测到 %d 处原文引用，正在定向修订对应自然段...",
 		LangEN: "Detected %d quoted passage(s) — revising only the matched paragraph(s)...",
