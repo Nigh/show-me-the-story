@@ -2055,7 +2055,7 @@ func getBuiltinTools() []Tool {
 				if msg := requireConfirm(ctx, args, fmt.Sprintf("重置全部进度（共 %d 章及所有伏笔）", len(ctx.State.Chapters))); msg != "" {
 					return msg, nil
 				}
-				if err := deleteFile(ctx.ProgressPath); err != nil {
+				if err := ResetProgressFiles(ctx.ProgressPath); err != nil {
 					return "", agentErr(ctx, "delete_progress_failed", err)
 				}
 				// 原地清空，保证 Handlers 持有的同一指针也被重置

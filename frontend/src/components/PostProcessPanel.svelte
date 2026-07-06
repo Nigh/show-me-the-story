@@ -7,7 +7,7 @@
 
   $: bookComplete = (() => {
     const chs = $progress?.chapters || [];
-    return chs.length > 0 && chs.every(c => c.status === 'accepted' && c.content);
+    return chs.length > 0 && chs.every(c => c.status === 'accepted' && c.content_rev);
   })();
 
   $: pp = $postprocess?.state;

@@ -455,7 +455,52 @@ func (h *Handlers) DeletePendingConfigChanges(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handlers) GetProgress(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
+}
+
+// GetChapterContent returns one chapter with full prose content.
+func (h *Handlers) GetChapterContent(w http.ResponseWriter, r *http.Request) {
+	numStr := r.PathValue("num")
+	var num int
+	if _, err := fmt.Sscanf(numStr, "%d", &num); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_chapter_num")
+		return
+	}
+	idx := findChapterIdx(h.state, num)
+	if idx < 0 {
+		h.writeErrorReq(w, r, http.StatusNotFound, "chapter_n_not_found", num)
+		return
+	}
+	ch := h.state.Chapters[idx]
+	if ch.Content != "" {
+		ch.WordCount = countProseUnits(ch.Content)
+		ch.ContentRev = fmt.Sprintf("%x", hashContent(ch.Content))
+	}
+	h.writeJSON(w, http.StatusOK, ch)
+}
+
+// GetBookExport streams the whole book as plain text.
+func (h *Handlers) GetBookExport(w http.ResponseWriter, r *http.Request) {
+	lang := LangZH
+	if h.cfg != nil {
+		lang = NormalizeLanguage(h.cfg.Language)
+	}
+	title := h.state.Title
+	if title == "" {
+		title = h.projectName
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprintf(w, "%s\n", title)
+	for _, ch := range h.state.Chapters {
+		if ch.Content == "" {
+			continue
+		}
+		if lang == LangEN {
+			fmt.Fprintf(w, "\n\nChapter %d: %s\n\n%s", ch.Num, ch.Title, ch.Content)
+		} else {
+			fmt.Fprintf(w, "\n\n第 %d 章 %s\n\n%s", ch.Num, ch.Title, ch.Content)
+		}
+	}
 }
 
 func (h *Handlers) DeleteProgress(w http.ResponseWriter, r *http.Request) {
@@ -464,13 +509,13 @@ func (h *Handlers) DeleteProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := deleteFile(h.progressPath); err != nil {
+	if err := ResetProgressFiles(h.progressPath); err != nil {
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "delete_progress_failed", err.Error())
 		return
 	}
 
 	h.state = &Progress{Phase: "outline"}
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
 }
 
 func (h *Handlers) PostOutlineGenerate(w http.ResponseWriter, r *http.Request) {
@@ -569,7 +614,7 @@ func (h *Handlers) PostOutlineConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.SuccessKey("log.outline_confirmed")
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
 }
 
 func (h *Handlers) PostOutlineRevise(w http.ResponseWriter, r *http.Request) {
@@ -786,7 +831,7 @@ func (h *Handlers) PostChapterConflictResolve(w http.ResponseWriter, r *http.Req
 		}
 		h.logger.SuccessKey("log.chapter_kept_review", ch.Num)
 		h.broadcastProgress()
-		h.writeJSON(w, http.StatusOK, h.state)
+		h.writeJSON(w, http.StatusOK, progressView(h.state))
 	case "dismiss":
 		h.state.PendingWritingConflict = nil
 		if err := SaveProgress(h.progressPath, h.state); err != nil {
@@ -794,7 +839,7 @@ func (h *Handlers) PostChapterConflictResolve(w http.ResponseWriter, r *http.Req
 			return
 		}
 		h.broadcastProgress()
-		h.writeJSON(w, http.StatusOK, h.state)
+		h.writeJSON(w, http.StatusOK, progressView(h.state))
 	case "retry":
 		h.state.PendingWritingConflict = nil
 		if err := SaveProgress(h.progressPath, h.state); err != nil {
@@ -849,7 +894,7 @@ func (h *Handlers) PostChapterConfirm(w http.ResponseWriter, r *http.Request) {
 
 	ch := h.state.Chapters[h.state.CurrentChapterIndex-1]
 	h.logger.SuccessKey("log.chapter_confirmed", ch.Num)
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
 }
 
 func (h *Handlers) PostChapterEdit(w http.ResponseWriter, r *http.Request) {
@@ -1066,7 +1111,7 @@ func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.SuccessKey("log.chapter_deleted", num)
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
 }
 
 func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
@@ -1095,7 +1140,7 @@ func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.SuccessKey("log.outline_deleted")
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
 }
 
 func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
@@ -1133,7 +1178,7 @@ func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
 	go RunForeshadowOutlineCheckAndSave(context.Background(), h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
 
 	h.logger.SuccessKey("log.chapter_outline_updated", num)
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
 }
 
 func (h *Handlers) PostSettingsReconcile(w http.ResponseWriter, r *http.Request) {
@@ -1228,7 +1273,7 @@ func (h *Handlers) DeleteChaptersFrom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.SuccessKey("log.chapters_deleted_from", num, deletedCount)
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
 }
 
 func (h *Handlers) broadcastProgress() {
@@ -1601,7 +1646,7 @@ func (h *Handlers) PostContinueConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.SuccessKey("log.continue_import_done")
-	h.writeJSON(w, http.StatusOK, h.state)
+	h.writeJSON(w, http.StatusOK, progressView(h.state))
 }
 
 func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *http.Request) {
