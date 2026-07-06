@@ -65,7 +65,7 @@ API configuration is shared across all projects.
 
 1. **Configure the story**: on the Config page set genre, chapter count, target words per chapter, writing style, etc. Characters / world / organizations / relations can be added manually, or generated in one click with "AI generate settings".
 2. **Generate the outline**: on the Outline page, click generate. The AI outputs the full chapter outline. You can ask for revisions globally, or edit individual chapters inline; confirm when satisfied.
-3. **Write chapter by chapter**: on the Writing page, click generate. The AI streams the prose → produces a summary → fact-checks → waits for your review. Confirm to move on, or leave feedback to have the AI revise.
+3. **Write chapter by chapter**: on the Writing page, click generate. The AI streams the prose → produces a summary → fact-checks → waits for your review. Confirm to move on, or leave feedback to have the AI revise (select a passage and click **Quote** to revise only the matching paragraph; falls back to full-chapter revision if localization fails).
 4. **Want it hands-free?** Toggle "Auto-confirm": the AI will keep writing chapter after chapter until done. You can toggle it off at any time.
 
 ### Choosing the project language
@@ -99,6 +99,10 @@ If a foreshadow goes more than 3 chapters past its expected resolution chapter, 
 ### Settings reconciliation
 
 Changed a character / world entry after writing several chapters? When you save, the program offers "settings reconciliation": the AI compares the new settings with what you have already written, produces a compatible version of the settings, and regenerates the outline of any unwritten chapters so the story remains consistent.
+
+### Quote-based paragraph revision
+
+While reviewing a chapter on the Writing page, select a passage in the preview and click **Quote to feedback**. The selection is inserted as a `> ` quote line in your revision notes. On submit, the AI rewrites only the natural paragraph(s) containing the quoted text; if the quote cannot be located or the model returns the wrong number of paragraphs, it falls back to minimal full-chapter revision.
 
 ### Skills
 
@@ -136,7 +140,7 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 | **Settings** | Create / edit / delete characters, world entries, organizations, relations |
 | **Config** | Change genre, chapter count, words per chapter, writing style, synopsis, etc. |
 | **Outline** | Generate outline, revise by feedback (same chapter count), edit a single pending chapter outline, confirm outline |
-| **Writing** | Generate chapter, confirm chapter, revise a specific chapter, surgical paragraph edits |
+| **Writing** | Generate chapter, confirm chapter, revise a specific chapter, quote-selected paragraph revision, surgical paragraph edits |
 | **Foreshadows** | Suggest, create, update, delete foreshadows |
 | **Skills** | List skills, toggle skills on/off |
 
