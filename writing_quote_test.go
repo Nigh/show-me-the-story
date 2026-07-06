@@ -103,6 +103,7 @@ func TestFindParagraphsContaining(t *testing.T) {
 		quotes        []string
 		wantOk        bool
 		wantMatchedIdx []int
+		wantSep       string
 	}{
 		{
 			name:           "double newline single quote matches one paragraph",
@@ -110,6 +111,7 @@ func TestFindParagraphsContaining(t *testing.T) {
 			quotes:         []string{"她走了。"},
 			wantOk:         true,
 			wantMatchedIdx: []int{1},
+			wantSep:        "\n\n",
 		},
 		{
 			name:           "double newline multiple quotes hit different paragraphs",
@@ -131,6 +133,7 @@ func TestFindParagraphsContaining(t *testing.T) {
 			quotes:         []string{"她走了。"},
 			wantOk:         true,
 			wantMatchedIdx: []int{1},
+			wantSep:        "\n",
 		},
 		{
 			name:           "quote not found returns ok false",
@@ -150,12 +153,19 @@ func TestFindParagraphsContaining(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			matchedIdx, _, ok := findParagraphsContaining(tt.content, tt.quotes)
+			matchedIdx, paragraphs, sep, ok := findParagraphsContaining(tt.content, tt.quotes)
 			if ok != tt.wantOk {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOk)
 			}
 			if !ok {
 				return
+			}
+			if tt.wantSep != "" && sep != tt.wantSep {
+				t.Fatalf("sep = %q, want %q", sep, tt.wantSep)
+			}
+			// 用返回的 sep 重组必须还原原文，否则局部修订会改写整章换行格式
+			if strings.Join(paragraphs, sep) != tt.content {
+				t.Fatalf("rejoin with sep %q does not reproduce original content", sep)
 			}
 			if len(matchedIdx) != len(tt.wantMatchedIdx) {
 				t.Fatalf("matchedIdx len = %d, want %d (got %v)", len(matchedIdx), len(tt.wantMatchedIdx), matchedIdx)

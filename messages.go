@@ -288,10 +288,6 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "项目「%s」创建成功",
 		LangEN: "Project \"%s\" created",
 	},
-	"log.project_imported": {
-		LangZH: "项目「%s」导入成功（模式: %s）",
-		LangEN: "Project \"%s\" imported successfully (mode: %s)",
-	},
 
 	// ---- Writing pipeline logs ----
 	"log.chapter_start": {

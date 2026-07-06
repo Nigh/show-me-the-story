@@ -720,12 +720,15 @@ func extractQuotedSentences(feedback string) (quotes []string, cleanFeedback str
 }
 
 // findParagraphsContaining 在章节正文中找到包含任一引用句的自然段。
-// 段落优先按双换行切分；若原文不含空行则按单换行切分。
+// 段落优先按双换行切分；若原文不含空行则按单换行切分。sep 为实际使用的分隔符，
+// 重组时必须用同一分隔符，否则会改写整章的换行格式。
 // ponytail: substring match on naive paragraph split; first hit per quote; miss → errSegmentFallback / full-chapter revise.
-func findParagraphsContaining(content string, quotes []string) (matchedIdx []int, paragraphs []string, ok bool) {
-	paragraphs = strings.Split(content, "\n\n")
+func findParagraphsContaining(content string, quotes []string) (matchedIdx []int, paragraphs []string, sep string, ok bool) {
+	sep = "\n\n"
+	paragraphs = strings.Split(content, sep)
 	if len(paragraphs) <= 1 && strings.Contains(content, "\n") {
-		paragraphs = strings.Split(content, "\n")
+		sep = "\n"
+		paragraphs = strings.Split(content, sep)
 	}
 	matchedSet := make(map[int]bool)
 	for _, q := range quotes {
@@ -737,7 +740,7 @@ func findParagraphsContaining(content string, quotes []string) (matchedIdx []int
 			}
 		}
 		if found == -1 {
-			return nil, nil, false
+			return nil, nil, "", false
 		}
 		matchedSet[found] = true
 	}
@@ -746,7 +749,7 @@ func findParagraphsContaining(content string, quotes []string) (matchedIdx []int
 			matchedIdx = append(matchedIdx, i)
 		}
 	}
-	return matchedIdx, paragraphs, true
+	return matchedIdx, paragraphs, sep, true
 }
 
 // trimEmptyEnds 去除切片首尾的空白段（仅含空白字符的元素）。
@@ -768,7 +771,7 @@ func reviseChapterSegment(ctx context.Context, apiCfg *APIConfig, cfg *Config, s
 	ch := state.Chapters[chapterIdx]
 	lang := cfg.Language
 
-	matchedIdx, paragraphs, ok := findParagraphsContaining(ch.Content, quotes)
+	matchedIdx, paragraphs, sep, ok := findParagraphsContaining(ch.Content, quotes)
 	if !ok {
 		return "", errSegmentFallback
 	}
@@ -809,7 +812,7 @@ func reviseChapterSegment(ctx context.Context, apiCfg *APIConfig, cfg *Config, s
 	}
 	systemPrompt += SystemPromptFor(lang, "chapter_revision_suffix")
 
-	rawResp := CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
+	rawResp := CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 	if rawResp == "" {
 		return "", fmt.Errorf("局部修订 API 调用失败或被取消")
 	}
@@ -824,7 +827,7 @@ func reviseChapterSegment(ctx context.Context, apiCfg *APIConfig, cfg *Config, s
 	for k, i := range matchedIdx {
 		out[i] = newParas[k]
 	}
-	return strings.Join(out, "\n\n"), nil
+	return strings.Join(out, sep), nil
 }
 
 // reviseChapterContentStream 基于原文做最小化修订（流式）。

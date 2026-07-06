@@ -65,24 +65,6 @@ export default {
   'projects.toast.switched': '已切换到项目: {name}',
   'projects.toast.deleted': '项目已删除',
   'projects.toast.needName': '请输入项目名称',
-  'projects.import': '导入项目',
-  'projects.import.hint': '从其他目录导入已有的项目文件夹',
-  'projects.import.button': '导入项目',
-  'projects.import.dialog.title': '导入项目',
-  'projects.import.dialog.sourcePath': '源目录路径',
-  'projects.import.dialog.projectName': '项目名称（可选）',
-  'projects.import.dialog.projectNamePlaceholder': '留空则使用源目录名',
-  'projects.import.dialog.importMode': '导入模式',
-  'projects.import.dialog.modeCopy': '复制',
-  'projects.import.dialog.modeLink': '软链接',
-  'projects.import.dialog.modeCopyHint': '将整个项目目录复制到 storys/ 目录下',
-  'projects.import.dialog.modeLinkHint': '创建软链接指向源目录，节省磁盘空间',
-  'projects.import.dialog.conflictStrategy': '冲突处理',
-  'projects.import.dialog.conflictError': '报错',
-  'projects.import.dialog.conflictRename': '自动重命名',
-  'projects.import.dialog.conflictOverwrite': '覆盖',
-  'projects.import.dialog.confirm': '导入',
-  'projects.import.success': '项目 {name} 导入成功',
 
   // Toasts (translated from server-side Chinese messages)
   'toast.taskDone': '✓ {name}已完成',
@@ -304,7 +286,6 @@ export default {
 
   // ---- Config page ----
   'config.api.title': 'API 配置',
-  'config.api.provider': 'API 供应商',
   'config.api.baseUrl': 'API Base URL',
   'config.api.urlStrict': '严格 URL 模式',
   'config.api.urlStrictHint': '开启后不会自动插入 /v1，仅在末尾补 /chat/completions。',

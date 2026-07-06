@@ -189,9 +189,7 @@ func callAgentAPI(ctx context.Context, apiCfg *APIConfig, messages []Message, on
 	// Agent 调用需要足够的输出 token 来生成工具调用 JSON。
 	// 如果用户未设置或设置过低，使用 8192 作为下限。
 	agentCfg := *apiCfg
-	if agentCfg.MaxTokens < 8192 {
-		agentCfg.MaxTokens = 8192
-	}
+	agentCfg.MaxTokens = agentEffectiveMaxTokens(apiCfg)
 
 	result, err := CallAPIStreamMessages(ctx, &agentCfg, messages, onChunk)
 	if err == nil {
@@ -688,7 +686,8 @@ func parseToolCallFromJSON(jsonStr string) *ToolCall {
 
 // ponytail: byte walk outside JSON strings only; truncating mid-\\ or \\u may miscount.
 // Used by extractJSON for string-aware object boundary detection.
-func walkJSONStructure(s string, onStruct func(i int, c byte)) (inString bool) {
+func walkJSONStructure(s string, onStruct func(i int, c byte)) {
+	inString := false
 	escaped := false
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -709,7 +708,6 @@ func walkJSONStructure(s string, onStruct func(i int, c byte)) (inString bool) {
 		}
 		onStruct(i, c)
 	}
-	return inString
 }
 
 func extractJSON(content string) string {
