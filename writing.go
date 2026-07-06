@@ -956,10 +956,6 @@ func reviseSubsequentOutlines(ctx context.Context, apiCfg *APIConfig, cfg *Confi
 // futureOutlineWindow 注入后续章节大纲的窗口大小（章数）
 const futureOutlineWindow = 10
 
-// buildOutlineConstraints — Chinese default; for English projects use the *ForLang variant.
-func buildOutlineConstraints(state *Progress, idx int) string {
-	return buildOutlineConstraintsForLang(state, idx, LangZH)
-}
 
 // appendIfMissingPlaceholder 旧项目兼容兜底：prompts 随 config.json 持久化，
 // 老项目存的是没有新占位符的旧模板，applyDefaults 只在字段为空时回填。
@@ -994,10 +990,6 @@ func tailAtParagraph(content string, maxRunes int) string {
 	return strings.TrimSpace(tail)
 }
 
-// buildPreviousChapterTail — Chinese default; for English projects use the *ForLang variant.
-func buildPreviousChapterTail(state *Progress, idx int) string {
-	return buildPreviousChapterTailForLang(state, idx, LangZH)
-}
 
 // splitChapterOpening 把章节正文切分为开头片段与剩余部分，切点向前对齐到段落边界。
 // rest 为空表示整章都算开头（章节较短）。

@@ -51,9 +51,6 @@ func TestArcLookupAndStatus(t *testing.T) {
 	if arcCompleted(state, &state.Arcs[1]) {
 		t.Fatal("arc 2 has a missing chapter, not completed")
 	}
-	if arcOutlined(state, &state.Arcs[1]) {
-		t.Fatal("arc 2 missing chapter 4, not fully outlined")
-	}
 }
 
 func TestBuildPreviousArcContext(t *testing.T) {

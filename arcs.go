@@ -45,11 +45,6 @@ func arcChapters(state *Progress, arc *Arc) []*ChapterState {
 	return out
 }
 
-// arcOutlined reports whether every chapter slot in the arc range exists.
-func arcOutlined(state *Progress, arc *Arc) bool {
-	chs := arcChapters(state, arc)
-	return len(chs) == arc.EndCh-arc.StartCh+1
-}
 
 // arcCompleted reports whether every chapter in the arc range is accepted.
 func arcCompleted(state *Progress, arc *Arc) bool {

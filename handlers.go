@@ -154,9 +154,6 @@ func (h *Handlers) writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
-func (h *Handlers) writeError(w http.ResponseWriter, code int, msg string) {
-	h.writeJSON(w, code, map[string]string{"error": msg})
-}
 
 func (h *Handlers) tryStartTask() bool {
 	h.taskMu.Lock()
