@@ -294,7 +294,7 @@ task dev:frontend   # 启动 Vite dev server（:5173，热重载，代理 /api �
 
 ### 项目结构
 
-后端按职责拆分为单层 Go 文件（`outline.go` 大纲、`writing.go` 写作、`foreshadow.go` 伏笔、`agent.go` 助理 Agent Loop、`handlers.go` API 处理等），前端页面在 `frontend/src/pages/`。
+后端按依赖层次拆分为 `internal/` 下的 Go 包：`httpapi`（路由与 handler）、`agent`（助理 Agent Loop）、`story`（大纲/写作/伏笔/卷/导入等领域逻辑）、`llm`（OpenAI 兼容客户端）、`config`（配置与提示词模板）、`sse`（事件广播）、`i18n`（双语文案）、`prose` / `fsutil`（基础工具）。前端页面在 `frontend/src/pages/`。
 
 完整的架构说明、API 端点一览、SSE 事件类型、设计模式与开发约束请见 [AGENTS.md](AGENTS.md)。
 
