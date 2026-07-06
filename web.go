@@ -123,8 +123,10 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	mux.HandleFunc("PUT /api/foreshadows/{id}", h.PutForeshadow)
 	mux.HandleFunc("DELETE /api/foreshadows/{id}", h.DeleteForeshadow)
 
-	mux.HandleFunc("POST /api/continue/import", h.PostContinueImport)
-	mux.HandleFunc("POST /api/continue/confirm", h.PostContinueConfirm)
+	mux.HandleFunc("POST /api/import/split", h.PostImportSplit)
+	mux.HandleFunc("POST /api/import/start", h.PostImportStart)
+	mux.HandleFunc("POST /api/import/resume", h.PostImportResume)
+	mux.HandleFunc("GET /api/import/status", h.GetImportStatus)
 
 	mux.HandleFunc("GET /api/skills", h.GetSkills)
 	mux.HandleFunc("PUT /api/skills/{id}/toggle", h.PutSkillToggle)

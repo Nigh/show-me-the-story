@@ -167,10 +167,6 @@ func (lb *LogBroadcaster) WritingConflict(conflict *WritingConflict) {
 	lb.Emit("writing_conflict", conflict)
 }
 
-func (lb *LogBroadcaster) ContinueAnalysisResult(data interface{}) {
-	lb.Emit("continue_analysis", data)
-}
-
 func (lb *LogBroadcaster) SettingsReconciled(data interface{}) {
 	lb.Emit("settings_reconciled", data)
 }

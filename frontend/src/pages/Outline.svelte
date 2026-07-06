@@ -1,7 +1,8 @@
 <script>
   import { api } from '../lib/api.js';
-  import { progress, config, streamingContent, streamingChapterIdx, taskRunning, addToast, showConfirm, continueAnalysis, outlineCharacterSuggestions, outlineCharacterShowSuggestions, settings } from '../lib/stores.js';
+  import { progress, config, streamingContent, streamingChapterIdx, taskRunning, addToast, showConfirm, outlineCharacterSuggestions, outlineCharacterShowSuggestions, settings } from '../lib/stores.js';
   import { t } from '../lib/i18n/index.js';
+  import { onMount } from 'svelte';
   import ConfigChangePanel from '../components/ConfigChangePanel.svelte';
 
   $: p = $progress;
@@ -29,10 +30,22 @@
   let editTitle = '';
   let editOutline = '';
 
-  // 导入续写
+  // 导入续写（v3 流水线）
   let showImport = false;
   let importContent = '';
+  let importPreview = null; // [{num,title,word_count,preview}]
+  let importStatus = null;  // {active,total,cursor} 断点状态
   let continuationCount = 5;
+
+  onMount(refreshImportStatus);
+  $: if (!$taskRunning) refreshImportStatus();
+
+  async function refreshImportStatus() {
+    try {
+      const st = await api('GET', '/api/import/status');
+      importStatus = st?.active ? st : null;
+    } catch { importStatus = null; }
+  }
 
   async function generateOutline() {
     try {
@@ -143,24 +156,29 @@
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function importExisting() {
+  async function previewImportSplit() {
     const content = importContent.trim();
     if (!content) { addToast($t('outline.toasts.importContentRequired'), 'error'); return; }
     try {
-      await api('POST', '/api/continue/import', { content });
-      addToast($t('outline.toasts.importStarted'), 'info');
+      const res = await api('POST', '/api/import/split', { content });
+      importPreview = res.chapters || [];
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function confirmImport() {
-    if (!$continueAnalysis) return;
+  async function startImport() {
     try {
-      await api('POST', '/api/continue/confirm', $continueAnalysis);
-      progress.set(await api('GET', '/api/progress'));
-      continueAnalysis.set(null);
+      await api('POST', '/api/import/start', { content: importContent.trim() });
+      addToast($t('outline.toasts.importStarted'), 'info');
       showImport = false;
       importContent = '';
-      addToast($t('outline.toasts.importDone'), 'success');
+      importPreview = null;
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  async function resumeImport() {
+    try {
+      await api('POST', '/api/import/resume');
+      addToast($t('outline.toasts.importResumed'), 'info');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -205,58 +223,41 @@
         <div class="card-body p-4 gap-2">
           <h3 class="card-title text-base">{$t('outline.import.title')}</h3>
           <p class="text-xs text-base-content/50">{$t('outline.import.hint')}</p>
-          <textarea class="textarea w-full h-48 text-sm font-serif" bind:value={importContent} placeholder={$t('outline.import.placeholder')} disabled={$taskRunning}></textarea>
+          <textarea class="textarea w-full h-48 text-sm font-serif" bind:value={importContent} on:input={() => importPreview = null} placeholder={$t('outline.import.placeholder')} disabled={$taskRunning}></textarea>
           <div class="flex justify-end gap-2">
-            <button class="btn btn-ghost btn-xs" on:click={() => { showImport = false; importContent = ''; }}>{$t('common.cancel')}</button>
-            <button class="btn btn-primary btn-xs" on:click={importExisting} disabled={$taskRunning || !importContent.trim()}>{$t('outline.import.start')}</button>
+            <button class="btn btn-ghost btn-xs" on:click={() => { showImport = false; importContent = ''; importPreview = null; }}>{$t('common.cancel')}</button>
+            <button class="btn btn-primary btn-xs" on:click={previewImportSplit} disabled={$taskRunning || !importContent.trim()}>{$t('outline.import.preview')}</button>
           </div>
-        </div>
-      </div>
-    {/if}
 
-    {#if $continueAnalysis}
-      <div class="card bg-base-200 shadow-sm border border-primary/30">
-        <div class="card-body p-4 gap-2">
-          <h3 class="card-title text-base">{$t('outline.analysis.title')}</h3>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.title')}</span>
-              <input type="text" class="input input-sm w-full" bind:value={$continueAnalysis.title} disabled={$taskRunning} />
-            </div>
-            <div>
-              <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.type')}</span>
-              <input type="text" class="input input-sm w-full" bind:value={$continueAnalysis.story_type} disabled={$taskRunning} />
-            </div>
-          </div>
-          <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.synopsis')}</span>
-            <textarea class="textarea textarea-sm w-full h-20 text-sm" bind:value={$continueAnalysis.story_synopsis} disabled={$taskRunning}></textarea>
-          </div>
-          <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.style')}</span>
-            <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={$continueAnalysis.writing_style} disabled={$taskRunning}></textarea>
-          </div>
-          <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.pov')}</span>
-            <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={$continueAnalysis.writing_pov} disabled={$taskRunning}></textarea>
-          </div>
-          <div class="text-xs text-base-content/50">{$t('outline.analysis.detected', { n: $continueAnalysis.chapters?.length || 0 })}</div>
-          <div class="max-h-48 overflow-y-auto space-y-1">
-            {#each ($continueAnalysis.chapters || []) as ch}
-              <div class="bg-base-300 rounded p-2 text-xs">
-                <span class="font-medium">{$t('outline.analysis.chapter', { num: ch.num, title: ch.title })}</span>
-                <span class="text-base-content/50">{ch.outline || ch.summary || ''}</span>
+          {#if importPreview}
+            <div class="bg-base-300 rounded-lg p-3 space-y-2">
+              <div class="text-sm font-medium">{$t('outline.import.previewTitle', { n: importPreview.length })}</div>
+              <div class="max-h-64 overflow-y-auto space-y-1">
+                {#each importPreview as ch (ch.num)}
+                  <div class="bg-base-100/50 rounded p-2 text-xs flex items-baseline gap-2">
+                    <span class="font-bold text-base-content/40 w-8 shrink-0">{ch.num}</span>
+                    <span class="font-medium shrink-0">{ch.title}</span>
+                    <span class="text-base-content/40 shrink-0">{$t('outline.import.words', { n: ch.word_count })}</span>
+                    <span class="text-base-content/50 truncate">{ch.preview}</span>
+                  </div>
+                {/each}
               </div>
-            {/each}
-          </div>
-          <div class="flex justify-end gap-2">
-            <button class="btn btn-ghost btn-xs" on:click={() => continueAnalysis.set(null)}>{$t('outline.analysis.abandon')}</button>
-            <button class="btn btn-success btn-xs" on:click={confirmImport} disabled={$taskRunning}>{$t('outline.analysis.confirm')}</button>
-          </div>
+              <p class="text-xs text-base-content/50">{$t('outline.import.startHint')}</p>
+              <div class="flex justify-end">
+                <button class="btn btn-success btn-xs" on:click={startImport} disabled={$taskRunning || importPreview.length === 0}>{$t('outline.import.start')}</button>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
     {/if}
   {:else}
+    {#if importStatus}
+      <div class="alert alert-warning py-2 text-sm flex items-center justify-between">
+        <span>{$t('outline.import.resumeBanner', { done: importStatus.cursor, total: importStatus.total })}</span>
+        <button class="btn btn-primary btn-xs" on:click={resumeImport} disabled={$taskRunning}>{$t('outline.import.resume')}</button>
+      </div>
+    {/if}
     <ConfigChangePanel />
 
     {#if $outlineCharacterShowSuggestions && $outlineCharacterSuggestions.length > 0}
