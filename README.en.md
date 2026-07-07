@@ -308,7 +308,7 @@ task dev:frontend   # start the Vite dev server (:5173, HMR, proxies /api → :4
 
 ### Project layout
 
-The backend is a flat layer of Go files split by responsibility (`outline.go` for outlines, `writing.go` for chapter writing, `foreshadow.go` for foreshadows, `agent.go` for the assistant agent loop, `handlers.go` for HTTP routes, etc.). Frontend pages live under `frontend/src/pages/`.
+The backend is organized into layered Go packages under `internal/`: `httpapi` (routes and handlers), `agent` (the assistant agent loop), `story` (domain logic: outlines, writing, foreshadows, arcs, import, ...), `llm` (OpenAI-compatible client), `config` (configuration and prompt templates), `sse` (event broadcasting), `i18n` (bilingual messages), plus `prose` / `fsutil` utilities. Frontend pages live under `frontend/src/pages/`.
 
 The full architecture, API endpoint list, SSE event reference, design patterns, and development guidelines are in [AGENTS.md](AGENTS.md).
 
