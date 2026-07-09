@@ -323,6 +323,8 @@ export default {
   'config.api.testing': '测试中...',
   'config.api.saved': 'API 配置已保存',
   'config.api.testOk': '连接成功！模型 {model} 正常响应',
+  'config.api.testResultOk': '上次测试通过：模型 {model} 正常响应',
+  'config.api.testResultFail': '上次测试失败：{error}',
 
   'config.story.title': '故事配置',
   'config.story.acceptedHint': '已有已确认章节，修改关键设定后建议执行设定协调。',
