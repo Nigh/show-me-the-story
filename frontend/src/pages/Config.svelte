@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { apiConfig, config, progress, settings, editingCharID, editingWvID, wvFilter, addToast, showConfirm, taskRunning } from '../lib/stores.js';
+  import { apiConfig, config, progress, settings, editingCharID, editingWvID, wvFilter, addToast, showConfirm, taskRunning, apiTestResult } from '../lib/stores.js';
   import { t } from '../lib/i18n/index.js';
   import { resolveChatCompletionsURL } from '../lib/apiUrl.js';
   import ConfigChangePanel from '../components/ConfigChangePanel.svelte';
@@ -119,12 +119,19 @@
     } catch (e) { addToast(e.message, 'error'); }
   }
 
+  // 影响连接测试的字段签名；配置改动后据此自动清除持久化的测试结果
+  const apiTestSig = c => JSON.stringify([c.base_url, !!c.url_strict, c.model, c.api_key, c.http_timeout_seconds, c.max_tokens]);
+  $: if ($apiTestResult && apiTestSig(localApiCfg) !== $apiTestResult.sig) apiTestResult.set(null);
+
   async function testAPIConfig() {
     testingApi = true;
+    const sig = apiTestSig(localApiCfg);
     try {
       const res = await api('POST', '/api/config/api/test', localApiCfg);
+      apiTestResult.set({ ok: true, model: res.model, sig });
       addToast($t('config.api.testOk', { model: res.model }), 'success');
     } catch (e) {
+      apiTestResult.set({ ok: false, error: e.message, sig });
       addToast(e.message, 'error');
     } finally {
       testingApi = false;
@@ -411,8 +418,17 @@
             <input type="password" class="input input-sm w-full" bind:value={localApiCfg.api_key} placeholder="sk-..." disabled={$taskRunning || testingApi} />
           </div>
         </div>
+        {#if $apiTestResult}
+          <div class="text-xs rounded-md border px-2.5 py-1.5 {$apiTestResult.ok ? 'border-success/40 bg-success/10 text-success' : 'border-error/40 bg-error/10 text-error'}">
+            {#if $apiTestResult.ok}
+              ✓ {$t('config.api.testResultOk', { model: $apiTestResult.model })}
+            {:else}
+              ✕ {$t('config.api.testResultFail', { error: $apiTestResult.error })}
+            {/if}
+          </div>
+        {/if}
         <div class="flex justify-end gap-2">
-          <button class="btn btn-outline btn-xs" on:click={testAPIConfig} disabled={$taskRunning || testingApi}>
+          <button class="btn btn-xs {$apiTestResult ? ($apiTestResult.ok ? 'btn-success btn-outline' : 'btn-error btn-outline') : 'btn-outline'}" on:click={testAPIConfig} disabled={$taskRunning || testingApi}>
             {#if testingApi}
               <span class="loading loading-spinner loading-xs"></span>{$t('config.api.testing')}
             {:else}

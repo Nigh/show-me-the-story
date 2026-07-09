@@ -319,6 +319,8 @@ export default {
   'config.api.testing': 'Testing...',
   'config.api.saved': 'API config saved',
   'config.api.testOk': 'Connection succeeded. Model {model} responded normally.',
+  'config.api.testResultOk': 'Last test passed: model {model} responded normally.',
+  'config.api.testResultFail': 'Last test failed: {error}',
 
   'config.story.title': 'Story config',
   'config.story.acceptedHint': 'Confirmed chapters exist. After changing key settings, run reconciliation.',
