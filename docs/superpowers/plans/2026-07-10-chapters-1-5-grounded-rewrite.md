@@ -33,7 +33,6 @@
 - Copy: `/Users/caoye/storys/被逼急了，只好修仙/Chapter_01.md` through `Chapter_05.md`
 - Create: `/Users/caoye/storys/被逼急了，只好修仙/drafts/rewrite-opening-20260710/continuity.md`
 - Create: `/Users/caoye/storys/被逼急了，只好修仙/drafts/rewrite-opening-20260710/outlines.json`
-- Create: `/Users/caoye/storys/被逼急了，只好修仙/drafts/rewrite-opening-20260710/summaries.json`
 
 **Interfaces:**
 - Consumes: 当前系统正文、已批准设计、当前 `progress.json`。
