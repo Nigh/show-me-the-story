@@ -55,6 +55,10 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "项目已存在",
 		LangEN: "Project already exists",
 	},
+	"project_incompatible": {
+		LangZH: "此项目由旧版或未知版本创建，v3 为保护数据不会打开它。请使用原版本程序继续操作。",
+		LangEN: "This project was created by an older or unknown version. v3 will not open it to protect your data; use its original version instead.",
+	},
 	"create_project_dir_failed": {
 		LangZH: "创建项目目录失败: %s",
 		LangEN: "Failed to create project directory: %s",
