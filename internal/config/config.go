@@ -19,10 +19,14 @@ type APIConfig struct {
 }
 
 type Config struct {
-	Language    string        `json:"language"` // "zh" 或 "en"，影响 AI 提示词与生成内容；旧项目缺省视为 "zh"
-	Story       StoryConfig   `json:"story"`
-	Prompts     PromptsConfig `json:"prompts"`
-	SkillConfig *SkillConfig  `json:"skill_config,omitempty"`
+	// ProjectFormatVersion identifies the on-disk project layout. It is
+	// written when a v3 project is created so newer binaries never need to
+	// guess whether an unmarked project is safe to open.
+	ProjectFormatVersion int           `json:"project_format_version"`
+	Language             string        `json:"language"` // "zh" 或 "en"，影响 AI 提示词与生成内容；旧项目缺省视为 "zh"
+	Story                StoryConfig   `json:"story"`
+	Prompts              PromptsConfig `json:"prompts"`
+	SkillConfig          *SkillConfig  `json:"skill_config,omitempty"`
 }
 
 type StoryConfig struct {
@@ -67,6 +71,9 @@ type PromptsConfig struct {
 // real context window cannot be fetched.
 const DefaultContextBudgetTokens = 300000
 
+// ProjectFormatVersion is the only on-disk project layout this binary writes.
+const ProjectFormatVersion = 3
+
 func DefaultAPIConfig() *APIConfig {
 	return &APIConfig{
 		HTTPTimeoutSeconds:  300,
@@ -81,7 +88,8 @@ func DefaultConfig() *Config {
 func DefaultConfigForLang(lang string) *Config {
 	lang = i18n.NormalizeLanguage(lang)
 	cfg := &Config{
-		Language: lang,
+		ProjectFormatVersion: ProjectFormatVersion,
+		Language:             lang,
 		Story: StoryConfig{
 			ChapterCount:          12,
 			TargetWordsPerChapter: 5000,

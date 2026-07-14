@@ -26,6 +26,11 @@
   }
 
   async function selectProject(name) {
+    const project = $projects.find((item) => item.name === name);
+    if (project?.compatibility !== 'supported') {
+      addToast($t('projects.incompatible.message'), 'error');
+      return;
+    }
     try {
       await api('POST', '/api/projects/select', { name });
       currentProject.set(name);
@@ -154,7 +159,7 @@
               <!-- svelte-ignore a11y-click-events-have-key-events -->
               <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div
-                class="flex items-center gap-3 bg-base-300 rounded-lg p-3 cursor-pointer hover:bg-base-300/80 transition-colors group"
+                class="flex items-center gap-3 bg-base-300 rounded-lg p-3 transition-colors group {p.compatibility === 'supported' ? 'cursor-pointer hover:bg-base-300/80' : 'opacity-60'}"
                 class:ring-1={$currentProject === p.name}
                 class:ring-primary={$currentProject === p.name}
                 on:click={() => selectProject(p.name)}
@@ -166,9 +171,14 @@
                   <div class="text-sm font-medium truncate flex items-center gap-2">
                     <span>{p.name}</span>
                     <span class="badge badge-accent badge-xs uppercase">{(p.language || 'zh') === 'en' ? 'EN' : 'ZH'}</span>
+                    {#if p.compatibility !== 'supported'}
+                      <span class="badge badge-warning badge-xs">{$t('projects.incompatible.badge')}</span>
+                    {/if}
                   </div>
                   <div class="text-xs text-base-content/40 truncate">
-                    {#if p.title}
+                    {#if p.compatibility !== 'supported'}
+                      {$t('projects.incompatible.hint')}
+                    {:else if p.title}
                       {$t('projects.bookTitle', { title: p.title })}
                       {#if p.phase}
                         · {phaseLabel(p.phase)}

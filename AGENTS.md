@@ -74,7 +74,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/prose/units.go` | `CountProseUnits`（CJK +1；连续字母数字 token +1，内部 `.` `,` `-` `#` 连接；全角字母数字视同半角；标点/空白断词不计数；中英文共用） |
 | `internal/i18n/locale.go` | `LangZH`/`LangEN` 常量、`NormalizeLanguage`、`FromRequest` 从 `X-UI-Locale`/`Accept-Language`/`?locale=` 解析、`errorCatalog` 双语错误表、`T(lang, key, args)`（同时查 `messageCatalog` + `errorCatalog`）、`MsgArgs`、`systemPrompts` 内联 system prompt 集中表、`SystemPromptFor(lang, key)` |
 | `internal/i18n/messages.go` | `messageCatalog`：`log.*` SSE 日志 + `agent.*` 工具状态消息双语表（Go 侧 `%s`/`%d` 模板） |
-| `internal/config/config.go` | `APIConfig`（含 `URLStrict` 严格 URL 模式、`ContextBudgetTokens` 全书优化上下文预算、`DefaultContextBudgetTokens` 常量）、`Config`（含 `SkillConfig` + `Language`）、`StoryConfig`、`PromptsConfig`、`SkillConfig` 结构体，Load/Save 函数（`LoadAPIConfig`/`LoadConfig`/`SaveConfig`），`DefaultConfigForLang(lang)`、`ApplyDefaults(lang)` 按语言选择默认 prompts |
+| `internal/config/config.go` | `APIConfig`（含 `URLStrict` 严格 URL 模式、`ContextBudgetTokens` 全书优化上下文预算、`DefaultContextBudgetTokens` 常量）、`Config`（含 `ProjectFormatVersion`、`SkillConfig` + `Language`）、`StoryConfig`、`PromptsConfig`、`SkillConfig` 结构体，Load/Save 函数（`LoadAPIConfig`/`LoadConfig`/`SaveConfig`），`DefaultConfigForLang(lang)`、`ApplyDefaults(lang)` 按语言选择默认 prompts |
 | `internal/config/prompts.go` | `RenderPrompt`（`{{.KeyName}}` 替换）、`DefaultPromptsZH` 变量（所有内置中文提示词模板）、`DefaultPromptsForLang(lang)` |
 | `internal/config/prompts_en.go` | `DefaultPromptsEN`：全量英文模板（与中文一一对应） |
 | `internal/sse/logger.go` | `LogBroadcaster`；`LogEntry` 含 `msg_key`/`msg_args`；`InfoKey`/`SuccessKey`/…；`ToolCallEnd` 含 `result_key`/`result_args`；`Format`（SSE wire 格式）；领域事件方法（`ForeshadowSuggestions`/`ConfigChangeProposal`/`PostProcess*` 等）负载类型为 `any`，保持包领域无关 |
@@ -107,6 +107,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/agent/agent.go` | `Tool`、`AgentContext`、`AgentStep` 结构体（`ToolCall` 别名指向 `story.ToolCall`），`RunAgentLoop`（多轮消息历史 + 双语 tool 结果标签）、工具调用解析（`llm.ExtractJSON` 字符串感知；`finish_reason==length` 且 tool_call 未完整时 `agent.output_truncated` 报错，不修复截断 JSON）、内置工具集（读/写角色/世界观/章节等）、`buildAgentSystemPromptZH`/`buildAgentSystemPromptEN`、`update_project_config` 覆盖已填字段需 `confirm_overwrite: true`、`requireConfirm`（破坏性工具需 `confirm: true`）；文件内含原 `agent_i18n.go` 的 `agentMsg`/`agentErr` i18n 辅助 |
 | `internal/agent/agent_truncated_test.go` | Agent 工具调用解析单元测试：截断不修复、`ExtractJSON` 字符串感知、`finish_reason` 截断检测 |
 | `internal/httpapi/handlers.go` | `Handlers` 结构体（含项目管理字段 `progDir`/`projectName`/`projectMu`、自动确认开关 `autoConfirm`、`postprocess`/`postprocessPath`）、`projectDir()` 帮助函数、项目切换 `switchProject()`、`ensureProject()` 检查、`rejectIfTaskRunning()`（任务运行期间编辑类端点返回 409）、`writeErrorReq` 本地化错误响应、所有 HTTP handler（块编辑/卷/导入/全书优化/自动确认等）、`PostChapterGenerate` 自动确认循环、`tryStartTask`/`endTask`/`startChildWork` 互斥、项目管理 handler、`GetVersion` |
+| `internal/httpapi/project_compat.go` | 项目格式只读检测：新工程以 `config.json.project_format_version=3` 为契约；旧版内嵌章节正文或未识别布局标记为不兼容。选择前拒绝，保证不会创建目录或写回配置；无标记但完整 v3 分章布局可作为历史 v3 项目兼容打开并补写标记 |
 | `internal/httpapi/web.go` | 路由注册（含项目管理端点、`/api/autoconfirm`、`/api/version`）、CORS/日志中间件、静态文件服务（`StartWebServer` 接收 main 传入的 `fs.FS`） |
 | `internal/story/embeds/skills/*.md` | 内置 Skill 文件（YAML frontmatter `lang: zh|en` + prompt body），通过 `//go:embed` 嵌入；中文：`humanizer-zh.md` / `story-deslop.md` / `writing-craft.md`；英文：`humanizer-en.md` / `story-deslop-en.md` / `writing-craft-en.md` |
 | `.github/workflows/release.yml` | GitHub Actions 发布流程：推送 `v*` tag 时校验 tag 在 main 分支上，构建前端 + 交叉编译 5 个目标（linux/windows/macOS × amd64/arm64，windows 仅 amd64），打包 tar.gz/zip 并用 `gh` 创建 Release；通过 `-ldflags "-X main.version=${GITHUB_REF_NAME}"` 注入版本号 |
@@ -151,7 +152,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 
 ### 项目目录化
 
-`main.go` 接受命令行参数 `os.Args[1]` 作为程序基础目录（`progDir`），默认为当前目录。在 `progDir` 下自动创建 `storys/` 目录，每个故事项目是 `storys/{projectName}/` 子目录。`api.json` 始终在 `progDir` 下（全局共享）。所有项目文件（`progress.json`、`config.json`、`settings.json`、`sessions/`）都在各自项目目录中。
+`main.go` 接受命令行参数 `os.Args[1]` 作为程序基础目录（`progDir`），默认为当前目录。在 `progDir` 下自动创建 `storys/` 目录，每个故事项目是 `storys/{projectName}/` 子目录。`api.json` 始终在 `progDir` 下（全局共享）。所有项目文件（`progress.json`、`config.json`、`settings.json`、`sessions/`）都在各自项目目录中。新建 v3 项目会在 `config.json` 写入 `project_format_version: 3`；项目列表只读检查此标记，旧版内嵌正文格式和未识别格式显示为不兼容且无法选择，避免 v3 重写旧工程。
 
 启动时不绑定具体项目，前端显示项目选择页面。用户选择/创建项目后，后端通过 `switchProject()` 加载对应项目的全部数据。
 

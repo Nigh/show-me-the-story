@@ -96,6 +96,9 @@ func (h *Handlers) switchProject(name string) error {
 	if info, err := os.Stat(projectDir); err != nil || !info.IsDir() {
 		return fmt.Errorf("项目目录不存在: %s", name)
 	}
+	if err := ensureProjectCompatible(projectDir); err != nil {
+		return err
+	}
 
 	configPath := filepath.Join(projectDir, "config.json")
 	progressPath := filepath.Join(projectDir, "progress.json")
@@ -106,6 +109,12 @@ func (h *Handlers) switchProject(name string) error {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("加载项目配置失败: %w", err)
+	}
+	if cfg.ProjectFormatVersion != config.ProjectFormatVersion {
+		cfg.ProjectFormatVersion = config.ProjectFormatVersion
+		if err := config.SaveConfig(configPath, cfg); err != nil {
+			return fmt.Errorf("标记项目格式失败: %w", err)
+		}
 	}
 
 	state, err := story.LoadProgress(progressPath)
