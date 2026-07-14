@@ -1,14 +1,16 @@
 <script>
   import { api } from '../lib/api.js';
-  import { progress, config, streamingContent, streamingChapterIdx, taskRunning, addToast, showConfirm, continueAnalysis, outlineCharacterSuggestions, outlineCharacterShowSuggestions, settings } from '../lib/stores.js';
+  import { progress, config, streamingContent, streamingChapterIdx, taskRunning, addToast, showConfirm, outlineCharacterSuggestions, outlineCharacterShowSuggestions, settings } from '../lib/stores.js';
   import { t } from '../lib/i18n/index.js';
+  import { onMount } from 'svelte';
   import ConfigChangePanel from '../components/ConfigChangePanel.svelte';
 
   $: p = $progress;
   $: displayTitle = $config?.story?.title || p?.title || '';
   $: displaySynopsis = $config?.story?.story_synopsis || p?.story_synopsis || '';
   $: chapters = p?.chapters || [];
-  $: hasOutline = chapters.length > 0;
+  $: arcs = p?.arcs || [];
+  $: hasOutline = chapters.length > 0 || arcs.length > 0;
   $: hasAccepted = chapters.some(c => c.status === 'accepted');
   $: inOutlinePhase = p?.phase === 'outline';
   $: pendingCount = chapters.filter(c => c.status === 'pending').length;
@@ -28,15 +30,70 @@
   let editTitle = '';
   let editOutline = '';
 
-  // 导入续写
+  // 导入续写（v3 流水线）
   let showImport = false;
   let importContent = '';
+  let importPreview = null; // [{num,title,word_count,preview}]
+  let importStatus = null;  // {active,total,cursor} 断点状态
   let continuationCount = 5;
+
+  onMount(refreshImportStatus);
+  $: if (!$taskRunning) refreshImportStatus();
+
+  async function refreshImportStatus() {
+    try {
+      const st = await api('GET', '/api/import/status');
+      importStatus = st?.active ? st : null;
+    } catch { importStatus = null; }
+  }
 
   async function generateOutline() {
     try {
       await api('POST', '/api/outline/generate');
       addToast($t('outline.toasts.outlineStarted'), 'info');
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  // 卷（arc）操作
+  let arcReqOpenId = -1;
+  let arcRequirements = '';
+  let showAppendArc = false;
+  let appendArcTitle = '';
+  let appendArcGoal = '';
+  let appendArcCount = 20;
+
+  function arcChapterCounts(arc) {
+    const inRange = chapters.filter(c => c.num >= arc.start_ch && c.num <= arc.end_ch);
+    return { outlined: inRange.length, total: arc.end_ch - arc.start_ch + 1 };
+  }
+
+  async function generateSkeleton() {
+    try {
+      await api('POST', '/api/arcs/skeleton');
+      addToast($t('outline.toasts.skeletonStarted'), 'info');
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  async function generateArcOutline(arc) {
+    try {
+      await api('POST', `/api/arcs/${arc.id}/outline`, { requirements: arcReqOpenId === arc.id ? arcRequirements.trim() : '' });
+      addToast($t('outline.toasts.arcOutlineStarted'), 'info');
+      arcReqOpenId = -1;
+      arcRequirements = '';
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  async function appendArc() {
+    try {
+      await api('POST', '/api/arcs/append', {
+        title: appendArcTitle.trim(),
+        goal: appendArcGoal.trim(),
+        chapter_count: Number(appendArcCount) || 20,
+      });
+      addToast($t('outline.toasts.arcAppendStarted'), 'info');
+      showAppendArc = false;
+      appendArcTitle = '';
+      appendArcGoal = '';
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -99,24 +156,29 @@
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function importExisting() {
+  async function previewImportSplit() {
     const content = importContent.trim();
     if (!content) { addToast($t('outline.toasts.importContentRequired'), 'error'); return; }
     try {
-      await api('POST', '/api/continue/import', { content });
-      addToast($t('outline.toasts.importStarted'), 'info');
+      const res = await api('POST', '/api/import/split', { content });
+      importPreview = res.chapters || [];
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function confirmImport() {
-    if (!$continueAnalysis) return;
+  async function startImport() {
     try {
-      await api('POST', '/api/continue/confirm', $continueAnalysis);
-      progress.set(await api('GET', '/api/progress'));
-      continueAnalysis.set(null);
+      await api('POST', '/api/import/start', { content: importContent.trim() });
+      addToast($t('outline.toasts.importStarted'), 'info');
       showImport = false;
       importContent = '';
-      addToast($t('outline.toasts.importDone'), 'success');
+      importPreview = null;
+    } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  async function resumeImport() {
+    try {
+      await api('POST', '/api/import/resume');
+      addToast($t('outline.toasts.importResumed'), 'info');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -150,8 +212,10 @@
       <p class="text-sm text-base-content/35 mb-6">{$t('outline.empty.hint')}</p>
       <div class="flex justify-center gap-2">
         <button class="btn btn-primary btn-sm" on:click={generateOutline} disabled={$taskRunning}>{$t('outline.btn.generate')}</button>
+        <button class="btn btn-secondary btn-sm" on:click={generateSkeleton} disabled={$taskRunning}>{$t('outline.btn.skeleton')}</button>
         <button class="btn btn-ghost btn-sm" on:click={() => showImport = !showImport} disabled={$taskRunning}>{$t('outline.btn.import')}</button>
       </div>
+      <p class="text-xs text-base-content/35 mt-2">{$t('outline.empty.arcHint')}</p>
     </div>
 
     {#if showImport}
@@ -159,58 +223,41 @@
         <div class="card-body p-4 gap-2">
           <h3 class="card-title text-base">{$t('outline.import.title')}</h3>
           <p class="text-xs text-base-content/50">{$t('outline.import.hint')}</p>
-          <textarea class="textarea w-full h-48 text-sm font-serif" bind:value={importContent} placeholder={$t('outline.import.placeholder')} disabled={$taskRunning}></textarea>
+          <textarea class="textarea w-full h-48 text-sm font-serif" bind:value={importContent} on:input={() => importPreview = null} placeholder={$t('outline.import.placeholder')} disabled={$taskRunning}></textarea>
           <div class="flex justify-end gap-2">
-            <button class="btn btn-ghost btn-xs" on:click={() => { showImport = false; importContent = ''; }}>{$t('common.cancel')}</button>
-            <button class="btn btn-primary btn-xs" on:click={importExisting} disabled={$taskRunning || !importContent.trim()}>{$t('outline.import.start')}</button>
+            <button class="btn btn-ghost btn-xs" on:click={() => { showImport = false; importContent = ''; importPreview = null; }}>{$t('common.cancel')}</button>
+            <button class="btn btn-primary btn-xs" on:click={previewImportSplit} disabled={$taskRunning || !importContent.trim()}>{$t('outline.import.preview')}</button>
           </div>
-        </div>
-      </div>
-    {/if}
 
-    {#if $continueAnalysis}
-      <div class="card bg-base-200 shadow-sm border border-primary/30">
-        <div class="card-body p-4 gap-2">
-          <h3 class="card-title text-base">{$t('outline.analysis.title')}</h3>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.title')}</span>
-              <input type="text" class="input input-sm w-full" bind:value={$continueAnalysis.title} disabled={$taskRunning} />
-            </div>
-            <div>
-              <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.type')}</span>
-              <input type="text" class="input input-sm w-full" bind:value={$continueAnalysis.story_type} disabled={$taskRunning} />
-            </div>
-          </div>
-          <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.synopsis')}</span>
-            <textarea class="textarea textarea-sm w-full h-20 text-sm" bind:value={$continueAnalysis.story_synopsis} disabled={$taskRunning}></textarea>
-          </div>
-          <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.style')}</span>
-            <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={$continueAnalysis.writing_style} disabled={$taskRunning}></textarea>
-          </div>
-          <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('outline.analysis.fields.pov')}</span>
-            <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={$continueAnalysis.writing_pov} disabled={$taskRunning}></textarea>
-          </div>
-          <div class="text-xs text-base-content/50">{$t('outline.analysis.detected', { n: $continueAnalysis.chapters?.length || 0 })}</div>
-          <div class="max-h-48 overflow-y-auto space-y-1">
-            {#each ($continueAnalysis.chapters || []) as ch}
-              <div class="bg-base-300 rounded p-2 text-xs">
-                <span class="font-medium">{$t('outline.analysis.chapter', { num: ch.num, title: ch.title })}</span>
-                <span class="text-base-content/50">{ch.outline || ch.summary || ''}</span>
+          {#if importPreview}
+            <div class="bg-base-300 rounded-lg p-3 space-y-2">
+              <div class="text-sm font-medium">{$t('outline.import.previewTitle', { n: importPreview.length })}</div>
+              <div class="max-h-64 overflow-y-auto space-y-1">
+                {#each importPreview as ch (ch.num)}
+                  <div class="bg-base-100/50 rounded p-2 text-xs flex items-baseline gap-2">
+                    <span class="font-bold text-base-content/40 w-8 shrink-0">{ch.num}</span>
+                    <span class="font-medium shrink-0">{ch.title}</span>
+                    <span class="text-base-content/40 shrink-0">{$t('outline.import.words', { n: ch.word_count })}</span>
+                    <span class="text-base-content/50 truncate">{ch.preview}</span>
+                  </div>
+                {/each}
               </div>
-            {/each}
-          </div>
-          <div class="flex justify-end gap-2">
-            <button class="btn btn-ghost btn-xs" on:click={() => continueAnalysis.set(null)}>{$t('outline.analysis.abandon')}</button>
-            <button class="btn btn-success btn-xs" on:click={confirmImport} disabled={$taskRunning}>{$t('outline.analysis.confirm')}</button>
-          </div>
+              <p class="text-xs text-base-content/50">{$t('outline.import.startHint')}</p>
+              <div class="flex justify-end">
+                <button class="btn btn-success btn-xs" on:click={startImport} disabled={$taskRunning || importPreview.length === 0}>{$t('outline.import.start')}</button>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
     {/if}
   {:else}
+    {#if importStatus}
+      <div class="alert alert-warning py-2 text-sm flex items-center justify-between">
+        <span>{$t('outline.import.resumeBanner', { done: importStatus.cursor, total: importStatus.total })}</span>
+        <button class="btn btn-primary btn-xs" on:click={resumeImport} disabled={$taskRunning}>{$t('outline.import.resume')}</button>
+      </div>
+    {/if}
     <ConfigChangePanel />
 
     {#if $outlineCharacterShowSuggestions && $outlineCharacterSuggestions.length > 0}
@@ -291,6 +338,59 @@
         {/if}
       </div>
     </div>
+
+    <!-- 卷结构（层级大纲） -->
+    {#if arcs.length > 0}
+      <div class="card bg-base-200 shadow-sm">
+        <div class="card-body p-4 gap-2">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-semibold text-base-content/60">{$t('outline.arcs.title')} <span class="font-normal text-base-content/35">({arcs.length})</span></h4>
+            <button class="btn btn-ghost btn-xs" on:click={() => showAppendArc = !showAppendArc} disabled={$taskRunning}>{$t('outline.arcs.append')}</button>
+          </div>
+
+          {#if showAppendArc}
+            <div class="bg-base-300 rounded-lg p-3 space-y-2">
+              <div class="flex gap-2">
+                <input type="text" class="input input-sm flex-1" bind:value={appendArcTitle} placeholder={$t('outline.arcs.appendTitle')} disabled={$taskRunning} />
+                <input type="number" min="1" max="100" class="input input-sm w-20" bind:value={appendArcCount} disabled={$taskRunning} title={$t('outline.arcs.appendCount')} />
+              </div>
+              <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={appendArcGoal} placeholder={$t('outline.arcs.appendGoal')} disabled={$taskRunning}></textarea>
+              <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost btn-xs" on:click={() => showAppendArc = false}>{$t('common.cancel')}</button>
+                <button class="btn btn-primary btn-xs" on:click={appendArc} disabled={$taskRunning}>{$t('outline.arcs.appendSubmit')}</button>
+              </div>
+            </div>
+          {/if}
+
+          <div class="space-y-1.5">
+            {#each arcs as arc, i (arc.id)}
+              {@const counts = arcChapterCounts(arc)}
+              <div class="bg-base-300 rounded-lg p-2.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-bold text-base-content/40 shrink-0">{$t('outline.arcs.volLabel', { n: i + 1 })}</span>
+                  <span class="text-sm font-medium flex-1 min-w-0 truncate">{arc.title}</span>
+                  <span class="text-xs text-base-content/40 shrink-0">{$t('outline.arcs.range', { start: arc.start_ch, end: arc.end_ch })}</span>
+                  <span class="badge badge-xs {counts.outlined >= counts.total ? 'badge-success' : 'badge-ghost'}">{$t('outline.arcs.outlined', { n: counts.outlined, total: counts.total })}</span>
+                  {#if arc.summary}
+                    <span class="badge badge-xs badge-info">{$t('outline.arcs.summaryDone')}</span>
+                  {/if}
+                  <button class="btn btn-primary btn-xs shrink-0" on:click={() => generateArcOutline(arc)} disabled={$taskRunning}>
+                    {counts.outlined > 0 ? $t('outline.arcs.regenOutline') : $t('outline.arcs.genOutline')}
+                  </button>
+                  <button class="btn btn-ghost btn-xs shrink-0" on:click={() => { arcReqOpenId = arcReqOpenId === arc.id ? -1 : arc.id; arcRequirements = ''; }} disabled={$taskRunning}>+</button>
+                </div>
+                {#if arc.goal}
+                  <p class="text-xs text-base-content/50 mt-1 line-clamp-2">{arc.goal}</p>
+                {/if}
+                {#if arcReqOpenId === arc.id}
+                  <textarea class="textarea textarea-sm w-full h-14 text-sm mt-2" bind:value={arcRequirements} placeholder={$t('outline.arcs.reqPlaceholder')} disabled={$taskRunning}></textarea>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <!-- 章节大纲列表 -->
     <div class="card bg-base-200 shadow-sm">

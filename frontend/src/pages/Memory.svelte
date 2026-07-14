@@ -33,17 +33,9 @@
   });
   $: timelineRows = buildTimeline(filtered);
 
-  function extractSnippet(chapterNum, position, maxRunes = 100) {
-    if (!position || !chapterNum) return '';
-    const ch = chapters.find(c => c.num === chapterNum);
-    if (!ch?.content) return '';
-    const paragraphs = ch.content.split('\n\n');
-    const idx = position - 1;
-    if (idx < 0 || idx >= paragraphs.length) return '';
-    const para = paragraphs[idx].trim();
-    const runes = [...para];
-    if (runes.length > maxRunes) return runes.slice(0, maxRunes).join('') + '…';
-    return para;
+  // v3: 原文片段由后端在 /api/progress 中直接解析（正文不再随 progress 下发）
+  function extractSnippet(entry) {
+    return entry?.snippet || '';
   }
 
   function buildTimeline(items) {
@@ -63,7 +55,7 @@
   }
 
   function formatEntryLine(e) {
-    const snippet = extractSnippet(e.chapter, e.position);
+    const snippet = extractSnippet(e);
     if (snippet) {
       return `[第${e.chapter}章] ${e.content}（原文：「${snippet}」）`;
     }
@@ -172,7 +164,7 @@
               </thead>
               <tbody>
                 {#each filtered as e (e.id)}
-                  {@const snippet = extractSnippet(e.chapter, e.position)}
+                  {@const snippet = extractSnippet(e)}
                   <tr>
                     <td class="font-mono text-xs">{e.id}</td>
                     <td>
@@ -208,7 +200,7 @@
                 </div>
                 <div class="space-y-2">
                   {#each row.entries as e (e.id)}
-                    {@const snippet = extractSnippet(e.chapter, e.position)}
+                    {@const snippet = extractSnippet(e)}
                     <div class="rounded-md bg-base-200/80 px-3 py-2 text-sm">
                       <div class="flex flex-wrap items-center gap-2 mb-1">
                         <span class="font-mono text-xs text-base-content/50">#{e.id}</span>

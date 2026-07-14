@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, taskTokenUsage, continueAnalysis, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions, outlineCharacterSuggestions, outlineCharacterShowSuggestions, pendingConfigChanges, showConfigChangePanel } from './stores.js';
+import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, taskTokenUsage, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions, outlineCharacterSuggestions, outlineCharacterShowSuggestions, pendingConfigChanges, showConfigChangePanel } from './stores.js';
 import { api } from './api.js';
 import { getLocale, translate, formatLogEntry, formatToolResult } from './i18n/index.js';
 import { TOKEN_POLL_INTERVAL_MS } from './tokenPoll.js';
@@ -196,11 +196,6 @@ export function connectSSE() {
     }
     contentBuf += d.text;
     if (!contentTimer) contentTimer = setTimeout(flushContentBuf, FLUSH_INTERVAL);
-  });
-
-  eventSource.addEventListener('continue_analysis', e => {
-    const d = JSON.parse(e.data);
-    continueAnalysis.set(d);
   });
 
   eventSource.addEventListener('settings_reconciled', e => {

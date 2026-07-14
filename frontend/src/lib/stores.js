@@ -29,7 +29,6 @@ export const autoConfirm = writable(false);
 export const chatSessions = writable(null);
 export const currentChatSession = writable(null);
 
-export const continueAnalysis = writable(null);
 export const editingChapterNum = writable(-1);
 export const editingCharID = writable(null);
 export const editingWvID = writable(null);
@@ -39,6 +38,10 @@ export const logEntries = writable([]);
 
 // 重试信息：记录最后一次失败的任务
 export const lastFailedTask = writable(null);
+
+// LLM 连接测试结果：{ ok, model?, error?, snapshot }，snapshot 为被测配置的 JSON。
+// 存全局 store 使其在切换页面后仍可见；表单内容与 snapshot 不一致时前端自动隐藏。
+export const apiTestResult = writable(null);
 
 export function addLog(entry) {
   logEntries.update(entries => {

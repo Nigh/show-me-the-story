@@ -1,18 +1,26 @@
 package main
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
+
+	"showmethestory/internal/config"
+	"showmethestory/internal/httpapi"
+	"showmethestory/internal/llm"
+	"showmethestory/internal/sse"
 )
 
-var (
-	version = "dev"
-)
+//go:embed frontend/dist
+var staticFiles embed.FS
 
-const (
-	defaultPort = ":48090"
-)
+// version is injected by CI via -ldflags "-X main.version=...".
+var version = "dev"
+
+const defaultPort = ":48090"
 
 func main() {
 	// Determine program directory (progDir)
@@ -41,28 +49,19 @@ func main() {
 	storysDir := filepath.Join(progDir, "storys")
 	os.MkdirAll(storysDir, 0755)
 
-	// API config: always in progDir
+	// Load API config (global, shared across projects; always in progDir)
 	apiCfgPath := filepath.Join(progDir, "api.json")
-
-	// Load API config (global, shared across projects)
-	apiCfg, err := LoadAPIConfig(apiCfgPath)
+	apiCfg, err := config.LoadAPIConfig(apiCfgPath)
 	if err != nil {
 		fmt.Printf(" [错误] 加载API配置失败: %v\n", err)
 		os.Exit(1)
 	}
+	llm.EnsureContextBudget(apiCfg)
 
 	if apiCfg.BaseURL == "" || apiCfg.Model == "" {
 		fmt.Println(" [系统] 检测到空白API配置，已自动生成 api.json")
 		fmt.Println(" [系统] 请通过 Web UI 配置 API 地址和模型后再使用")
 	}
-
-	// Start with no project selected
-	cfg := DefaultConfig()
-	state := &Progress{Phase: "outline"}
-	settings := &ProjectSettings{}
-	skills := LoadAllSkills(cfg, progDir)
-	sessionsDir := filepath.Join(progDir, "sessions")
-	os.MkdirAll(sessionsDir, 0755)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -71,12 +70,17 @@ func main() {
 		port = ":" + port
 	}
 
-	logger := NewLogBroadcaster()
+	logger := sse.NewLogBroadcaster()
 	defer logger.Close()
 
 	fmt.Printf(" [系统] 版本: %s\n", version)
 	fmt.Printf(" [系统] 程序目录: %s\n", progDir)
 	fmt.Printf(" [系统] 项目目录: %s\n", storysDir)
 
-	startWebServer(apiCfg, apiCfgPath, cfg, state, settings, skills, sessionsDir, logger, port, progDir, version)
+	staticFS, err := fs.Sub(staticFiles, "frontend/dist")
+	if err != nil {
+		log.Fatalf("嵌入静态文件失败: %v", err)
+	}
+
+	httpapi.StartWebServer(apiCfg, apiCfgPath, logger, port, progDir, version, staticFS)
 }
