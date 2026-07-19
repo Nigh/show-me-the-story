@@ -2,8 +2,14 @@
   import { api } from '../lib/api.js';
   import { progress, config, streamingContent, streamingChapterIdx, taskRunning, addToast, showConfirm, outlineCharacterSuggestions, outlineCharacterShowSuggestions, settings } from '../lib/stores.js';
   import { t } from '../lib/i18n/index.js';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import ConfigChangePanel from '../components/ConfigChangePanel.svelte';
+
+  const OUTLINE_FOCUS_KEY = 'showmethestory.outlineFocusChapter';
+
+  function isOutlineEditable(status) {
+    return status === 'pending' || status === 'writing' || status === 'review';
+  }
 
   $: p = $progress;
   $: displayTitle = $config?.story?.title || p?.title || '';
@@ -39,6 +45,27 @@
 
   onMount(refreshImportStatus);
   $: if (!$taskRunning) refreshImportStatus();
+
+  let outlineFocusTried = false;
+  $: if (!outlineFocusTried && chapters.length > 0) {
+    outlineFocusTried = true;
+    focusChapterFromSession();
+  }
+
+  async function focusChapterFromSession() {
+    let raw;
+    try { raw = sessionStorage.getItem(OUTLINE_FOCUS_KEY); } catch { return; }
+    if (!raw) return;
+    try { sessionStorage.removeItem(OUTLINE_FOCUS_KEY); } catch {}
+    const num = parseInt(raw, 10);
+    if (!num) return;
+    const ch = chapters.find(c => c.num === num);
+    if (!ch || !isOutlineEditable(ch.status) || $taskRunning) return;
+    startEdit(ch);
+    await tick();
+    const el = document.querySelector(`[data-outline-chapter="${num}"]`);
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
 
   async function refreshImportStatus() {
     try {
@@ -402,7 +429,7 @@
         <div class="space-y-1.5">
           {#each chapters as ch (ch.num)}
             {#if editingNum === ch.num}
-              <div class="bg-base-300 rounded-lg p-3 space-y-2 ring-1 ring-primary/50">
+              <div data-outline-chapter={ch.num} class="bg-base-300 rounded-lg p-3 space-y-2 ring-1 ring-primary/50">
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-bold text-base-content/50 shrink-0">{$t('outline.chapter.chapterLabel', { num: ch.num })}</span>
                   <input type="text" class="input input-sm flex-1" bind:value={editTitle} placeholder={$t('outline.chapter.titlePlaceholder')} disabled={$taskRunning} />
@@ -417,14 +444,15 @@
               <!-- svelte-ignore a11y-click-events-have-key-events -->
               <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div
-                class="bg-base-300 rounded-lg p-2.5 group {ch.status === 'pending' && !$taskRunning ? 'cursor-pointer hover:ring-1 hover:ring-primary/40' : ''} transition-shadow"
-                on:click={() => ch.status === 'pending' && !$taskRunning && startEdit(ch)}
+                data-outline-chapter={ch.num}
+                class="bg-base-300 rounded-lg p-2.5 group {isOutlineEditable(ch.status) && !$taskRunning ? 'cursor-pointer hover:ring-1 hover:ring-primary/40' : ''} transition-shadow"
+                on:click={() => isOutlineEditable(ch.status) && !$taskRunning && startEdit(ch)}
               >
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-bold text-base-content/40 w-12 shrink-0">{ch.num}</span>
                   <span class="text-sm font-medium flex-1 min-w-0 truncate">{ch.title}</span>
                   <span class="badge badge-xs {statusMeta[ch.status]?.cls || 'badge-ghost'}">{statusMeta[ch.status]?.label || ch.status}</span>
-                  {#if ch.status === 'pending'}
+                  {#if isOutlineEditable(ch.status)}
                     <span class="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">{$t('outline.chapter.editTag')}</span>
                   {/if}
                 </div>

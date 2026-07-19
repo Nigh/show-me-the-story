@@ -359,7 +359,7 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("## 工具选择指南\n")
 	sb.WriteString("- 修改某章内容细节 → revise_chapter(num, feedback)（AI 重写整章）\n")
 	sb.WriteString("- 局部编辑某章（替换行/替换文本/插入/追加）→ edit_chapter_content(num, operation, ...)（精确编辑，不重写整章，适合微调个别段落或修正错误）\n")
-	sb.WriteString("- 修改某章的大纲（未写作的 pending 章节）→ edit_chapter_outline(num, title, outline)\n")
+	sb.WriteString("- 修改某章的大纲（pending / writing / review；已确认不可改）→ edit_chapter_outline(num, title, outline)\n")
 	sb.WriteString("- 对现有大纲提修改意见且**章数不变** → revise_outline(feedback)（只更新未确认章节的标题/大纲，不能增减章节总数）\n")
 	sb.WriteString("- **调整总章数 / 整本重写大纲**（尚无已确认章节）→ ① update_project_config(chapter_count, target_words_per_chapter) ② generate_outline。generate_outline 会**完全替换**当前全部 pending 大纲；无需先 delete_outline，禁止用 revise_outline 缩章/增章，禁止用 delete_chapters_from\n")
 	sb.WriteString("- 删除写作前沿章节正文（待确认章，或已确认但下一章尚未开始写作）→ delete_chapter。先核对项目信息中的「delete_chapter 当前可删」章号；**禁止**为此使用 delete_chapters_from\n")
@@ -465,7 +465,7 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 	sb.WriteString("## Tool-selection guidance\n")
 	sb.WriteString("- Tweak chapter content -> revise_chapter(num, feedback) (AI rewrites the whole chapter)\n")
 	sb.WriteString("- Surgical edit of a chapter (replace lines/replace text/insert/append) -> edit_chapter_content(num, operation, ...) (precise edit without full rewrite; ideal for tweaking a paragraph or fixing a typo)\n")
-	sb.WriteString("- Edit a pending chapter's outline -> edit_chapter_outline(num, title, outline)\n")
+	sb.WriteString("- Edit a chapter outline (pending / writing / review; not accepted) -> edit_chapter_outline(num, title, outline)\n")
 	sb.WriteString("- Give feedback on the existing outline while **keeping the same chapter count** -> revise_outline(feedback) (updates title/outline of unconfirmed chapters only; cannot add or remove chapters)\n")
 	sb.WriteString("- **Change total chapter count / regenerate the whole outline** (no confirmed chapters yet) -> ① update_project_config(chapter_count, target_words_per_chapter) ② generate_outline. generate_outline **fully replaces** all pending outlines; no delete_outline first, never use revise_outline to shrink/grow chapter count, never use delete_chapters_from\n")
 	sb.WriteString("- Delete prose at the writing frontier (chapter in review, or last accepted while the next chapter has not started) -> delete_chapter. Check \"delete_chapter can remove\" in project info; **never** use delete_chapters_from for this\n")
@@ -1377,7 +1377,7 @@ func getBuiltinTools() []Tool {
 		},
 		{
 			Name:        "edit_chapter_outline",
-			Description: "编辑指定章节的标题和大纲（仅 pending 状态可编辑）",
+			Description: "编辑指定章节的标题和大纲（pending / writing / review 可编辑；已确认不可改）",
 			Parameters:  `{"num": 1, "title": "新标题", "outline": "新大纲"}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var params struct {

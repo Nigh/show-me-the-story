@@ -980,10 +980,6 @@ func (h *Handlers) PostChapterConflictResolve(w http.ResponseWriter, r *http.Req
 		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
 		return
 	}
-	if h.state.PendingWritingConflict == nil {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "writing_conflict_none")
-		return
-	}
 
 	var body struct {
 		Action string `json:"action"`
@@ -993,18 +989,23 @@ func (h *Handlers) PostChapterConflictResolve(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	conflict := h.state.PendingWritingConflict
-	idx := conflict.ChapterIndex
-	if idx < 0 || idx >= len(h.state.Chapters) {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_conflict_chapter_idx")
-		return
-	}
-	ch := &h.state.Chapters[idx]
-
 	switch body.Action {
-	case "force_review":
-		ch.Status = story.StatusReview
-		h.state.PendingWritingConflict = nil
+	case "force_review", "dismiss":
+		// dismiss ≡ force_review: keep draft in review so UI stays recoverable
+		idx, err := story.ResolveForceReviewIndex(h.state)
+		if err != nil {
+			if h.state.PendingWritingConflict != nil {
+				h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_conflict_chapter_idx")
+			} else {
+				h.writeErrorReq(w, r, http.StatusBadRequest, "writing_conflict_none")
+			}
+			return
+		}
+		ch := &h.state.Chapters[idx]
+		if err := story.PromoteWritingToReview(h.state, idx); err != nil {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_conflict_chapter_idx")
+			return
+		}
 		if err := story.SaveProgress(h.progressPath, h.state); err != nil {
 			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
 			return
@@ -1012,15 +1013,11 @@ func (h *Handlers) PostChapterConflictResolve(w http.ResponseWriter, r *http.Req
 		h.logger.SuccessKey("log.chapter_kept_review", ch.Num)
 		h.broadcastProgress()
 		h.writeJSON(w, http.StatusOK, story.ProgressView(h.state))
-	case "dismiss":
-		h.state.PendingWritingConflict = nil
-		if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+	case "retry":
+		if h.state.PendingWritingConflict == nil {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "writing_conflict_none")
 			return
 		}
-		h.broadcastProgress()
-		h.writeJSON(w, http.StatusOK, story.ProgressView(h.state))
-	case "retry":
 		h.state.PendingWritingConflict = nil
 		if err := story.SaveProgress(h.progressPath, h.state); err != nil {
 			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())

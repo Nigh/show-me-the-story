@@ -166,3 +166,32 @@ func splitFactCheckIssues(issues string) []string {
 	}
 	return mergeUniqueIssues(parts)
 }
+
+// ResolveForceReviewIndex picks the chapter to promote writing→review:
+// pending conflict chapter if set, otherwise the writing frontier chapter.
+func ResolveForceReviewIndex(state *Progress) (int, error) {
+	if state == nil {
+		return -1, fmt.Errorf("无进度状态")
+	}
+	if c := state.PendingWritingConflict; c != nil {
+		if c.ChapterIndex < 0 || c.ChapterIndex >= len(state.Chapters) {
+			return -1, fmt.Errorf("冲突章节索引无效")
+		}
+		return c.ChapterIndex, nil
+	}
+	i := state.CurrentChapterIndex
+	if i >= 0 && i < len(state.Chapters) && state.Chapters[i].Status == StatusWriting {
+		return i, nil
+	}
+	return -1, fmt.Errorf("当前没有可保留进入审核的写作中章节")
+}
+
+// PromoteWritingToReview moves the chapter at idx to review and clears any pending conflict.
+func PromoteWritingToReview(state *Progress, idx int) error {
+	if state == nil || idx < 0 || idx >= len(state.Chapters) {
+		return fmt.Errorf("章节索引无效")
+	}
+	state.Chapters[idx].Status = StatusReview
+	state.PendingWritingConflict = nil
+	return nil
+}

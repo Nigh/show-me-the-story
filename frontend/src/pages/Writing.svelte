@@ -1,11 +1,14 @@
 <script>
   import { onMount } from 'svelte';
   import { api } from '../lib/api.js';
-  import { progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal, currentPage } from '../lib/stores.js';
+  import { progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
+  import { navigate } from '../lib/router.js';
   import { t } from '../lib/i18n/index.js';
   import { countProseUnits } from '../lib/proseUnits.js';
   import PostProcessPanel from '../components/PostProcessPanel.svelte';
   import TaskTokenBadge from '../components/TaskTokenBadge.svelte';
+
+  const OUTLINE_FOCUS_KEY = 'showmethestory.outlineFocusChapter';
 
   // 保留 prop 以兼容 App 传参
   export const sendToChat = async () => {};
@@ -168,6 +171,7 @@
     f.target_chapter > 0 && (currentIdx + 1) >= f.target_chapter - 2 && (currentIdx + 1) <= f.target_chapter
   );
   $: writingConflict = p?.pending_writing_conflict || null;
+  $: orphanWriting = !!(ch && isCurrent && ch.status === 'writing' && !writingConflict && !$taskRunning);
 
   async function resolveWritingConflict(action) {
     if ($taskRunning) return;
@@ -176,11 +180,12 @@
       if (action === 'retry') {
         progress.set(await api('GET', '/api/progress'));
         await api('POST', '/api/chapter/generate');
-        addToast($t('writing.toasts.generateStarted', { num: writingConflict?.chapter_num }), 'info');
+        addToast($t('writing.toasts.generateStarted', { num: writingConflict?.chapter_num || ch?.num }), 'info');
         return;
       }
       progress.set(res);
-      if (action === 'force_review') {
+      // dismiss ≡ force_review on the server
+      if (action === 'force_review' || action === 'dismiss') {
         addToast($t('writing.conflict.forceReview'), 'success');
       }
     } catch (e) {
@@ -188,9 +193,16 @@
     }
   }
 
-  function gotoPage(page) {
-    currentPage.set(page);
-    window.location.hash = '#' + page;
+  function gotoOutlineForConflict() {
+    const num = writingConflict?.chapter_num || ch?.num;
+    if (num) {
+      try { sessionStorage.setItem(OUTLINE_FOCUS_KEY, String(num)); } catch {}
+    }
+    navigate('outline');
+  }
+
+  function gotoForeshadows() {
+    navigate('foreshadows');
   }
 
   $: statusMeta = {
@@ -421,9 +433,9 @@
           <div class="flex flex-wrap gap-2">
             {#each (writingConflict.suggested_actions || []) as action}
               {#if action.id === 'edit_outline'}
-                <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={() => gotoPage('outline')}>{$t('writing.conflict.gotoOutline')}</button>
+                <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoOutlineForConflict}>{$t('writing.conflict.gotoOutline')}</button>
               {:else if action.id === 'adjust_foreshadow'}
-                <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={() => gotoPage('foreshadows')}>{$t('writing.conflict.gotoForeshadows')}</button>
+                <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoForeshadows}>{$t('writing.conflict.gotoForeshadows')}</button>
               {:else if action.id === 'retry'}
                 <button class="btn btn-primary btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('retry')}>{$t('writing.conflict.retry')}</button>
               {:else if action.id === 'force_review'}
@@ -431,6 +443,19 @@
               {/if}
             {/each}
             <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('dismiss')}>{$t('writing.conflict.dismiss')}</button>
+          </div>
+        </div>
+      </div>
+    {:else if orphanWriting}
+      <div class="card bg-warning/10 border border-warning/30 shadow-sm">
+        <div class="card-body p-4 gap-3">
+          <h3 class="font-semibold text-warning">{$t('writing.orphan.title')}</h3>
+          <p class="text-sm text-base-content/70">{$t('writing.orphan.hint')}</p>
+          <div class="flex flex-wrap gap-2">
+            <button class="btn btn-primary btn-xs" disabled={$taskRunning} on:click={doGenerate}>{$t('writing.orphan.retry')}</button>
+            <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.orphan.forceReview')}</button>
+            <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoOutlineForConflict}>{$t('writing.conflict.gotoOutline')}</button>
+            <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoForeshadows}>{$t('writing.conflict.gotoForeshadows')}</button>
           </div>
         </div>
       </div>
