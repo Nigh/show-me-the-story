@@ -15,7 +15,6 @@ export const projects = writable([]);
 // Drives AI prompt language, generated prose language and built-in skill filter.
 export const projectLanguage = writable('zh');
 
-export const currentPage = writable('config');
 export const contextPage = writable('config');
 export const selectedChapter = writable(-1);
 

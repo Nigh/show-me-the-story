@@ -311,6 +311,15 @@ func ConfirmOutlineAction(state *Progress, progressPath string) error {
 	return SaveProgress(progressPath, state)
 }
 
+func outlineEditable(status string) bool {
+	switch status {
+	case StatusPending, StatusWriting, StatusReview:
+		return true
+	default:
+		return false
+	}
+}
+
 func EditChapterOutline(state *Progress, chapterNum int, title, outline string) error {
 	idx := -1
 	for i, ch := range state.Chapters {
@@ -322,8 +331,8 @@ func EditChapterOutline(state *Progress, chapterNum int, title, outline string) 
 	if idx == -1 {
 		return fmt.Errorf("章节 %d 不存在", chapterNum)
 	}
-	if state.Chapters[idx].Status != StatusPending {
-		return fmt.Errorf("只能编辑待定（pending）状态的章节大纲")
+	if !outlineEditable(state.Chapters[idx].Status) {
+		return fmt.Errorf("只能编辑待定/写作中/审核中章节的大纲（已确认章节不可改）")
 	}
 	state.Chapters[idx].Title = title
 	state.Chapters[idx].Outline = outline

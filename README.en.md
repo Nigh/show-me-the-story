@@ -139,7 +139,7 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 | **Read** | "What's the current outline?", "Show chapter 3", "List all characters" |
 | **Settings** | Create / edit / delete characters, world entries, organizations, relations |
 | **Config** | Change genre, chapter count, words per chapter, writing style, synopsis, etc. |
-| **Outline** | Generate outline, revise by feedback (same chapter count), edit a single pending chapter outline, confirm outline |
+| **Outline** | Generate outline, revise by feedback (same chapter count), edit a single chapter outline (pending / writing / review), confirm outline |
 | **Writing** | Generate chapter, confirm chapter, revise a specific chapter, quote-selected paragraph revision, surgical paragraph edits |
 | **Foreshadows** | Suggest, create, update, delete foreshadows |
 | **Skills** | List skills, toggle skills on/off |
