@@ -310,7 +310,7 @@ func (h *Handlers) PutAPIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if newCfg.HTTPTimeoutSeconds <= 0 {
-		newCfg.HTTPTimeoutSeconds = 300
+		newCfg.HTTPTimeoutSeconds = config.DefaultHTTPTimeoutSeconds
 	}
 	if newCfg.ContextBudgetTokens <= 0 {
 		if window := llm.FetchModelContextWindow(&newCfg); window > 0 {
