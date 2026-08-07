@@ -3,6 +3,7 @@
   import { api } from '../lib/api.js';
   import { settings } from '../lib/stores.js';
   import { t, uiLocale } from '../lib/i18n/index.js';
+  import { layoutParams, fitTransform, kineticEnergy } from '../lib/forceGraphLayout.js';
 
   let canvas;
   let container;
@@ -26,28 +27,55 @@
       this.scale = 1;
       this.panX = 0;
       this.panY = 0;
+      this.alpha = 1;
+      this.needsFit = true;
+      this.params = layoutParams(1);
       this.running = true;
       this.updateData(data);
       this.setupEvents();
       this.tick();
     }
     updateData(data) {
-      this.nodes = [];
-      this.edges = [];
+      const prev = new Map(this.nodes.map(n => [n.id, n]));
       const chars = data.characters || [];
       const wvs = data.worldview || [];
       const orgs = data.organizations || [];
+      const total = chars.length + wvs.length + orgs.length;
+      this.params = layoutParams(total);
       const cx = this.canvas.width / 2;
       const cy = this.canvas.height / 2;
-      chars.forEach((c, i) => {
-        this.nodes.push({ id: c.id, label: stripNameMarks(c.name), type: 'character', x: cx + Math.cos(i * 2) * 180, y: cy + Math.sin(i * 2) * 180, vx: 0, vy: 0, r: 28 });
-      });
-      wvs.forEach((w, i) => {
-        this.nodes.push({ id: w.id, label: stripNameMarks(w.name), type: 'worldview', x: cx + Math.cos(i * 2 + 1) * 240, y: cy + Math.sin(i * 2 + 1) * 240, vx: 0, vy: 0, r: 24 });
-      });
-      orgs.forEach((o, i) => {
-        this.nodes.push({ id: o.id, label: stripNameMarks(o.name), type: 'organization', x: cx + Math.cos(i * 2 + 2) * 300, y: cy + Math.sin(i * 2 + 2) * 300, vx: 0, vy: 0, r: 26 });
-      });
+      const next = [];
+      const place = (list, type, orbit, r) => {
+        const n = list.length;
+        list.forEach((item, i) => {
+          const old = prev.get(item.id);
+          if (old) {
+            next.push({ id: item.id, label: stripNameMarks(item.name), type, x: old.x, y: old.y, vx: old.vx, vy: old.vy, r });
+            return;
+          }
+          const a = n ? (i / n) * Math.PI * 2 : 0;
+          next.push({
+            id: item.id,
+            label: stripNameMarks(item.name),
+            type,
+            x: cx + Math.cos(a) * orbit,
+            y: cy + Math.sin(a) * orbit,
+            vx: 0,
+            vy: 0,
+            r,
+          });
+        });
+      };
+      place(chars, 'character', this.params.charOrbit, 28);
+      place(wvs, 'worldview', this.params.worldviewOrbit, 24);
+      place(orgs, 'organization', this.params.orgOrbit, 26);
+
+      const prevIds = [...prev.keys()].sort().join(',');
+      const nextIds = next.map(n => n.id).sort().join(',');
+      const structureChanged = prevIds !== nextIds;
+
+      this.nodes = next;
+      this.edges = [];
       (data.relations || []).forEach(r => {
         this.edges.push({ source: r.source_id, target: r.target_id, label: r.label });
       });
@@ -56,10 +84,31 @@
           this.edges.push({ source: o.id, target: mid, label: memberEdgeLabel });
         });
       });
+
+      if (structureChanged) {
+        this.alpha = 1;
+        this.needsFit = true;
+      }
     }
-    resize(w, h) { this.canvas.width = w; this.canvas.height = h; }
+    resize(w, h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+      // Viewport changed after a settled layout — re-fit so the graph still fills the area.
+      if (this.alpha < 0.005 && this.nodes.length) {
+        this.needsFit = true;
+      }
+    }
     destroy() { this.running = false; }
     toWorld(mx, my) { return { x: (mx - this.panX) / this.scale, y: (my - this.panY) / this.scale }; }
+    wake(minAlpha = 0.35) {
+      this.alpha = Math.max(this.alpha, minAlpha);
+    }
+    fitView() {
+      const t = fitTransform(this.nodes, this.canvas.width, this.canvas.height);
+      this.scale = t.scale;
+      this.panX = t.panX;
+      this.panY = t.panY;
+    }
     setupEvents() {
       const c = this.canvas;
       c.addEventListener('mousedown', e => {
@@ -68,17 +117,30 @@
         for (let i = this.nodes.length - 1; i >= 0; i--) {
           const n = this.nodes[i];
           if (Math.hypot(n.x - p.x, n.y - p.y) < n.r + 4) {
-            this.dragging = n; this.offsetX = n.x - p.x; this.offsetY = n.y - p.y; break;
+            this.dragging = n;
+            this.offsetX = n.x - p.x;
+            this.offsetY = n.y - p.y;
+            this.wake(0.4);
+            break;
           }
         }
       });
       c.addEventListener('mousemove', e => {
         const r = c.getBoundingClientRect();
         const p = this.toWorld(e.clientX - r.left, e.clientY - r.top);
-        if (this.dragging) { this.dragging.x = p.x + this.offsetX; this.dragging.y = p.y + this.offsetY; this.dragging.vx = 0; this.dragging.vy = 0; }
+        if (this.dragging) {
+          this.dragging.x = p.x + this.offsetX;
+          this.dragging.y = p.y + this.offsetY;
+          this.dragging.vx = 0;
+          this.dragging.vy = 0;
+          this.wake(0.25);
+        }
         this.hovering = null;
         for (let i = this.nodes.length - 1; i >= 0; i--) {
-          if (Math.hypot(this.nodes[i].x - p.x, this.nodes[i].y - p.y) < this.nodes[i].r + 4) { this.hovering = this.nodes[i]; break; }
+          if (Math.hypot(this.nodes[i].x - p.x, this.nodes[i].y - p.y) < this.nodes[i].r + 4) {
+            this.hovering = this.nodes[i];
+            break;
+          }
         }
         c.style.cursor = this.hovering ? 'pointer' : 'default';
       });
@@ -89,11 +151,11 @@
         const r = c.getBoundingClientRect();
         const mx = e.clientX - r.left, my = e.clientY - r.top;
         const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-        const next = Math.max(0.3, Math.min(3, this.scale * factor));
-        // 以光标位置为中心缩放
+        const next = Math.max(0.15, Math.min(3, this.scale * factor));
         this.panX = mx - (mx - this.panX) * (next / this.scale);
         this.panY = my - (my - this.panY) * (next / this.scale);
         this.scale = next;
+        this.needsFit = false; // user took over the camera
       }, { passive: false });
     }
     tick() {
@@ -103,30 +165,54 @@
       requestAnimationFrame(() => this.tick());
     }
     simulate() {
-      const nodes = this.nodes, k = 0.01, damp = 0.85;
+      if (this.alpha < 0.005) {
+        if (this.needsFit) {
+          this.fitView();
+          this.needsFit = false;
+        }
+        return;
+      }
+      const nodes = this.nodes;
+      const { restLength, repulsion, centerPull } = this.params;
+      const k = 0.01;
+      const damp = 0.85;
+      const a = this.alpha;
       const center = { x: this.canvas.width / 2, y: this.canvas.height / 2 };
+      const byId = new Map(nodes.map(n => [n.id, n]));
+
       for (let i = 0; i < nodes.length; i++) {
         if (nodes[i] === this.dragging) continue;
-        let fx = (center.x - nodes[i].x) * 0.001, fy = (center.y - nodes[i].y) * 0.001;
+        let fx = (center.x - nodes[i].x) * centerPull * a;
+        let fy = (center.y - nodes[i].y) * centerPull * a;
         for (let j = 0; j < nodes.length; j++) {
           if (i === j) continue;
-          const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y;
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
           const dist = Math.max(Math.hypot(dx, dy), 1);
-          const force = 2200 / (dist * dist);
-          fx += dx / dist * force; fy += dy / dist * force;
+          const force = (repulsion / (dist * dist)) * a;
+          fx += (dx / dist) * force;
+          fy += (dy / dist) * force;
         }
-        nodes[i].vx = (nodes[i].vx + fx) * damp; nodes[i].vy = (nodes[i].vy + fy) * damp;
-        nodes[i].x += nodes[i].vx; nodes[i].y += nodes[i].vy;
-        nodes[i].x = Math.max(nodes[i].r, Math.min(this.canvas.width - nodes[i].r, nodes[i].x));
-        nodes[i].y = Math.max(nodes[i].r, Math.min(this.canvas.height - nodes[i].r, nodes[i].y));
+        nodes[i].vx = (nodes[i].vx + fx) * damp;
+        nodes[i].vy = (nodes[i].vy + fy) * damp;
+        nodes[i].x += nodes[i].vx;
+        nodes[i].y += nodes[i].vy;
       }
       for (const e of this.edges) {
-        const s = nodes.find(n => n.id === e.source), t = nodes.find(n => n.id === e.target);
+        const s = byId.get(e.source);
+        const t = byId.get(e.target);
         if (!s || !t) continue;
         const dx = t.x - s.x, dy = t.y - s.y, dist = Math.max(Math.hypot(dx, dy), 1);
-        const force = (dist - 170) * k, fx = dx / dist * force, fy = dy / dist * force;
+        const force = (dist - restLength) * k * a;
+        const fx = (dx / dist) * force, fy = (dy / dist) * force;
         if (s !== this.dragging) { s.vx += fx; s.vy += fy; }
         if (t !== this.dragging) { t.vx -= fx; t.vy -= fy; }
+      }
+
+      this.alpha *= 0.985;
+      // Settle early when motion is already tiny (avoids long micro-jitter before fit).
+      if (kineticEnergy(nodes) < 0.05 * Math.max(nodes.length, 1) && this.alpha < 0.15) {
+        this.alpha = 0;
       }
     }
     nodePath(ctx, n, pad = 0) {
@@ -158,8 +244,9 @@
           else if (e.target === hov.id) neighborIds.add(e.source);
         }
       }
+      const byId = new Map(this.nodes.map(n => [n.id, n]));
       for (const e of this.edges) {
-        const s = this.nodes.find(n => n.id === e.source), t = this.nodes.find(n => n.id === e.target);
+        const s = byId.get(e.source), t = byId.get(e.target);
         if (!s || !t) continue;
         const connected = hov && (e.source === hov.id || e.target === hov.id);
         ctx.globalAlpha = hov && !connected ? 0.12 : 1;

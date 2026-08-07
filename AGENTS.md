@@ -143,7 +143,8 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `src/pages/Foreshadows.svelte` | 伏笔页：统计概览 + AI 设计伏笔 + 手动 CRUD + AI 建议确认面板（SSE `foreshadow_suggestions`）+ 伏笔-大纲冲突报告卡片（`last_foreshadow_outline_report`）+ 列表/章节时间线/路线图文档三视图 + 复制/下载 `Foreshadows.md` |
 | `src/pages/Memory.svelte` | 叙事记忆页（只读）：从 `progress.memory_entries` 展示统计（条数/覆盖章节/token 上限/内容字数）+ 列表/按章节时间线两视图 + 分类/章节筛选 + 原文片段预览（v3：片段由后端在 `snippet` 字段解析下发）+ 刷新/复制 |
 | `src/components/PostProcessPanel.svelte` | 全书优化面板：开始全书分析（诊断+核查+路线图）/ 重新核查 / 重新生成路线图 / 清空；诊断与核查报告 Markdown 展示；优化工单表格（勾选、编辑意见、执行选项、diff 对比弹窗） |
-| `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph 类），支持拖拽、滚轮缩放（以光标为中心，0.3x–3x）、hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
+| `src/lib/forceGraphLayout.js` | 图谱布局纯函数：`layoutParams(n)`（√N 间距/斥力）、`fitTransform`（包围盒适配视口）、`kineticEnergy`；`forceGraphLayout.check.js` 自检 |
+| `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph），无画布硬夹边、α 冷却后 fit-to-view、按节点数 √N 调间距；拖拽唤醒仿真；滚轮缩放 0.15x–3x（以光标为中心）；hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
 | `src/pages/Assistant.svelte` | 助理页：聊天会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
 | `src/pages/Skills.svelte` | 技能页：技能表格 + toggle 开关 |
 | `src/components/ChatPanel.svelte` | 右侧聊天面板；任务日志走 `formatLogEntry`；工具结果走 `formatToolResult`；其余同前 |
@@ -669,7 +670,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 - **SSE**：`connectSSE()` 建立 EventSource 连接，14 种事件类型自动更新 stores（`src/lib/sse.js`）；连接/`open` 时用 `/api/status` 恢复 `taskRunning`（避免刷新丢 `task_start`）；content_chunk/chat_chunk 经 150ms 节流缓冲批量刷入；`chat_message` 的 `task_end` 须始终 `clearChatBuf()`（异步工具子任务仍运行时 `taskCount>0`，否则 reload 后的 messages 与延迟 flush 的 `streaming_text` 重复展示同一段 reply）；`token_usage` 更新 taskTokenUsage，任务运行中 poll `/api/status` 兜底（间隔与 `TaskTokenBadge` 数字线性动画时长共用 `frontend/src/lib/tokenPoll.js` 的 `TOKEN_POLL_INTERVAL_MS`）；任务成功完成以 toast 提示（不弹全屏遮罩）
 - **Markdown 渲染**：助理消息通过 `src/lib/markdown.js`（marked + DOMPurify）渲染为 HTML，样式在 `app.css` 的 `.md-body` 块中定义
 - **开发模式**：`task dev:frontend` 启动 Vite dev server（端口 5173），代理 `/api` → `:48090`，支持 HMR 热重载
-- **关系图谱**：`ForceGraph` 类，纯 Canvas 力导向布局，支持拖拽节点、滚轮缩放（以光标为中心）、悬浮 tooltip 与 hover 高亮（hover 节点及连线强调、相邻节点次强调、无关元素淡化）
+- **关系图谱**：`ForceGraph` 类，纯 Canvas 力导向布局；布局参数随 √N 放大、去掉画布硬边界以避免多节点墙弹乱跳，α 冷却/动能阈值后自动 `fitTransform` 适配视口；拖拽会唤醒仿真，滚轮缩放（0.15x–3x，以光标为中心）后不再自动 fit；悬浮 tooltip 与 hover 高亮（hover 节点及连线强调、相邻节点次强调、无关元素淡化）
 - **聊天**：会话列表 + 停止按钮 + 任务状态/日志区 + 消息区 + 工具调用卡片（中文工具名、危险工具高亮、running/done 状态区分）+ 智能自动滚动 + 失败重试 banner
 - **交互原则**：所有核心操作（生成/确认/修订/删除/保存）均为直接按钮 + API 调用，不依赖 AI 聊天间接执行；破坏性操作前端用 `ConfirmModal` 二次确认
 - **i18n 模块**：`src/lib/i18n/index.js` 提供 `uiLocale` store（writable，写入 `localStorage`）、`setLocale(lang)`、`getLocale()`、`t` 派生 store（`$t('key', params)`）、`translate(key, params, lang)` 命令式版本、`translateServerMessage(msg, lang)` 把后端中文消息映射到英文；字典在 `src/lib/i18n/zh.js` 与 `en.js`（扁平 key 表，缺 key 时回退中文），插值占位符为 `{name}`
