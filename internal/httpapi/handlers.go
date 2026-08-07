@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"showmethestory/internal/agent"
 	"showmethestory/internal/config"
+	"showmethestory/internal/devlog"
 	"showmethestory/internal/fsutil"
 	"showmethestory/internal/i18n"
 	"showmethestory/internal/llm"
@@ -181,6 +182,7 @@ func (h *Handlers) tryStartTask() bool {
 	h.taskMu.Lock()
 	defer h.taskMu.Unlock()
 	if h.taskRunning || h.activeWork > 0 {
+		devlog.Log("tryStartTask rejected running=%v activeWork=%d", h.taskRunning, h.activeWork)
 		return false
 	}
 	h.taskRunning = true
@@ -189,21 +191,26 @@ func (h *Handlers) tryStartTask() bool {
 	ctx, h.taskTokens = llm.WithTaskTokens(ctx, h.logger)
 	h.taskCtx = ctx
 	h.taskCancel = cancel
+	devlog.Log("tryStartTask ok activeWork=1")
 	return true
 }
 
 func (h *Handlers) endTask() {
 	h.taskMu.Lock()
 	h.activeWork--
+	cancelled := false
 	if h.activeWork <= 0 {
 		h.activeWork = 0
 		h.taskRunning = false
 		if h.taskCancel != nil {
 			h.taskCancel()
 			h.taskCancel = nil
+			cancelled = true
 		}
 	}
+	aw, running := h.activeWork, h.taskRunning
 	h.taskMu.Unlock()
+	devlog.Log("endTask activeWork=%d running=%v cancelled=%v", aw, running, cancelled)
 }
 
 // startChildWork 增加活跃工作计数（用于 Agent 子任务），不创建新 context
@@ -211,9 +218,11 @@ func (h *Handlers) startChildWork() bool {
 	h.taskMu.Lock()
 	defer h.taskMu.Unlock()
 	if !h.taskRunning {
+		devlog.Log("startChildWork rejected taskRunning=false")
 		return false
 	}
 	h.activeWork++
+	devlog.Log("startChildWork ok activeWork=%d", h.activeWork)
 	return true
 }
 
@@ -221,6 +230,12 @@ func (h *Handlers) isTaskRunning() bool {
 	h.taskMu.Lock()
 	defer h.taskMu.Unlock()
 	return h.taskRunning || h.activeWork > 0
+}
+
+func (h *Handlers) activeWorkCount() int {
+	h.taskMu.Lock()
+	defer h.taskMu.Unlock()
+	return h.activeWork
 }
 
 // rejectIfTaskRunning 在 AI 任务运行期间拒绝编辑类请求，防止意外提交修改。
@@ -275,6 +290,7 @@ func (h *Handlers) PostTaskStop(w http.ResponseWriter, r *http.Request) {
 	if h.taskCancel != nil {
 		h.taskCancel()
 	}
+	devlog.Log("task_stop requested activeWork=%d current=%s", h.activeWork, h.logger.CurrentTask())
 	h.taskMu.Unlock()
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "stopping"})
 }
@@ -1486,19 +1502,26 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 	if h.cfg != nil {
 		lang = i18n.NormalizeLanguage(h.cfg.Language)
 	}
+	running := h.isTaskRunning()
 	resp := map[string]interface{}{
 		"phase":            h.state.Phase,
 		"title":            h.state.Title,
 		"total_chapters":   len(h.state.Chapters),
-		"is_task_running":  h.isTaskRunning(),
+		"is_task_running":  running,
 		"auto_confirm":     h.isAutoConfirmOn(),
 		"project_language": lang,
 	}
-	if h.isTaskRunning() && h.taskTokens != nil {
-		prompt, completion := h.taskTokens.Snapshot()
-		resp["token_usage"] = map[string]int{
-			"prompt_tokens":     prompt,
-			"completion_tokens": completion,
+	if running {
+		resp["active_work"] = h.activeWorkCount()
+		if task := h.logger.CurrentTask(); task != "" {
+			resp["current_task"] = task
+		}
+		if h.taskTokens != nil {
+			prompt, completion := h.taskTokens.Snapshot()
+			resp["token_usage"] = map[string]int{
+				"prompt_tokens":     prompt,
+				"completion_tokens": completion,
+			}
 		}
 	}
 	h.writeJSON(w, http.StatusOK, resp)

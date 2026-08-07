@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"showmethestory/internal/config"
+	"showmethestory/internal/devlog"
 	"showmethestory/internal/httpapi"
 	"showmethestory/internal/llm"
 	"showmethestory/internal/sse"
@@ -73,9 +74,14 @@ func main() {
 	logger := sse.NewLogBroadcaster()
 	defer logger.Close()
 
+	devlog.Init(progDir, version)
+
 	fmt.Printf(" [系统] 版本: %s\n", version)
 	fmt.Printf(" [系统] 程序目录: %s\n", progDir)
 	fmt.Printf(" [系统] 项目目录: %s\n", storysDir)
+	if devlog.Enabled() {
+		fmt.Printf(" [系统] 开发日志: %s\n", filepath.Join(progDir, "dev.log"))
+	}
 
 	staticFS, err := fs.Sub(staticFiles, "frontend/dist")
 	if err != nil {

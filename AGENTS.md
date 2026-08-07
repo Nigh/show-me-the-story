@@ -51,10 +51,11 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
     ├── sse/                 LogBroadcaster：SSE 事件广播（领域无关，事件负载为 any）
     ├── i18n/                语言常量、errorCatalog/messageCatalog 双语表、T()、systemPrompts
     ├── prose/               正文字数统计 CountProseUnits（与前端 proseUnits.js 同口径）
-    └── fsutil/              文件写入原语（WriteFileAtomic 等）
+    ├── fsutil/              文件写入原语（WriteFileAtomic 等）
+    └── devlog/              仅 version=dev 时写入 progDir/dev.log（任务生命周期 + warn/error）
 ```
 
-依赖方向：`httpapi → agent → story → {llm, config, sse, i18n, prose, fsutil}`；另有 `llm → {config, sse}`、`sse → i18n`、`config → {i18n, fsutil}`。`story` 包内部仍按功能域分文件（outline / writing / foreshadow / arcs / importer / …）。
+依赖方向：`httpapi → agent → story → {llm, config, sse, i18n, prose, fsutil}`；另有 `llm → {config, sse}`、`sse → {i18n, devlog}`、`httpapi → devlog`、`config → {i18n, fsutil}`。`story` 包内部仍按功能域分文件（outline / writing / foreshadow / arcs / importer / …）。
 
 请求处理流：
 
@@ -69,7 +70,8 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 
 | 文件 | 职责 |
 |------|------|
-| `main.go` | 入口，确定程序目录（`progDir`），创建 `storys/` 目录，加载 API 配置（`llm.EnsureContextBudget` 补齐上下文预算），`//go:embed frontend/dist` 嵌入前端产物并传给 `httpapi.StartWebServer`；`var version = "dev"` 通过 CI `-ldflags` 注入实际版本号 |
+| `main.go` | 入口，确定程序目录（`progDir`），创建 `storys/` 目录，加载 API 配置（`llm.EnsureContextBudget` 补齐上下文预算），`devlog.Init(progDir, version)`（仅 `version=dev`），`//go:embed frontend/dist` 嵌入前端产物并传给 `httpapi.StartWebServer`；`var version = "dev"` 通过 CI `-ldflags` 注入实际版本号 |
+| `internal/devlog/devlog.go` | 本地开发日志：`Init`/`Log`/`Enabled`；仅 `version=="dev"` 时向 `progDir/dev.log` 追加带毫秒时间戳的行；发布版 no-op |
 | `internal/fsutil/fsutil.go` | 文件写入原语：`WriteFile`/`Delete`/`Rename`/`WriteFileAtomic`（先写 `.tmp` 再 rename） |
 | `internal/prose/units.go` | `CountProseUnits`（CJK +1；连续字母数字 token +1，内部 `.` `,` `-` `#` 连接；全角字母数字视同半角；标点/空白断词不计数；中英文共用） |
 | `internal/i18n/locale.go` | `LangZH`/`LangEN` 常量、`NormalizeLanguage`、`FromRequest` 从 `X-UI-Locale`/`Accept-Language`/`?locale=` 解析、`errorCatalog` 双语错误表、`T(lang, key, args)`（同时查 `messageCatalog` + `errorCatalog`）、`MsgArgs`、`systemPrompts` 内联 system prompt 集中表、`SystemPromptFor(lang, key)` |
@@ -77,7 +79,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/config/config.go` | `APIConfig`（含 `URLStrict` 严格 URL 模式、`ContextBudgetTokens` 全书优化上下文预算、`DefaultContextBudgetTokens` 常量）、`Config`（含 `ProjectFormatVersion`、`SkillConfig` + `Language`）、`StoryConfig`、`PromptsConfig`、`SkillConfig` 结构体，Load/Save 函数（`LoadAPIConfig`/`LoadConfig`/`SaveConfig`），`DefaultConfigForLang(lang)`、`ApplyDefaults(lang)` 按语言选择默认 prompts |
 | `internal/config/prompts.go` | `RenderPrompt`（`{{.KeyName}}` 替换）、`DefaultPromptsZH` 变量（所有内置中文提示词模板）、`DefaultPromptsForLang(lang)` |
 | `internal/config/prompts_en.go` | `DefaultPromptsEN`：全量英文模板（与中文一一对应） |
-| `internal/sse/logger.go` | `LogBroadcaster`；`LogEntry` 含 `msg_key`/`msg_args`；`InfoKey`/`SuccessKey`/…；`ToolCallEnd` 含 `result_key`/`result_args`；`Format`（SSE wire 格式）；领域事件方法（`ForeshadowSuggestions`/`ConfigChangeProposal`/`PostProcess*` 等）负载类型为 `any`，保持包领域无关 |
+| `internal/sse/logger.go` | `LogBroadcaster`；`LogEntry` 含 `msg_key`/`msg_args`；`InfoKey`/`SuccessKey`/…；`ToolCallEnd` 含 `result_key`/`result_args`；`Format`（SSE wire 格式）；`CurrentTask()` 任务栈；`TaskStart`/`TaskEnd` 与 warn/error 写入 `devlog`；领域事件方法（`ForeshadowSuggestions`/`ConfigChangeProposal`/`PostProcess*` 等）负载类型为 `any`，保持包领域无关 |
 | `internal/llm/api.go` | `resolveChatCompletionsURL`/`normalizeURL`（`url_strict` 时仅补 `/chat/completions`；否则路径含 `/vN` 只补 `/chat/completions`，裸域名补 `/v1/chat/completions`）、`Message`、`CompletionResult`（含 `FinishReason`）、`CallAPI`/`CallAPIMessages`（**内部优先流式缓冲**，失败时回退 `CallAPIMessagesSync`）、`CallAPIStream`/`CallAPIStreamMessages`（流式，解析 `finish_reason` + `stream_options.include_usage`）、`CallAPIWithRetry`/`CallAPIWithRetryLog`（无限重试 + `RetryWaitTime` 指数退避）、`ValidateConfig`、`IsFatalAPIError`（401/403/404 致命，网络超时可重试）、`FetchModelContextWindow`/`EnsureContextBudget`；所有调用经 `taskCtx` 时自动累计 token（优先 API `usage`，否则 rune 估算） |
 | `internal/llm/jsonextract.go` | `ExtractJSON`/`WalkJSONStructure`：从自由格式模型输出中定位首个完整 JSON 对象（字符串感知的花括号匹配），story 事实核查与 agent 工具解析共用 |
 | `internal/llm/tokens.go` | `TaskTokenUsage` 任务级 token 累计器（context 挂载）、`WithTaskTokens`/`TaskTokensFromContext`、`EstimateTokensFromRunes`（rune×1.5 估算）、throttled SSE 推送 |
@@ -129,7 +131,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、postprocess、taskRunning、taskTokenUsage、autoConfirm、lastFailedTask、`projectLanguage`、`pendingConfigChanges`/`showConfigChangePanel`、`apiTestResult` LLM 连接测试结果持久化 等）+ toast/log 管理 |
 | `src/lib/proseUnits.js` | `countProseUnits`：与后端 `prose_units.go` 同口径，供写作页章节/全书字数展示 |
 | `src/lib/tokenPoll.js` | `TOKEN_POLL_INTERVAL_MS`：token poll 间隔与 TaskTokenBadge 数字线性动画时长共用 |
-| `src/lib/sse.js` | `connectSSE()` — EventSource `?locale=`；`log` → `formatLogEntry`；`tool_call_end` → `formatToolResult`；任务名 `task.<name>`；流式节流/尾部窗口等同前 |
+| `src/lib/sse.js` | `connectSSE()` — EventSource `?locale=`；`open` 时 `GET /api/status` 恢复任务 UI；`log` → `formatLogEntry`；`tool_call_end` → `formatToolResult`；任务名 `task.<name>`；流式节流/尾部窗口等同前 |
 | `src/lib/i18n/index.js` | `uiLocale`、`t`/`translate`（`{name}`）、`formatKeyedMessage`/`formatLogEntry`/`formatToolResult`（服务端 key + `{0}`）、`translateServerMessage` legacy 兜底 |
 | `src/lib/i18n/zh.js`, `en.js` | 扁平 key 字典；新增可见文案必须同时在两个文件加 key |
 | `src/pages/Projects.svelte` | 项目选择页：新建项目（名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`）+ 项目列表（每项显示语言 badge，可选择/删除）；选中项目后 `setLocale(project.language)` |
@@ -199,10 +201,15 @@ func (h *Handlers) PostXxxAction(w http.ResponseWriter, r *http.Request) {
 - **后端**：所有编辑类同步端点（配置/角色/世界观/组织/关系/伏笔/技能/大纲编辑/会话删除等）在 handler 开头调用 `rejectIfTaskRunning(w)`，任务运行期间返回 409，防止意外提交编辑造成数据竞争
 - **前端**：所有按钮使用 `disabled={$taskRunning}` 禁用，所有输入控件（input/textarea/select）同样 `disabled={$taskRunning}`
 - **前端**：发送消息前检查 `$taskRunning`，API 返回 409 时显示错误提示
+- **前端**：SSE `open`（含重连）时 `GET /api/status` 恢复 `taskRunning`/`taskCount`/`currentTaskName`（刷新会丢失已发出的 `task_start`，否则会出现 UI 空闲但后端仍锁编辑的不同步）
 
 ### 自动确认模式
 
-`Handlers.autoConfirm`（`taskMu` 保护）为运行时开关，不持久化。`GET/PUT /api/autoconfirm` 读取/切换，任务运行期间也可随时开关。开启后 `PostChapterGenerate` 的任务 goroutine 进入循环：生成章节 → 若开关仍开启则 `ConfirmChapterAction` 自动确认 → 继续生成下一章，直到全部完成、开关被关闭（当前章生成完后停在 review 状态）、任务被取消或出错。整个循环在同一个任务锁内执行，期间仍受任务互斥保护。`GET /api/status` 返回 `auto_confirm` 及任务运行中的 `token_usage` 字段。前端开关位于写作页进度卡片（toggle），开启时流式输出自动跟随正在生成的章节。
+`Handlers.autoConfirm`（`taskMu` 保护）为运行时开关，不持久化。`GET/PUT /api/autoconfirm` 读取/切换，任务运行期间也可随时开关。开启后 `PostChapterGenerate` 的任务 goroutine 进入循环：生成章节 → 若开关仍开启则 `ConfirmChapterAction` 自动确认 → 继续生成下一章，直到全部完成、开关被关闭（当前章生成完后停在 review 状态）、任务被取消或出错。整个循环在同一个任务锁内执行，期间仍受任务互斥保护。`GET /api/status` 返回 `auto_confirm`、任务运行中的 `token_usage`，以及 `current_task` / `active_work`（供刷新后恢复 UI）。前端开关位于写作页进度卡片（toggle），开启时流式输出自动跟随正在生成的章节。
+
+### 开发日志（dev.log）
+
+仅当 `version == "dev"`（非 CI `-ldflags` 注入版本）时，在 `progDir/dev.log` 追加日志（已 gitignore）。每行含 `2006-01-02 15:04:05.000` 时间戳。内容刻意精简：`task_start`/`task_end`、`tryStartTask`/`endTask`/`startChildWork`/`task_stop` 协调信息，以及 SSE `warn`/`error` 级消息（含 agent tool-call 解析重试等）；不写 info 步进、流式 chunk。发布版 `devlog` 为 no-op。
 
 ### 流式输出节流 + 尾部窗口（前端性能）
 
@@ -487,7 +494,7 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | POST | `/api/chapters/{num}/blocks/{id}/revise` | 异步 | AI 修订单个 block（任务名 `block_revision`） |
 | GET | `/api/export/txt` | 同步 | 导出全书 TXT（text/plain） |
 | DELETE | `/api/progress` | 同步 | 重置进度（含 `chapters/` 目录） |
-| GET | `/api/status` | 同步 | 获取状态摘要 |
+| GET | `/api/status` | 同步 | 获取状态摘要（含 `is_task_running`；运行中附 `current_task`/`active_work`/`token_usage`） |
 | POST | `/api/outline/generate` | 异步 | 生成大纲（存在已确认章节时返回 409 拒绝） |
 | POST | `/api/outline/confirm` | 同步 | 确认大纲 |
 | POST | `/api/outline/revise` | 异步 | 修订大纲 |
@@ -658,7 +665,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 - **状态管理**：Svelte stores（`src/lib/stores.js`），包含 progress、config、settings、taskRunning、taskTokenUsage（任务 token 累计）、autoConfirm（自动确认模式）、foreshadowSuggestions/foreshadowShowSuggestions（AI 伏笔建议待确认）、pendingConfigChanges/showConfigChangePanel（AI 配置变更待确认）等全局状态
 - **路由**：hash 路由（`src/lib/router.js`），`currentPage` store + `window.hashchange` 监听
 - **API 调用**：`api(method, url, body)` 封装 fetch（`src/lib/api.js`）
-- **SSE**：`connectSSE()` 建立 EventSource 连接，14 种事件类型自动更新 stores（`src/lib/sse.js`）；content_chunk/chat_chunk 经 150ms 节流缓冲批量刷入；`chat_message` 的 `task_end` 须始终 `clearChatBuf()`（异步工具子任务仍运行时 `taskCount>0`，否则 reload 后的 messages 与延迟 flush 的 `streaming_text` 重复展示同一段 reply）；`token_usage` 更新 taskTokenUsage，任务运行中 poll `/api/status` 兜底（间隔与 `TaskTokenBadge` 数字线性动画时长共用 `frontend/src/lib/tokenPoll.js` 的 `TOKEN_POLL_INTERVAL_MS`）；任务成功完成以 toast 提示（不弹全屏遮罩）
+- **SSE**：`connectSSE()` 建立 EventSource 连接，14 种事件类型自动更新 stores（`src/lib/sse.js`）；连接/`open` 时用 `/api/status` 恢复 `taskRunning`（避免刷新丢 `task_start`）；content_chunk/chat_chunk 经 150ms 节流缓冲批量刷入；`chat_message` 的 `task_end` 须始终 `clearChatBuf()`（异步工具子任务仍运行时 `taskCount>0`，否则 reload 后的 messages 与延迟 flush 的 `streaming_text` 重复展示同一段 reply）；`token_usage` 更新 taskTokenUsage，任务运行中 poll `/api/status` 兜底（间隔与 `TaskTokenBadge` 数字线性动画时长共用 `frontend/src/lib/tokenPoll.js` 的 `TOKEN_POLL_INTERVAL_MS`）；任务成功完成以 toast 提示（不弹全屏遮罩）
 - **Markdown 渲染**：助理消息通过 `src/lib/markdown.js`（marked + DOMPurify）渲染为 HTML，样式在 `app.css` 的 `.md-body` 块中定义
 - **开发模式**：`task dev:frontend` 启动 Vite dev server（端口 5173），代理 `/api` → `:48090`，支持 HMR 热重载
 - **关系图谱**：`ForceGraph` 类，纯 Canvas 力导向布局，支持拖拽节点、滚轮缩放（以光标为中心）、悬浮 tooltip 与 hover 高亮（hover 节点及连线强调、相邻节点次强调、无关元素淡化）
@@ -706,7 +713,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 ## 重要约束
 
 1. **零外部依赖**：Go 后端仅使用标准库，不要引入第三方包（前端 npm 依赖不受此限制）
-2. **包依赖单向**：`internal/` 各包依赖方向为 `httpapi → agent → story → {llm, config, sse, i18n, prose, fsutil}`，禁止反向依赖；`sse` 保持领域无关（事件负载 `any`）
+2. **包依赖单向**：`internal/` 各包依赖方向为 `httpapi → agent → story → {llm, config, sse, i18n, prose, fsutil}`，禁止反向依赖；`sse → {i18n, devlog}`、`httpapi → devlog`；`sse` 事件负载保持领域无关（`any`）
 3. **前端构建**：前端在 `frontend/` 目录中使用 Svelte 组件开发，`npm run build` 产物输出到 `frontend/dist/`，不要拆分构建产物
 4. **嵌入式文件**：前端通过 `main.go` 的 `//go:embed frontend/dist` 嵌入，skill 文件通过 `internal/story/skills.go` 的 `//go:embed embeds/skills` 嵌入（目录在 `internal/story/embeds/skills/`），修改后需重新编译
 5. **配置文件 gitignore**：`*.json` 被 gitignore，不要提交配置/进度/设定/会话文件

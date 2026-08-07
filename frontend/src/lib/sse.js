@@ -90,10 +90,34 @@ function clearChatBuf() {
   if (chatTimer) { clearTimeout(chatTimer); chatTimer = null; }
 }
 
+async function syncTaskFromStatus() {
+  try {
+    const s = await api('GET', '/api/status');
+    if (s?.is_task_running) {
+      // Refresh drops SSE task_start history; seed from backend active_work.
+      const n = Math.max(1, Number(s.active_work) || 1);
+      if (taskCount < n) taskCount = n;
+      taskRunning.set(true);
+      if (s.current_task) {
+        currentTaskName.set(translate(`task.${s.current_task}`) || s.current_task);
+      }
+      startTokenPoll();
+    } else if (taskCount <= 0) {
+      taskRunning.set(false);
+      currentTaskName.set(null);
+      stopTokenPoll();
+    }
+  } catch (_) { /* ignore */ }
+}
+
 export function connectSSE() {
   if (eventSource) eventSource.close();
   const locale = getLocale();
   eventSource = new EventSource(`/api/events?locale=${encodeURIComponent(locale)}`);
+
+  eventSource.addEventListener('open', () => {
+    syncTaskFromStatus();
+  });
 
   eventSource.addEventListener('log', e => {
     const d = JSON.parse(e.data);

@@ -3,6 +3,7 @@ package sse
 import (
 	"encoding/json"
 	"fmt"
+	"showmethestory/internal/devlog"
 	"showmethestory/internal/i18n"
 	"sync"
 	"time"
@@ -26,6 +27,9 @@ type LogBroadcaster struct {
 	mu      sync.RWMutex
 	clients map[chan SSEMessage]bool
 	closed  bool
+
+	taskMu sync.Mutex
+	tasks  []string // nested task names for GetStatus / UI hydrate after refresh
 }
 
 func NewLogBroadcaster() *LogBroadcaster {
@@ -98,6 +102,14 @@ func (lb *LogBroadcaster) logEntry(entry LogEntry) {
 	} else if entry.MsgKey != "" {
 		fmt.Printf(" [%s] %s\n", entry.Level, entry.MsgKey)
 	}
+	// ponytail: file log only warn/error (+ keyed agent failures); skip info/step spam.
+	if entry.Level == "warn" || entry.Level == "error" {
+		msg := entry.Msg
+		if msg == "" {
+			msg = entry.MsgKey
+		}
+		devlog.Log("%s %s", entry.Level, msg)
+	}
 }
 
 func (lb *LogBroadcaster) Info(msg string)    { lb.Log("info", msg) }
@@ -141,11 +153,34 @@ func (lb *LogBroadcaster) ProgressUpdate(data interface{}) {
 }
 
 func (lb *LogBroadcaster) TaskStart(task string) {
+	lb.taskMu.Lock()
+	lb.tasks = append(lb.tasks, task)
+	lb.taskMu.Unlock()
+	devlog.Log("task_start %s", task)
 	lb.Emit("task_start", map[string]string{"task": task})
 }
 
 func (lb *LogBroadcaster) TaskEnd(task string, success bool) {
+	lb.taskMu.Lock()
+	for i := len(lb.tasks) - 1; i >= 0; i-- {
+		if lb.tasks[i] == task {
+			lb.tasks = append(lb.tasks[:i], lb.tasks[i+1:]...)
+			break
+		}
+	}
+	lb.taskMu.Unlock()
+	devlog.Log("task_end %s success=%v", task, success)
 	lb.Emit("task_end", map[string]interface{}{"task": task, "success": success})
+}
+
+// CurrentTask returns the innermost running task name, or "".
+func (lb *LogBroadcaster) CurrentTask() string {
+	lb.taskMu.Lock()
+	defer lb.taskMu.Unlock()
+	if len(lb.tasks) == 0 {
+		return ""
+	}
+	return lb.tasks[len(lb.tasks)-1]
 }
 
 func (lb *LogBroadcaster) ContentChunk(chapterIdx int, text string) {
