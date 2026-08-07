@@ -514,7 +514,7 @@ func generateChapterContentStream(ctx context.Context, apiCfg *config.APIConfig,
 
 	foreshadowContext := formatActiveForeshadowsForChapterLang(state.Foreshadows, ch.Num, lang)
 
-	characterContext := buildCharacterContextForLang(settings, ch.Outline, lang)
+	characterContext := buildCharacterContextForLang(settings, ch, lang)
 	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
 	outlineConstraints := buildOutlineConstraintsForLang(state, idx, lang)
 	memoryContext := buildMemoryForLang(state, idx, lang)
@@ -798,7 +798,7 @@ func reviseChapterSegment(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	}
 
 	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
-	characterContext := buildCharacterContextForLang(settings, ch.Outline, lang)
+	characterContext := buildCharacterContextForLang(settings, ch, lang)
 	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ChapterSegmentRevision, map[string]string{
@@ -860,7 +860,7 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *config.APIConfig, c
 	lang := cfg.Language
 
 	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
-	characterContext := buildCharacterContextForLang(settings, ch.Outline, lang)
+	characterContext := buildCharacterContextForLang(settings, ch, lang)
 	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ChapterRevision, map[string]string{

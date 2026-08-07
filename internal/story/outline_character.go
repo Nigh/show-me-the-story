@@ -63,7 +63,7 @@ func detectUnregisteredCharactersHeuristic(state *Progress, settings *ProjectSet
 	registered := RegisteredCharacterNameSet(settings)
 	var suggestions []OutlineCharacterSuggestion
 	for _, ch := range state.Chapters {
-		for _, stub := range extractFirstAppearanceStubs(ch.Outline) {
+		for _, stub := range characterStubsForChapter(ch) {
 			if registered[stub.Name] {
 				continue
 			}

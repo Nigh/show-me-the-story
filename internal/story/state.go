@@ -13,9 +13,12 @@ type ChapterState struct {
 	Num     int    `json:"num"`
 	Title   string `json:"title"`
 	Outline string `json:"outline"`
-	Content string `json:"content,omitempty"`
-	Summary string `json:"summary"`
-	Status  string `json:"status"` // pending | writing | review | accepted
+	// Characters is the structured cast for this chapter's outline (proper names only).
+	// Used for unregistered-character suggestions; optional on legacy projects.
+	Characters []OutlineChapterCharacter `json:"characters,omitempty"`
+	Content    string                    `json:"content,omitempty"`
+	Summary    string                    `json:"summary"`
+	Status     string                    `json:"status"` // pending | writing | review | accepted
 	// WordCount is the prose-unit count of Content, refreshed on save so the
 	// frontend can show word counts without fetching full chapter content.
 	WordCount int `json:"word_count,omitempty"`

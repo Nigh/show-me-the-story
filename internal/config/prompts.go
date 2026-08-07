@@ -21,7 +21,15 @@ var DefaultPromptsZH = PromptsConfig{
   "core_prompt": "核心写作提示词（用于指导后续各章创作的系统级提示）",
   "story_synopsis": "故事梗概",
   "chapters": [
-    {"num": 1, "title": "章节标题", "outline": "本章大纲"},
+    {
+      "num": 1,
+      "title": "章节标题",
+      "outline": "本章大纲",
+      "characters": [
+        {"name": "已有角色名"},
+        {"name": "新角色专名", "first_appearance": true, "note": "身份或与主角关系（一行）"}
+      ]
+    },
     ...
   ]
 }
@@ -40,11 +48,12 @@ var DefaultPromptsZH = PromptsConfig{
 1. 大纲需要覆盖完整的故事弧线，从开端到结局
 2. 每章 outline 字段须为 {{.OutlineMinWords}}–{{.OutlineMaxWords}} 字（不含章节标题），包含具体情节发展，禁止笼统描述或一两句话敷衍
 3. 每章大纲须依次包含：开场场景/地点；本章核心冲突或目标；关键转折或信息点；出场人物（及作用）；章末走向或悬念钩子
-4. 优先使用【已登记角色】中的人物；仅因剧情需要方可新增未登记角色，须在其首次出场章节标注「首次登场」并附一行身份或与主角关系说明，且不得出现在更早章节
-5. 初遇、身份揭示等一次性事件只能安排在一个章节中发生，避免重复
-6. core_prompt 应包含指导整部小说写作的核心提示词，包括写作风格与叙述视角，并明确要求全书视角统一
-7. 若【故事类型】【写作风格】【叙述视角】【故事梗概】等字段已由用户提供且非空，JSON 中对应字段请原样返回，不要改写或扩写
-8. 请严格以JSON格式输出，不要添加任何额外文字`,
+4. 每章必须填写 characters 数组：列出本章出场的具名人物专名；name 只写专名本身（如「吕红梅」「亚历山大·伊万诺夫」），禁止把职务、动词、引号或整句情节写进 name；忽略「村民」「守卫」等群体称谓
+5. 优先使用【已登记角色】；新增角色仅在其首次出场章设 first_appearance=true，并在 note 写一行身份/关系，且不得出现在更早章节的 characters 中
+6. 初遇、身份揭示等一次性事件只能安排在一个章节中发生，避免重复
+7. core_prompt 应包含指导整部小说写作的核心提示词，包括写作风格与叙述视角，并明确要求全书视角统一
+8. 若【故事类型】【写作风格】【叙述视角】【故事梗概】等字段已由用户提供且非空，JSON 中对应字段请原样返回，不要改写或扩写
+9. 请严格以JSON格式输出，不要添加任何额外文字`,
 
 	ChapterWriting: `请为小说《{{.Title}}》创作第 {{.ChapterNum}} 章的正文。
 
@@ -199,7 +208,15 @@ var DefaultPromptsZH = PromptsConfig{
   "core_prompt": "核心写作提示词",
   "story_synopsis": "故事梗概",
   "chapters": [
-    {"num": 1, "title": "章节标题", "outline": "本章大纲"},
+    {
+      "num": 1,
+      "title": "章节标题",
+      "outline": "本章大纲",
+      "characters": [
+        {"name": "角色专名"},
+        {"name": "新角色", "first_appearance": true, "note": "身份说明"}
+      ]
+    },
     ...
   ]
 }
@@ -208,7 +225,7 @@ var DefaultPromptsZH = PromptsConfig{
 1. 已锁定的章节内容不可修改，只能修改未锁定的章节
 2. 保持章节总数和编号不变，除非用户意见明确要求增删章节
 3. 与用户意见无关的章节保持原样返回，不要顺手改写
-4. 未锁定章节的 outline 须为 {{.OutlineMinWords}}–{{.OutlineMaxWords}} 字，包含具体情节要素（场景、冲突、转折、人物、章末钩子）；优先使用【已登记角色】
+4. 未锁定章节的 outline 须为 {{.OutlineMinWords}}–{{.OutlineMaxWords}} 字，包含具体情节要素（场景、冲突、转折、人物、章末钩子）；须同步维护 characters（专名列表；新增角色 first_appearance+note）；优先使用【已登记角色】
 5. 请严格以JSON格式输出，不要添加任何额外文字`,
 
 	ForeshadowPlanning: `你是一位资深的小说叙事架构师，擅长设计伏笔系统。请根据以下小说大纲，设计一组伏笔（foreshadowing）方案。
@@ -302,7 +319,15 @@ var DefaultPromptsZH = PromptsConfig{
 请以JSON格式返回：
 {
   "chapters": [
-    {"num": {{.StartNum}}, "title": "章节标题", "outline": "本章大纲"},
+    {
+      "num": {{.StartNum}},
+      "title": "章节标题",
+      "outline": "本章大纲",
+      "characters": [
+        {"name": "角色专名"},
+        {"name": "新角色", "first_appearance": true, "note": "身份说明"}
+      ]
+    },
     ...
   ]
 }
@@ -311,9 +336,10 @@ var DefaultPromptsZH = PromptsConfig{
 1. 大纲需要承接已有章节的故事线，保持连贯性
 2. 每章 outline 字段须为 {{.OutlineMinWords}}–{{.OutlineMaxWords}} 字，包含具体情节发展，禁止笼统描述
 3. 每章大纲须包含：开场场景；核心冲突；关键转折；出场人物及作用；章末走向或钩子
-4. 优先使用【已登记角色】；新增角色须标注「首次登场」并附一行说明
-5. 已有章节中发生过的初遇、身份揭示等一次性事件不得在新章节中重复安排
-6. 请严格以JSON格式输出，不要添加任何额外文字`,
+4. 每章必须填写 characters（专名列表；name 不含职务/动词；新增角色 first_appearance=true 并写 note）
+5. 优先使用【已登记角色】
+6. 已有章节中发生过的初遇、身份揭示等一次性事件不得在新章节中重复安排
+7. 请严格以JSON格式输出，不要添加任何额外文字`,
 
 	OutlineCharacterCheck: `你是一位严谨的小说设定编辑。请检查完整章节大纲中出现的人物，与角色管理中已登记的角色列表是否一致。
 
@@ -323,15 +349,16 @@ var DefaultPromptsZH = PromptsConfig{
 {{.RegisteredCharacters}}
 
 【完整大纲】
+（含每章「出场人物：」结构化名单；优先依据该名单，outline 正文仅作辅助）
 {{.Outline}}
 
 【已确认章节摘要（辅助判断人物是否已在正文中出现）】
 {{.AcceptedSummaries}}
 
 任务：
-1. 找出在大纲中出场、但不在【已登记角色】列表中的人物（含标注「首次登场」或未标注的新名字）
-2. 忽略群体称谓（如「村民」「守卫们」）和未具名的「某人/神秘人」，除非大纲给了明确专名
-3. 不要重复报告已在【已登记角色】中的人物
+1. 找出出场但不在【已登记角色】中的人物；优先采用「出场人物：」名单中的专名（含 first appearance / 首次登场标注）
+2. 忽略群体称谓（如「村民」「守卫们」）和未具名的「某人/神秘人」，除非给了明确专名
+3. 不要把职务、动词或整句情节当成人物名；不要重复报告已登记角色
 
 请以JSON格式返回（不要输出任何其他文字）：
 {
@@ -676,7 +703,15 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
 请以JSON格式返回：
 {
   "chapters": [
-    {"num": {{.StartNum}}, "title": "章节标题", "outline": "本章大纲"},
+    {
+      "num": {{.StartNum}},
+      "title": "章节标题",
+      "outline": "本章大纲",
+      "characters": [
+        {"name": "角色专名"},
+        {"name": "新角色", "first_appearance": true, "note": "身份说明"}
+      ]
+    },
     ...
   ]
 }
@@ -685,9 +720,10 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
 1. 大纲须承接【前情回顾】的故事线，卷内完成【本卷阶段目标】，卷末落在能自然衔接下一卷的状态
 2. 每章 outline 字段须为 {{.OutlineMinWords}}–{{.OutlineMaxWords}} 字，包含具体情节发展，禁止笼统描述
 3. 每章大纲须包含：开场场景；核心冲突；关键转折；出场人物及作用；章末走向或钩子
-4. 优先使用【已登记角色】；新增角色须标注「首次登场」并附一行说明
-5. 前情中已发生的初遇、身份揭示等一次性事件不得重复安排；后续卷安排的关键事件不得提前发生
-6. 请严格以JSON格式输出，不要添加任何额外文字`,
+4. 每章必须填写 characters（专名列表；name 不含职务/动词；新增角色 first_appearance=true 并写 note）
+5. 优先使用【已登记角色】
+6. 前情中已发生的初遇、身份揭示等一次性事件不得重复安排；后续卷安排的关键事件不得提前发生
+7. 请严格以JSON格式输出，不要添加任何额外文字`,
 
 	ArcSummary: `你是一位精准的小说叙事分析师。以下是一卷已完成章节的逐章摘要，请把它们压缩为一份卷级摘要，供后续卷的写作与大纲生成作为前情参考。
 
@@ -731,7 +767,12 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
 请以JSON格式返回：
 {
   "outline": "本章大纲（{{.OutlineMinWords}}~{{.OutlineMaxWords}} 字：开场场景、核心冲突、关键转折、出场人物及作用、章末走向）",
+  "characters": [
+    {"name": "角色专名"},
+    {"name": "本章新出场专名", "first_appearance": true, "note": "身份或关系（一行）"}
+  ],
   "summary": "前情摘要（150~300 字，含【人物动态】条目：本章出场人物、初次见面、身份揭示、关系确立等一次性事件须明确记录）"
 }
+说明：characters 列出本章具名人物；name 只写专名，不含职务或整句情节。
 请严格以JSON格式输出，不要添加任何额外文字。`,
 }

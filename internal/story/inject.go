@@ -134,13 +134,19 @@ func buildHistorySummaryForLang(state *Progress, idx int, lang string) string {
 }
 
 // buildCharacterContextForLang returns structured character details injected into writing prompts.
-func buildCharacterContextForLang(settings *ProjectSettings, chapterOutline, lang string) string {
+func buildCharacterContextForLang(settings *ProjectSettings, ch ChapterState, lang string) string {
 	var sb strings.Builder
+	chapterOutline := ch.Outline
 
 	if settings != nil && len(settings.Characters) > 0 {
+		castNames := make(map[string]bool)
+		for _, c := range normalizeOutlineCharacters(ch.Characters) {
+			castNames[c.Name] = true
+		}
 		var relevant []Character
 		for _, c := range settings.Characters {
-			if strings.Contains(chapterOutline, StripNameMarks(c.Name)) {
+			name := StripNameMarks(c.Name)
+			if strings.Contains(chapterOutline, name) || castNames[name] {
 				relevant = append(relevant, c)
 			}
 		}
@@ -184,7 +190,7 @@ func buildCharacterContextForLang(settings *ProjectSettings, chapterOutline, lan
 		}
 	}
 
-	if derived := buildOutlineDerivedCharacterContext(chapterOutline, settings, lang); derived != "" {
+	if derived := buildOutlineDerivedCharacterContext(ch, settings, lang); derived != "" {
 		sb.WriteString(derived)
 	}
 	return sb.String()

@@ -1351,15 +1351,16 @@ func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Title   string `json:"title"`
-		Outline string `json:"outline"`
+		Title      string                          `json:"title"`
+		Outline    string                          `json:"outline"`
+		Characters *[]story.OutlineChapterCharacter `json:"characters"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
 
-	if err := story.EditChapterOutline(h.state, num, body.Title, body.Outline); err != nil {
+	if err := story.EditChapterOutline(h.state, num, body.Title, body.Outline, body.Characters); err != nil {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}

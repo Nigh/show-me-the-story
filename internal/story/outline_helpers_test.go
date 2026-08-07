@@ -29,6 +29,42 @@ func TestExtractFirstAppearanceStubs(t *testing.T) {
 	}
 }
 
+func TestCharacterStubsPreferStructuredOverProse(t *testing.T) {
+	// Prose regex would greedily capture a long clause before「首次登场」; structured cast wins.
+	ch := ChapterState{
+		Outline: "想起班主任吕红梅（首次登场）匆匆走进教室。",
+		Characters: []OutlineChapterCharacter{
+			{Name: "吕红梅", FirstAppearance: true, Note: "班主任"},
+			{Name: "亚历山大·伊万诺夫"},
+		},
+	}
+	stubs := characterStubsForChapter(ch)
+	if len(stubs) != 2 {
+		t.Fatalf("got %d stubs, want 2: %+v", len(stubs), stubs)
+	}
+	if stubs[0].Name != "吕红梅" || stubs[0].Description != "班主任" {
+		t.Fatalf("first stub = %+v", stubs[0])
+	}
+	if stubs[1].Name != "亚历山大·伊万诺夫" {
+		t.Fatalf("second stub = %+v", stubs[1])
+	}
+}
+
+func TestNormalizeOutlineCharacters(t *testing.T) {
+	got := normalizeOutlineCharacters([]OutlineChapterCharacter{
+		{Name: "  吕红梅  ", FirstAppearance: true, Note: " 班主任 "},
+		{Name: "吕红梅", Note: "duplicate ignored"},
+		{Name: "「王五」"},
+		{Name: "   "},
+	})
+	if len(got) != 2 || got[0].Name != "吕红梅" || !got[0].FirstAppearance || got[0].Note != "班主任" {
+		t.Fatalf("got %+v", got)
+	}
+	if got[1].Name != "王五" {
+		t.Fatalf("marks not stripped: %+v", got[1])
+	}
+}
+
 func TestValidateOutlineChapterLengths(t *testing.T) {
 	chapters := []OutlineChapter{
 		{Num: 1, Outline: stringsRepeat("情节", 50)},

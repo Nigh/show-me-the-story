@@ -193,7 +193,7 @@ func ReviseBlockAction(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 		"HistorySummary":   buildHistorySummaryForLang(state, chapterIdx, lang),
 		"WritingStyle":     cfg.Story.WritingStyle,
 		"WritingPOV":       cfg.Story.WritingPOV,
-		"CharacterContext": buildCharacterContextForLang(settings, ch.Outline, lang),
+		"CharacterContext": buildCharacterContextForLang(settings, *ch, lang),
 		"WorldviewContext": buildWorldviewContextForLang(settings, ch.Outline, lang),
 		"QuotedText":       original,
 		"SegmentOriginal":  original,
