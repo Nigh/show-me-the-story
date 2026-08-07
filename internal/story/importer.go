@@ -270,8 +270,9 @@ func runImportPipeline(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 			return fmt.Errorf("第 %d 章分析失败：API 调用失败", ch.Num)
 		}
 		var resp struct {
-			Outline string `json:"outline"`
-			Summary string `json:"summary"`
+			Outline    string                     `json:"outline"`
+			Summary    string                     `json:"summary"`
+			Characters []OutlineChapterCharacter  `json:"characters"`
 		}
 		if err := json.Unmarshal([]byte(cleanJSONResponse(rawResp)), &resp); err != nil {
 			return fmt.Errorf("第 %d 章分析结果解析失败: %w", ch.Num, err)
@@ -281,6 +282,9 @@ func runImportPipeline(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 		}
 		if resp.Summary != "" {
 			ch.Summary = strings.TrimSpace(resp.Summary)
+		}
+		if len(resp.Characters) > 0 {
+			ch.Characters = normalizeOutlineCharacters(resp.Characters)
 		}
 		if err := SaveProgress(progressPath, state); err != nil {
 			return fmt.Errorf("保存进度失败: %w", err)

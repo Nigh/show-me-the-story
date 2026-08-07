@@ -315,12 +315,8 @@ func GenerateArcOutlineAction(ctx context.Context, apiCfg *config.APIConfig, cfg
 		if num > arc.EndCh {
 			break
 		}
-		kept = append(kept, ChapterState{
-			Num:     num,
-			Title:   oc.Title,
-			Outline: oc.Outline,
-			Status:  StatusPending,
-		})
+		oc.Num = num
+		kept = append(kept, chapterStateFromOutline(oc, StatusPending))
 	}
 	sortChaptersByNum(kept)
 	state.Chapters = kept

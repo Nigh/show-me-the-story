@@ -1428,7 +1428,7 @@ func getBuiltinTools() []Tool {
 				if err := json.Unmarshal(args, &params); err != nil {
 					return "", agentErr(ctx, "invalid_json", err)
 				}
-				if err := story.EditChapterOutline(ctx.State, params.Num, params.Title, params.Outline); err != nil {
+				if err := story.EditChapterOutline(ctx.State, params.Num, params.Title, params.Outline, nil); err != nil {
 					return "", err
 				}
 				if err := story.SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
