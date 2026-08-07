@@ -256,6 +256,14 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "助理输出因 max_tokens=%d 被截断，工具调用已中止",
 		LangEN: "Assistant output truncated at max_tokens=%d — tool call aborted",
 	},
+	"log.agent_tool_call_parse_retry": {
+		LangZH: "工具调用解析失败（finish_reason=%s，%d 字符），已要求模型诊断并重试一次",
+		LangEN: "Tool-call parse failed (finish_reason=%s, %d chars) — asking model to diagnose and retry once",
+	},
+	"log.agent_tool_call_parse_failed": {
+		LangZH: "工具调用解析失败且重试后仍无效，已中止",
+		LangEN: "Tool-call parse failed again after retry — aborted",
+	},
 	"log.chat_done": {
 		LangZH: "助理回复完成",
 		LangEN: "Assistant reply complete.",
@@ -655,6 +663,14 @@ var messageCatalog = map[string]map[string]string{
 	"agent.output_truncated": {
 		LangZH: "助理回复因输出 token 上限（max_tokens=%d）被截断，工具调用未完成。请在配置页增大 max_tokens，或缩短修改意见后点击「重试」重新发送。",
 		LangEN: "Assistant output was cut off at the max_tokens limit (%d). The tool call did not complete. Increase max_tokens on the Config page, shorten your message, then click Retry to resend.",
+	},
+	"agent.tool_call_parse_retry_hint": {
+		LangZH: "[工具调用解析失败 — 请重试一次]\n原因标记: %s；当前 Agent max_tokens=%d。\n你上一条输出中的 <tool_call> 未能解析（常见原因：缺少 </tool_call>、JSON 被截断/不完整、arguments 过长、非法转义）。\n请自行分析上一条输出的问题后重试：只输出一个完整合法的 <tool_call>...</tool_call>（标签内为合法 JSON 对象）。\n若 story_synopsis / writing_style 等字段很长，请拆成多次 update_project_config，每次只更新少量字段。\n不要解释，直接输出工具调用。",
+		LangEN: "[Tool-call parse failed — retry once]\nReason tag: %s; Agent max_tokens=%d.\nYour previous <tool_call> could not be parsed (common causes: missing </tool_call>, truncated/incomplete JSON, oversized arguments, bad escapes).\nDiagnose the previous output, then retry with exactly one complete <tool_call>...</tool_call> containing a valid JSON object.\nIf story_synopsis / writing_style are long, split into multiple update_project_config calls with few fields each.\nDo not explain — emit the tool call only.",
+	},
+	"agent.tool_call_parse_failed": {
+		LangZH: "助理工具调用格式无效（重试后仍无法解析）。请缩短单次参数（长文本字段拆开更新），或点击「重试」重新发送。",
+		LangEN: "Assistant tool call was invalid and still could not be parsed after one retry. Shorten arguments (split long fields across calls), or click Retry to resend.",
 	},
 	"agent.max_steps": {
 		LangZH: "已达到最大工具调用步骤限制。",
