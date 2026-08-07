@@ -96,6 +96,9 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 
 	messages = append(messages, llm.Message{Role: "user", Content: userMessage})
 
+	// ponytail: one parse-retry per loop; ceiling = still-broken after retry → hard error (no silent final reply).
+	parseRetryUsed := false
+
 	for step := 0; step < maxSteps; step++ {
 		if goCtx.Err() != nil {
 			return "", history, agentErr(ctx, "agent.task_cancelled")
@@ -126,11 +129,29 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 
 		toolCall := parseToolCall(fullResp)
 
-		if isAgentOutputTruncated(finishReason, fullResp, toolCall) {
-			if ctx.Logger != nil {
-				ctx.Logger.WarnKey("log.agent_output_truncated", agentEffectiveMaxTokens(ctx.APICfg))
+		if isFailedToolCallAttempt(fullResp, toolCall) {
+			if !parseRetryUsed {
+				parseRetryUsed = true
+				feedback := toolCallParseRetryFeedback(ctx, finishReason, fullResp)
+				if ctx.Logger != nil {
+					ctx.Logger.WarnKey("log.agent_tool_call_parse_retry", finishReason, len(fullResp))
+				}
+				// Keep broken output in messages only (not history) so the model can diagnose; UI/session stay clean.
+				messages = append(messages, llm.Message{Role: "assistant", Content: fullResp})
+				messages = append(messages, llm.Message{Role: "user", Content: feedback})
+				continue
 			}
-			return "", history, agentErr(ctx, "agent.output_truncated", agentEffectiveMaxTokens(ctx.APICfg))
+			if ctx.Logger != nil {
+				if finishReason == "length" || hasUnclosedToolCall(fullResp) {
+					ctx.Logger.WarnKey("log.agent_output_truncated", agentEffectiveMaxTokens(ctx.APICfg))
+				} else {
+					ctx.Logger.WarnKey("log.agent_tool_call_parse_failed")
+				}
+			}
+			if finishReason == "length" || hasUnclosedToolCall(fullResp) {
+				return "", history, agentErr(ctx, "agent.output_truncated", agentEffectiveMaxTokens(ctx.APICfg))
+			}
+			return "", history, agentErr(ctx, "agent.tool_call_parse_failed")
 		}
 
 		if toolCall == nil {
@@ -233,8 +254,17 @@ func hasUnclosedToolCall(content string) bool {
 	return !strings.Contains(after, "</tool_call>")
 }
 
+// isFailedToolCallAttempt reports a tool-call shaped reply that did not parse.
+// Covers unclosed tags and closed-but-invalid JSON; excludes ordinary final text replies.
+func isFailedToolCallAttempt(content string, tc *ToolCall) bool {
+	if tc != nil {
+		return false
+	}
+	return strings.Contains(content, "<tool_call>")
+}
+
 // isAgentOutputTruncated detects max_tokens truncation that would make tool-call parsing unsafe.
-// ponytail: relies on provider finish_reason=="length"; no JSON repair / silent partial args.
+// Used after the one-shot parse retry is exhausted. ponytail: no JSON repair / silent partial args.
 func isAgentOutputTruncated(finishReason, content string, tc *ToolCall) bool {
 	if finishReason != "length" {
 		return false
@@ -243,6 +273,16 @@ func isAgentOutputTruncated(finishReason, content string, tc *ToolCall) bool {
 		return false
 	}
 	return hasUnclosedToolCall(content) || tc == nil
+}
+
+// toolCallParseRetryFeedback asks the model to diagnose a bad tool_call and emit one complete retry.
+func toolCallParseRetryFeedback(ctx *AgentContext, finishReason, content string) string {
+	lang := projectLang(ctx)
+	reason := "parse_error"
+	if finishReason == "length" || hasUnclosedToolCall(content) {
+		reason = "truncated_or_unclosed"
+	}
+	return i18n.T(lang, "agent.tool_call_parse_retry_hint", reason, agentEffectiveMaxTokens(ctx.APICfg))
 }
 
 func buildAgentSystemPrompt(ctx *AgentContext, toolDesc string) string {
@@ -1180,7 +1220,7 @@ func getBuiltinTools() []Tool {
 		},
 		{
 			Name:        "update_project_config",
-			Description: "更新故事配置（含 chapter_count、target_words_per_chapter 等）。generate_outline 读取此处的章数与每章字数生成大纲；用户要「改成 N 章重新生成」时必须先调用本工具再 generate_outline。story_synopsis 应按全书计划总字数写足（见系统提示中的建议字数），尽量保留用户在对话中描述的情节与设定细节。存在已确认章节时会自动触发设定协调。覆盖用户已填字段需 confirm_overwrite=true。",
+			Description: "更新故事配置（含 chapter_count、target_words_per_chapter 等）。generate_outline 读取此处的章数与每章字数生成大纲；用户要「改成 N 章重新生成」时必须先调用本工具再 generate_outline。story_synopsis 应按全书计划总字数写足（见系统提示中的建议字数），尽量保留用户在对话中描述的情节与设定细节。长文本字段（story_synopsis / writing_style）请与短字段拆开、分多次调用，避免单次 arguments 过长被截断。存在已确认章节时会自动触发设定协调。覆盖用户已填字段需 confirm_overwrite=true。",
 			Parameters:  `{"type": "故事类型", "title": "标题", "chapter_count": 30, "target_words_per_chapter": 2500, "writing_style": "写作风格", "writing_pov": "叙述视角", "story_synopsis": "故事梗概（篇幅随全书总字数调整，勿过度压缩）", "confirm_overwrite": false}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var params struct {
