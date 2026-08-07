@@ -13,7 +13,7 @@ type APIConfig struct {
 	BaseURL             string `json:"base_url"`
 	URLStrict           bool   `json:"url_strict,omitempty"` // true = 不自动插入 /v1，仅补 /chat/completions
 	Model               string `json:"model"`
-	MaxTokens           int    `json:"max_tokens,omitempty"` // 0 = 模型默认；Agent 调用建议 ≥ 8192
+	MaxTokens           int    `json:"max_tokens,omitempty"` // 0 = 模型默认；新建默认 32768；Agent 调用建议 ≥ 8192
 	HTTPTimeoutSeconds  int    `json:"http_timeout_seconds"`
 	ContextBudgetTokens int    `json:"context_budget_tokens"` // 全书优化上下文预算，默认 900000
 }
@@ -71,12 +71,19 @@ type PromptsConfig struct {
 // real context window cannot be fetched.
 const DefaultContextBudgetTokens = 300000
 
+// DefaultMaxTokens is the max_tokens written into a freshly created api.json.
+const DefaultMaxTokens = 32768
+
+// DefaultHTTPTimeoutSeconds is the HTTP client timeout for API calls.
+const DefaultHTTPTimeoutSeconds = 600
+
 // ProjectFormatVersion is the only on-disk project layout this binary writes.
 const ProjectFormatVersion = 3
 
 func DefaultAPIConfig() *APIConfig {
 	return &APIConfig{
-		HTTPTimeoutSeconds:  300,
+		MaxTokens:           DefaultMaxTokens,
+		HTTPTimeoutSeconds:  DefaultHTTPTimeoutSeconds,
 		ContextBudgetTokens: DefaultContextBudgetTokens,
 	}
 }
@@ -121,7 +128,7 @@ func LoadAPIConfig(path string) (*APIConfig, error) {
 	}
 
 	if cfg.HTTPTimeoutSeconds <= 0 {
-		cfg.HTTPTimeoutSeconds = 300
+		cfg.HTTPTimeoutSeconds = DefaultHTTPTimeoutSeconds
 	}
 	// ContextBudgetTokens <= 0 is filled in by llm.EnsureContextBudget at
 	// startup (needs an API round-trip, so it lives outside this package).
