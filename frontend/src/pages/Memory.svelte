@@ -167,8 +167,9 @@
                   {@const snippet = extractSnippet(e)}
                   <tr>
                     <td class="font-mono text-xs">{e.id}</td>
-                    <td>
-                      <span class="badge badge-xs {categoryBadge[e.category] || 'badge-ghost'}">
+                    <td class="whitespace-nowrap">
+                      <!-- DaisyUI 5 badge 固定高度且无 nowrap；窄列里中文会逐字换行成竖排 -->
+                      <span class="badge badge-sm {categoryBadge[e.category] || 'badge-ghost'} whitespace-nowrap">
                         {$t('memory.category.' + (e.category || 'other'))}
                       </span>
                     </td>
@@ -204,7 +205,7 @@
                     <div class="rounded-md bg-base-200/80 px-3 py-2 text-sm">
                       <div class="flex flex-wrap items-center gap-2 mb-1">
                         <span class="font-mono text-xs text-base-content/50">#{e.id}</span>
-                        <span class="badge badge-xs {categoryBadge[e.category] || 'badge-ghost'}">
+                        <span class="badge badge-sm {categoryBadge[e.category] || 'badge-ghost'} whitespace-nowrap shrink-0">
                           {$t('memory.category.' + (e.category || 'other'))}
                         </span>
                         {#if e.position > 0}
