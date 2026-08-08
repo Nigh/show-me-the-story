@@ -11,12 +11,12 @@
   })();
 
   $: pp = $postprocess?.state;
-  $: opts = pp?.execute_options || { run_smooth_transitions_first: true, include_polish: false };
 
   let reportTab = 'diagnosis';
   let diffItem = null;
   let roadmapLocal = [];
   let optsLocal = { run_smooth_transitions_first: true, include_polish: false };
+  let authorReqLocal = '';
   let dirty = false;
 
   $: typeLabels = {
@@ -50,11 +50,23 @@
   $: if (pp?.roadmap && !dirty) {
     roadmapLocal = pp.roadmap.map(r => ({ ...r }));
   }
-  $: if (pp?.execute_options) {
-    optsLocal = { ...pp.execute_options };
+  // Must gate on !dirty — otherwise any $postprocess refresh snaps checkboxes back.
+  $: if (pp?.execute_options && !dirty) {
+    optsLocal = {
+      run_smooth_transitions_first: !!pp.execute_options.run_smooth_transitions_first,
+      include_polish: !!pp.execute_options.include_polish,
+    };
+  }
+  $: if (!dirty) {
+    authorReqLocal = pp?.author_requirements || '';
   }
 
   function markDirty() { dirty = true; }
+
+  function setOpt(key, value) {
+    optsLocal = { ...optsLocal, [key]: value };
+    markDirty();
+  }
 
   function selectAllPending(val) {
     roadmapLocal = roadmapLocal.map(r =>
@@ -70,16 +82,32 @@
     markDirty();
   }
 
-  async function saveRoadmap() {
+  async function saveRoadmap(showToast = true) {
     try {
       const res = await api('PUT', '/api/postprocess/roadmap', {
         roadmap: roadmapLocal,
         execute_options: optsLocal,
+        author_requirements: authorReqLocal,
       });
       postprocess.set(res);
       dirty = false;
-      addToast($t('pp.toast.saved'), 'success');
-    } catch (e) { addToast(e.message, 'error'); }
+      if (showToast) addToast($t('pp.toast.saved'), 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+      throw e;
+    }
+  }
+
+  /** Persist author requirements (and dirty opts/roadmap) before async analyze steps. */
+  async function persistBeforeAnalyze() {
+    const body = { author_requirements: authorReqLocal };
+    if (dirty) {
+      body.roadmap = roadmapLocal;
+      body.execute_options = optsLocal;
+    }
+    const res = await api('PUT', '/api/postprocess/roadmap', body);
+    postprocess.set(res);
+    dirty = false;
   }
 
   function runDiagnose() {
@@ -87,6 +115,7 @@
       message: $t('pp.confirm.diagnose'),
       onConfirm: async () => {
         try {
+          await persistBeforeAnalyze();
           await api('POST', '/api/postprocess/diagnose');
           addToast($t('pp.toast.diagnoseStarted'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
@@ -103,6 +132,7 @@
 
   async function runRoadmap() {
     try {
+      await persistBeforeAnalyze();
       await api('POST', '/api/postprocess/roadmap');
       addToast($t('pp.toast.roadmapStarted'), 'info');
     } catch (e) { addToast(e.message, 'error'); }
@@ -110,20 +140,29 @@
 
   function runExecute() {
     const pending = roadmapLocal.filter(r => r.selected && r.status === 'pending');
-    const chapterCount = new Set(pending.map(r => r.chapter_num)).size;
-    if (pending.length === 0) {
+    const hasAuthorReq = !!(authorReqLocal || '').trim();
+    const allChapters = ($progress?.chapters || []).length;
+    const ticketChapters = new Set(pending.map(r => r.chapter_num)).size;
+    const chapterCount = hasAuthorReq ? allChapters : ticketChapters;
+    if (pending.length === 0 && !hasAuthorReq) {
       addToast($t('pp.toast.pickRequired'), 'error');
       return;
     }
-    const mergeHint = pending.length > chapterCount
-      ? $t('pp.confirm.execute.merge', { items: pending.length, chapters: chapterCount })
-      : '';
+    let mergeHint = '';
+    if (hasAuthorReq) {
+      mergeHint = $t('pp.confirm.execute.authorAll', { items: pending.length });
+    } else if (pending.length > ticketChapters) {
+      mergeHint = $t('pp.confirm.execute.merge', { items: pending.length, chapters: ticketChapters });
+    }
     confirmModal.set({
       message: $t('pp.confirm.execute', { chapters: chapterCount, merge: mergeHint }),
       onConfirm: async () => {
         try {
-          if (dirty) await saveRoadmap();
-          await api('POST', '/api/postprocess/execute', { execute_options: optsLocal });
+          if (dirty) await saveRoadmap(false);
+          await api('POST', '/api/postprocess/execute', {
+            execute_options: optsLocal,
+            author_requirements: authorReqLocal,
+          });
           addToast($t('pp.toast.executeStarted'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
       },
@@ -136,6 +175,8 @@
       onConfirm: async () => {
         try {
           const res = await api('DELETE', '/api/postprocess');
+          dirty = false;
+          authorReqLocal = '';
           postprocess.set(res);
           addToast($t('pp.toast.cleared'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
@@ -150,6 +191,9 @@
   $: selectedChapterCount = new Set(
     roadmapLocal.filter(r => r.selected && r.status === 'pending').map(r => r.chapter_num)
   ).size;
+  $: hasAuthorReq = !!(authorReqLocal || '').trim();
+  $: executeChapterCount = hasAuthorReq ? ($progress?.chapters || []).length : selectedChapterCount;
+  $: canExecute = !$taskRunning && (selectedPending > 0 || hasAuthorReq);
 </script>
 
 {#if bookComplete}
@@ -171,6 +215,21 @@
       </div>
 
       <p class="text-xs text-base-content/50">{$t('pp.intro')}</p>
+
+      <div>
+        <span class="text-xs text-base-content/50 mb-0.5 block">{$t('pp.authorReq.label')}</span>
+        <textarea
+          class="textarea textarea-bordered textarea-sm w-full min-h-[4.5rem]"
+          placeholder={$t('pp.authorReq.placeholder')}
+          bind:value={authorReqLocal}
+          on:input={markDirty}
+          disabled={$taskRunning}
+        ></textarea>
+        <p class="text-xs text-base-content/40 mt-1">{$t('pp.authorReq.hint')}</p>
+        {#if hasAuthorReq}
+          <p class="text-xs text-warning mt-1">{$t('pp.authorReq.warnAllChapters')}</p>
+        {/if}
+      </div>
 
       <div class="flex gap-2 flex-wrap">
         <button class="btn btn-primary btn-sm" on:click={runDiagnose} disabled={$taskRunning}>{$t('pp.btn.diagnose')}</button>
@@ -195,30 +254,48 @@
         </div>
       {/if}
 
-      {#if roadmapLocal.length > 0}
-        <div class="divider my-0 text-xs">{$t('pp.roadmap.title', { total: roadmapLocal.length, pending: pendingCount })}</div>
+      {#if roadmapLocal.length > 0 || hasAuthorReq}
+        {#if roadmapLocal.length > 0}
+          <div class="divider my-0 text-xs">{$t('pp.roadmap.title', { total: roadmapLocal.length, pending: pendingCount })}</div>
+        {:else}
+          <div class="divider my-0 text-xs">{$t('pp.roadmap.authorOnly')}</div>
+        {/if}
 
         <div class="flex gap-3 flex-wrap items-center text-xs">
           <label class="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" class="checkbox checkbox-xs" bind:checked={optsLocal.run_smooth_transitions_first} on:change={markDirty} />
+            <!-- checkbox-primary: DaisyUI 5 无色时 checked 背景透明，勾选几乎看不见 -->
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm checkbox-primary"
+              checked={optsLocal.run_smooth_transitions_first}
+              on:change={e => setOpt('run_smooth_transitions_first', e.currentTarget.checked)}
+            />
             {$t('pp.opts.smoothFirst')}
           </label>
           <label class="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" class="checkbox checkbox-xs" bind:checked={optsLocal.include_polish} on:change={markDirty} />
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm checkbox-primary"
+              checked={optsLocal.include_polish}
+              on:change={e => setOpt('include_polish', e.currentTarget.checked)}
+            />
             {$t('pp.opts.includePolish')}
           </label>
           <div class="flex-1"></div>
-          <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(true)} disabled={$taskRunning}>{$t('pp.btn.selectAll')}</button>
-          <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(false)} disabled={$taskRunning}>{$t('pp.btn.selectNone')}</button>
-          <button class="btn btn-ghost btn-xs" on:click={resetFailed} disabled={$taskRunning}>{$t('pp.btn.resetFailed')}</button>
+          {#if roadmapLocal.length > 0}
+            <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(true)} disabled={$taskRunning}>{$t('pp.btn.selectAll')}</button>
+            <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(false)} disabled={$taskRunning}>{$t('pp.btn.selectNone')}</button>
+            <button class="btn btn-ghost btn-xs" on:click={resetFailed} disabled={$taskRunning}>{$t('pp.btn.resetFailed')}</button>
+          {/if}
           {#if dirty}
             <button class="btn btn-primary btn-xs" on:click={saveRoadmap} disabled={$taskRunning}>{$t('pp.btn.saveRoadmap')}</button>
           {/if}
-          <button class="btn btn-success btn-sm" on:click={runExecute} disabled={$taskRunning || selectedPending === 0}>
-            {$t('pp.btn.execute', { chapters: selectedChapterCount, items: selectedPending })}
+          <button class="btn btn-success btn-sm" on:click={runExecute} disabled={!canExecute}>
+            {$t('pp.btn.execute', { chapters: executeChapterCount, items: selectedPending })}
           </button>
         </div>
 
+        {#if roadmapLocal.length > 0}
         <div class="overflow-x-auto max-h-80 overflow-y-auto rounded-lg border border-base-300">
           <table class="table table-xs table-zebra">
             <thead class="sticky top-0 bg-base-200 z-10">
@@ -268,6 +345,7 @@
             </tbody>
           </table>
         </div>
+        {/if}
       {/if}
     </div>
   </div>

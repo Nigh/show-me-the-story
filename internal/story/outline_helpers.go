@@ -174,6 +174,27 @@ var (
 	firstAppearanceEN = regexp.MustCompile(`(?i)([\p{Han}A-Za-z·\s]{2,20}?)\s*[\(（]?\s*first appearance\s*[\)）]?`)
 )
 
+// stubsFromStructuredCharacters builds stubs from the chapter cast field.
+func stubsFromStructuredCharacters(chars []OutlineChapterCharacter) []outlineCharacterStub {
+	chars = normalizeOutlineCharacters(chars)
+	if len(chars) == 0 {
+		return nil
+	}
+	stubs := make([]outlineCharacterStub, 0, len(chars))
+	for _, c := range chars {
+		stubs = append(stubs, outlineCharacterStub{Name: c.Name, Description: c.Note})
+	}
+	return stubs
+}
+
+// characterStubsForChapter prefers structured cast; falls back to「首次登场」prose scan for legacy outlines.
+func characterStubsForChapter(ch ChapterState) []outlineCharacterStub {
+	if stubs := stubsFromStructuredCharacters(ch.Characters); len(stubs) > 0 {
+		return stubs
+	}
+	return extractFirstAppearanceStubs(ch.Outline)
+}
+
 func extractFirstAppearanceStubs(outline string) []outlineCharacterStub {
 	outline = strings.TrimSpace(outline)
 	if outline == "" {
@@ -219,9 +240,9 @@ func extractStubDescription(outline, name string) string {
 	return truncateRunes(strings.TrimSpace(rest), 80)
 }
 
-func buildOutlineDerivedCharacterContext(chapterOutline string, settings *ProjectSettings, lang string) string {
+func buildOutlineDerivedCharacterContext(ch ChapterState, settings *ProjectSettings, lang string) string {
 	registered := RegisteredCharacterNameSet(settings)
-	stubs := extractFirstAppearanceStubs(chapterOutline)
+	stubs := characterStubsForChapter(ch)
 	if len(stubs) == 0 {
 		return ""
 	}
@@ -246,4 +267,34 @@ func buildOutlineDerivedCharacterContext(chapterOutline string, settings *Projec
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+func formatCharactersLine(chars []OutlineChapterCharacter, lang string) string {
+	chars = normalizeOutlineCharacters(chars)
+	if len(chars) == 0 {
+		return ""
+	}
+	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
+	parts := make([]string, 0, len(chars))
+	for _, c := range chars {
+		if c.FirstAppearance {
+			if c.Note != "" {
+				if en {
+					parts = append(parts, fmt.Sprintf("%s (first appearance: %s)", c.Name, c.Note))
+				} else {
+					parts = append(parts, fmt.Sprintf("%s（首次登场：%s）", c.Name, c.Note))
+				}
+			} else if en {
+				parts = append(parts, c.Name+" (first appearance)")
+			} else {
+				parts = append(parts, c.Name+"（首次登场）")
+			}
+		} else {
+			parts = append(parts, c.Name)
+		}
+	}
+	if en {
+		return "Cast: " + strings.Join(parts, "; ")
+	}
+	return "出场人物：" + strings.Join(parts, "、")
 }

@@ -331,6 +331,10 @@ func buildFullOutlineText(state *Progress, lang string) string {
 	var sb strings.Builder
 	for _, ch := range state.Chapters {
 		sb.WriteString(formatChapterLine(ch.Num, ch.Title, ch.Outline, lang))
+		if cast := formatCharactersLine(ch.Characters, lang); cast != "" {
+			sb.WriteString(cast)
+			sb.WriteString("\n")
+		}
 	}
 	return sb.String()
 }

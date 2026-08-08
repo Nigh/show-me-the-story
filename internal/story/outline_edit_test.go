@@ -8,7 +8,7 @@ func TestEditChapterOutlineStatuses(t *testing.T) {
 	}
 	for _, status := range []string{StatusPending, StatusWriting, StatusReview} {
 		state := mk(status)
-		if err := EditChapterOutline(state, 1, "新标题", "新大纲"); err != nil {
+		if err := EditChapterOutline(state, 1, "新标题", "新大纲", nil); err != nil {
 			t.Fatalf("status %s: unexpected err: %v", status, err)
 		}
 		if state.Chapters[0].Title != "新标题" || state.Chapters[0].Outline != "新大纲" {
@@ -16,10 +16,40 @@ func TestEditChapterOutlineStatuses(t *testing.T) {
 		}
 	}
 	state := mk(StatusAccepted)
-	if err := EditChapterOutline(state, 1, "x", "y"); err == nil {
+	if err := EditChapterOutline(state, 1, "x", "y", nil); err == nil {
 		t.Fatal("accepted chapter outline should be rejected")
 	}
 	if state.Chapters[0].Title != "旧" {
 		t.Fatal("accepted chapter must not change on failed edit")
+	}
+}
+
+func TestEditChapterOutlineCharacters(t *testing.T) {
+	state := &Progress{Chapters: []ChapterState{{
+		Num: 1, Title: "旧", Outline: "旧大纲", Status: StatusPending,
+		Characters: []OutlineChapterCharacter{{Name: "旧角"}},
+	}}}
+	if err := EditChapterOutline(state, 1, "新", "新大纲", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Chapters[0].Characters) != 1 || state.Chapters[0].Characters[0].Name != "旧角" {
+		t.Fatalf("nil characters pointer must leave cast unchanged: %+v", state.Chapters[0].Characters)
+	}
+	chars := []OutlineChapterCharacter{
+		{Name: "吕红梅", FirstAppearance: true, Note: "班主任"},
+		{Name: "  "},
+	}
+	if err := EditChapterOutline(state, 1, "新", "新大纲", &chars); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Chapters[0].Characters) != 1 || state.Chapters[0].Characters[0].Name != "吕红梅" {
+		t.Fatalf("characters not applied: %+v", state.Chapters[0].Characters)
+	}
+	empty := []OutlineChapterCharacter{}
+	if err := EditChapterOutline(state, 1, "新", "新大纲", &empty); err != nil {
+		t.Fatal(err)
+	}
+	if state.Chapters[0].Characters != nil {
+		t.Fatalf("empty slice should clear cast, got %+v", state.Chapters[0].Characters)
 	}
 }

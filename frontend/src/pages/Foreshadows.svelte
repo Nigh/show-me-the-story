@@ -442,29 +442,33 @@
   {/if}
 </div>
 
-<!-- 编辑/创建弹窗 -->
+<!-- 编辑/创建弹窗（DaisyUI 5：不用已移除的 form-control / 旧 label-text） -->
 {#if showForm}
-  <div class="modal modal-open">
+  <dialog class="modal modal-open">
     <div class="modal-box max-w-lg">
       <h3 class="font-bold text-lg">{editing ? $t('fs.form.edit') : $t('fs.form.create')}</h3>
-      <div class="form-control gap-3 mt-4">
-        <span class="label py-0"><span class="label-text">{$t('fs.form.name')}</span></span>
-        <input class="input input-bordered input-sm" bind:value={form.name} disabled={$taskRunning} />
-        <span class="label py-0"><span class="label-text">{$t('fs.form.description')}</span></span>
-        <textarea class="textarea textarea-bordered text-sm" rows="3" bind:value={form.description} disabled={$taskRunning}></textarea>
+      <div class="flex flex-col gap-3 mt-4">
+        <div>
+          <span class="text-xs text-base-content/50 mb-0.5 block">{$t('fs.form.name')}</span>
+          <input class="input input-bordered input-sm w-full" bind:value={form.name} disabled={$taskRunning} />
+        </div>
+        <div>
+          <span class="text-xs text-base-content/50 mb-0.5 block">{$t('fs.form.description')}</span>
+          <textarea class="textarea textarea-bordered text-sm w-full" rows="3" bind:value={form.description} disabled={$taskRunning}></textarea>
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <span class="label py-0"><span class="label-text">{$t('fs.form.plant')}</span></span>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('fs.form.plant')}</span>
             <input type="number" min="1" class="input input-bordered input-sm w-full" bind:value={form.plant_chapter} disabled={$taskRunning} />
           </div>
           <div>
-            <span class="label py-0"><span class="label-text">{$t('fs.form.target')}</span></span>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('fs.form.target')}</span>
             <input type="number" min="0" class="input input-bordered input-sm w-full" bind:value={form.target_chapter} disabled={$taskRunning} />
           </div>
         </div>
         {#if editing}
           <div>
-            <span class="label py-0"><span class="label-text">{$t('fs.form.status')}</span></span>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('fs.form.status')}</span>
             <select class="select select-bordered select-sm w-full" bind:value={form.status} disabled={$taskRunning}>
               {#each Object.entries(statusMeta) as [val, meta]}
                 <option value={val}>{meta.label}</option>
@@ -472,7 +476,7 @@
             </select>
           </div>
           <div>
-            <span class="label py-0"><span class="label-text">{$t('fs.form.resolution')}</span></span>
+            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('fs.form.resolution')}</span>
             <input class="input input-bordered input-sm w-full" bind:value={form.resolution} disabled={$taskRunning} />
           </div>
         {/if}
@@ -482,6 +486,6 @@
         <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={saveForm}>{$t('common.save')}</button>
       </div>
     </div>
-    <div class="modal-backdrop" on:click={() => showForm = false} on:keydown={() => {}} role="presentation"></div>
-  </div>
+    <form method="dialog" class="modal-backdrop"><button on:click={() => showForm = false}>close</button></form>
+  </dialog>
 {/if}

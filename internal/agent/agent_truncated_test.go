@@ -3,6 +3,7 @@ package agent
 import (
 	"showmethestory/internal/config"
 	"showmethestory/internal/llm"
+	"strings"
 	"testing"
 )
 
@@ -74,6 +75,35 @@ func TestIsAgentOutputTruncated(t *testing.T) {
 	tc := parseToolCall(complete)
 	if isAgentOutputTruncated("length", complete, tc) {
 		t.Fatal("完整 tool_call 即使 finish_reason=length 也不应报错（由 provider 误报时保守通过）")
+	}
+}
+
+func TestIsFailedToolCallAttempt(t *testing.T) {
+	unclosed := `<tool_call> {"name":"update_project_config","arguments":{"title":"颂歌`
+	if !isFailedToolCallAttempt(unclosed, parseToolCall(unclosed)) {
+		t.Fatal("未闭合 tool_call 且解析失败应视为失败尝试")
+	}
+	badClosed := `<tool_call>{"name":</tool_call>`
+	if !isFailedToolCallAttempt(badClosed, parseToolCall(badClosed)) {
+		t.Fatal("闭合但非法 JSON 应视为失败尝试")
+	}
+	ok := `<tool_call>{"name":"search_project","arguments":{"query":"x"}}</tool_call>`
+	if isFailedToolCallAttempt(ok, parseToolCall(ok)) {
+		t.Fatal("合法 tool_call 不应视为失败尝试")
+	}
+	if isFailedToolCallAttempt("直接回复用户，无需工具", nil) {
+		t.Fatal("普通最终回复不应视为失败尝试")
+	}
+}
+
+func TestToolCallParseRetryFeedback(t *testing.T) {
+	ctx := &AgentContext{Config: &config.Config{Language: "zh"}, APICfg: &config.APIConfig{MaxTokens: 8192}}
+	fb := toolCallParseRetryFeedback(ctx, "stop", `<tool_call>{"name":"x"`)
+	if !strings.Contains(fb, "请重试一次") {
+		t.Fatalf("反馈应要求重试，实际: %s", fb)
+	}
+	if !strings.Contains(fb, "truncated_or_unclosed") {
+		t.Fatalf("未闭合时应标记 truncated_or_unclosed，实际: %s", fb)
 	}
 }
 

@@ -18,10 +18,55 @@ type OutlineResponse struct {
 	Chapters      []OutlineChapter `json:"chapters"`
 }
 
+// OutlineChapterCharacter is a machine-readable cast entry for one chapter outline.
+// Prefer this over scraping prose for「首次登场」; name must be the proper name only.
+type OutlineChapterCharacter struct {
+	Name            string `json:"name"`
+	FirstAppearance bool   `json:"first_appearance,omitempty"`
+	Note            string `json:"note,omitempty"` // one-line role / relationship for debuts
+}
+
 type OutlineChapter struct {
-	Num     int    `json:"num"`
-	Title   string `json:"title"`
-	Outline string `json:"outline"`
+	Num        int                       `json:"num"`
+	Title      string                    `json:"title"`
+	Outline    string                    `json:"outline"`
+	Characters []OutlineChapterCharacter `json:"characters,omitempty"`
+}
+
+// normalizeOutlineCharacters trims names, drops empties, dedupes within a chapter.
+func normalizeOutlineCharacters(in []OutlineChapterCharacter) []OutlineChapterCharacter {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]OutlineChapterCharacter, 0, len(in))
+	for _, c := range in {
+		name := strings.TrimSpace(StripNameMarks(c.Name))
+		name = strings.Trim(name, "：:、\"'「」『』")
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, OutlineChapterCharacter{
+			Name:            name,
+			FirstAppearance: c.FirstAppearance,
+			Note:            strings.TrimSpace(c.Note),
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func chapterStateFromOutline(oc OutlineChapter, status string) ChapterState {
+	return ChapterState{
+		Num:        oc.Num,
+		Title:      oc.Title,
+		Outline:    oc.Outline,
+		Characters: normalizeOutlineCharacters(oc.Characters),
+		Status:     status,
+	}
 }
 
 func parseOutlineResponse(rawResp string) (*OutlineResponse, error) {
@@ -209,6 +254,7 @@ func applyOutlineRevision(cfg *config.Config, state *Progress, resp OutlineRespo
 			if existingCh.Num == newCh.Num && !lockedMap[newCh.Num] {
 				state.Chapters[i].Title = newCh.Title
 				state.Chapters[i].Outline = newCh.Outline
+				state.Chapters[i].Characters = normalizeOutlineCharacters(newCh.Characters)
 			}
 		}
 	}
@@ -258,12 +304,7 @@ func GenerateOutlineAction(ctx context.Context, apiCfg *config.APIConfig, cfg *c
 
 	state.Chapters = make([]ChapterState, len(outlineResp.Chapters))
 	for i, ch := range outlineResp.Chapters {
-		state.Chapters[i] = ChapterState{
-			Num:     ch.Num,
-			Title:   ch.Title,
-			Outline: ch.Outline,
-			Status:  StatusPending,
-		}
+		state.Chapters[i] = chapterStateFromOutline(ch, StatusPending)
 	}
 
 	if err := applyOutlineMetaWithGuard(cfg, state, *outlineResp, "outline_generation", PendingConfigChangesPath(progressPath), cfgPath, logger); err != nil {
@@ -320,7 +361,9 @@ func outlineEditable(status string) bool {
 	}
 }
 
-func EditChapterOutline(state *Progress, chapterNum int, title, outline string) error {
+// EditChapterOutline updates title/outline. If characters != nil, replaces the
+// structured cast; if nil, leaves existing Characters unchanged.
+func EditChapterOutline(state *Progress, chapterNum int, title, outline string, characters *[]OutlineChapterCharacter) error {
 	idx := -1
 	for i, ch := range state.Chapters {
 		if ch.Num == chapterNum {
@@ -336,6 +379,9 @@ func EditChapterOutline(state *Progress, chapterNum int, title, outline string) 
 	}
 	state.Chapters[idx].Title = title
 	state.Chapters[idx].Outline = outline
+	if characters != nil {
+		state.Chapters[idx].Characters = normalizeOutlineCharacters(*characters)
+	}
 	return nil
 }
 
@@ -385,12 +431,7 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *config.APIConfig, 
 	logger.StepInfo(2, 2, "正在保存续写大纲...")
 
 	for _, ch := range chapters {
-		state.Chapters = append(state.Chapters, ChapterState{
-			Num:     ch.Num,
-			Title:   ch.Title,
-			Outline: ch.Outline,
-			Status:  StatusPending,
-		})
+		state.Chapters = append(state.Chapters, chapterStateFromOutline(ch, StatusPending))
 	}
 
 	if err := SaveProgress(progressPath, state); err != nil {

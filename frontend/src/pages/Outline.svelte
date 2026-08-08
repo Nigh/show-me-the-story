@@ -35,6 +35,46 @@
   let editingNum = -1;
   let editTitle = '';
   let editOutline = '';
+  let editCharactersText = '';
+
+  // Cast edit lines: "Name", "Name*", "Name|note", "Name*|note" (* = first appearance)
+  function formatCharactersEdit(chars) {
+    if (!chars?.length) return '';
+    return chars.map(c => {
+      let line = c.name || '';
+      if (c.first_appearance) line += '*';
+      if (c.note) line += '|' + c.note;
+      return line;
+    }).join('\n');
+  }
+
+  function parseCharactersEdit(text) {
+    const out = [];
+    const seen = new Set();
+    for (const raw of (text || '').split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      let namePart = line;
+      let note = '';
+      const bar = line.indexOf('|');
+      if (bar >= 0) {
+        namePart = line.slice(0, bar).trim();
+        note = line.slice(bar + 1).trim();
+      }
+      let first = false;
+      if (namePart.endsWith('*')) {
+        first = true;
+        namePart = namePart.slice(0, -1).trim();
+      }
+      if (!namePart || seen.has(namePart)) continue;
+      seen.add(namePart);
+      const entry = { name: namePart };
+      if (first) entry.first_appearance = true;
+      if (note) entry.note = note;
+      out.push(entry);
+    }
+    return out;
+  }
 
   // 导入续写（v3 流水线）
   let showImport = false;
@@ -167,6 +207,7 @@
     editingNum = ch.num;
     editTitle = ch.title;
     editOutline = ch.outline;
+    editCharactersText = formatCharactersEdit(ch.characters);
   }
 
   function cancelEdit() {
@@ -176,7 +217,11 @@
   async function saveEdit() {
     if (!editTitle.trim() || !editOutline.trim()) { addToast($t('outline.toasts.editRequired'), 'error'); return; }
     try {
-      await api('PUT', '/api/outline/' + editingNum, { title: editTitle.trim(), outline: editOutline.trim() });
+      await api('PUT', '/api/outline/' + editingNum, {
+        title: editTitle.trim(),
+        outline: editOutline.trim(),
+        characters: parseCharactersEdit(editCharactersText),
+      });
       progress.set(await api('GET', '/api/progress'));
       addToast($t('outline.toasts.editSaved', { num: editingNum }), 'success');
       editingNum = -1;
@@ -435,6 +480,11 @@
                   <input type="text" class="input input-sm flex-1" bind:value={editTitle} placeholder={$t('outline.chapter.titlePlaceholder')} disabled={$taskRunning} />
                 </div>
                 <textarea class="textarea textarea-sm w-full h-24 text-sm" bind:value={editOutline} placeholder={$t('outline.chapter.outlinePlaceholder')} disabled={$taskRunning}></textarea>
+                <div>
+                  <label class="text-xs text-base-content/50 mb-1 block">{$t('outline.chapter.castLabel')}</label>
+                  <textarea class="textarea textarea-sm w-full h-16 text-sm font-mono" bind:value={editCharactersText} placeholder={$t('outline.chapter.castPlaceholder')} disabled={$taskRunning}></textarea>
+                  <p class="text-[11px] text-base-content/35 mt-0.5">{$t('outline.chapter.castHint')}</p>
+                </div>
                 <div class="flex justify-end gap-2">
                   <button class="btn btn-ghost btn-xs" on:click={cancelEdit}>{$t('common.cancel')}</button>
                   <button class="btn btn-success btn-xs" on:click={saveEdit} disabled={$taskRunning}>{$t('common.save')}</button>
@@ -456,6 +506,15 @@
                     <span class="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">{$t('outline.chapter.editTag')}</span>
                   {/if}
                 </div>
+                {#if ch.characters?.length}
+                  <div class="flex flex-wrap gap-1 mt-1.5 ml-14">
+                    {#each ch.characters as c}
+                      <span class="badge badge-ghost badge-xs gap-0.5" title={c.note || ''}>
+                        {c.name}{#if c.first_appearance}<span class="text-warning">*</span>{/if}
+                      </span>
+                    {/each}
+                  </div>
+                {/if}
                 <p class="text-xs text-base-content/50 mt-1 ml-14 line-clamp-2">{ch.outline}</p>
               </div>
             {/if}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"showmethestory/internal/agent"
 	"showmethestory/internal/config"
+	"showmethestory/internal/devlog"
 	"showmethestory/internal/fsutil"
 	"showmethestory/internal/i18n"
 	"showmethestory/internal/llm"
@@ -181,6 +182,7 @@ func (h *Handlers) tryStartTask() bool {
 	h.taskMu.Lock()
 	defer h.taskMu.Unlock()
 	if h.taskRunning || h.activeWork > 0 {
+		devlog.Log("tryStartTask rejected running=%v activeWork=%d", h.taskRunning, h.activeWork)
 		return false
 	}
 	h.taskRunning = true
@@ -189,21 +191,26 @@ func (h *Handlers) tryStartTask() bool {
 	ctx, h.taskTokens = llm.WithTaskTokens(ctx, h.logger)
 	h.taskCtx = ctx
 	h.taskCancel = cancel
+	devlog.Log("tryStartTask ok activeWork=1")
 	return true
 }
 
 func (h *Handlers) endTask() {
 	h.taskMu.Lock()
 	h.activeWork--
+	cancelled := false
 	if h.activeWork <= 0 {
 		h.activeWork = 0
 		h.taskRunning = false
 		if h.taskCancel != nil {
 			h.taskCancel()
 			h.taskCancel = nil
+			cancelled = true
 		}
 	}
+	aw, running := h.activeWork, h.taskRunning
 	h.taskMu.Unlock()
+	devlog.Log("endTask activeWork=%d running=%v cancelled=%v", aw, running, cancelled)
 }
 
 // startChildWork 增加活跃工作计数（用于 Agent 子任务），不创建新 context
@@ -211,9 +218,11 @@ func (h *Handlers) startChildWork() bool {
 	h.taskMu.Lock()
 	defer h.taskMu.Unlock()
 	if !h.taskRunning {
+		devlog.Log("startChildWork rejected taskRunning=false")
 		return false
 	}
 	h.activeWork++
+	devlog.Log("startChildWork ok activeWork=%d", h.activeWork)
 	return true
 }
 
@@ -221,6 +230,12 @@ func (h *Handlers) isTaskRunning() bool {
 	h.taskMu.Lock()
 	defer h.taskMu.Unlock()
 	return h.taskRunning || h.activeWork > 0
+}
+
+func (h *Handlers) activeWorkCount() int {
+	h.taskMu.Lock()
+	defer h.taskMu.Unlock()
+	return h.activeWork
 }
 
 // rejectIfTaskRunning 在 AI 任务运行期间拒绝编辑类请求，防止意外提交修改。
@@ -275,6 +290,7 @@ func (h *Handlers) PostTaskStop(w http.ResponseWriter, r *http.Request) {
 	if h.taskCancel != nil {
 		h.taskCancel()
 	}
+	devlog.Log("task_stop requested activeWork=%d current=%s", h.activeWork, h.logger.CurrentTask())
 	h.taskMu.Unlock()
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "stopping"})
 }
@@ -294,7 +310,7 @@ func (h *Handlers) PutAPIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if newCfg.HTTPTimeoutSeconds <= 0 {
-		newCfg.HTTPTimeoutSeconds = 300
+		newCfg.HTTPTimeoutSeconds = config.DefaultHTTPTimeoutSeconds
 	}
 	if newCfg.ContextBudgetTokens <= 0 {
 		if window := llm.FetchModelContextWindow(&newCfg); window > 0 {
@@ -1335,15 +1351,16 @@ func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Title   string `json:"title"`
-		Outline string `json:"outline"`
+		Title      string                           `json:"title"`
+		Outline    string                           `json:"outline"`
+		Characters *[]story.OutlineChapterCharacter `json:"characters"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
 
-	if err := story.EditChapterOutline(h.state, num, body.Title, body.Outline); err != nil {
+	if err := story.EditChapterOutline(h.state, num, body.Title, body.Outline, body.Characters); err != nil {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
@@ -1486,19 +1503,26 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 	if h.cfg != nil {
 		lang = i18n.NormalizeLanguage(h.cfg.Language)
 	}
+	running := h.isTaskRunning()
 	resp := map[string]interface{}{
 		"phase":            h.state.Phase,
 		"title":            h.state.Title,
 		"total_chapters":   len(h.state.Chapters),
-		"is_task_running":  h.isTaskRunning(),
+		"is_task_running":  running,
 		"auto_confirm":     h.isAutoConfirmOn(),
 		"project_language": lang,
 	}
-	if h.isTaskRunning() && h.taskTokens != nil {
-		prompt, completion := h.taskTokens.Snapshot()
-		resp["token_usage"] = map[string]int{
-			"prompt_tokens":     prompt,
-			"completion_tokens": completion,
+	if running {
+		resp["active_work"] = h.activeWorkCount()
+		if task := h.logger.CurrentTask(); task != "" {
+			resp["current_task"] = task
+		}
+		if h.taskTokens != nil {
+			prompt, completion := h.taskTokens.Snapshot()
+			resp["token_usage"] = map[string]int{
+				"prompt_tokens":     prompt,
+				"completion_tokens": completion,
+			}
 		}
 	}
 	h.writeJSON(w, http.StatusOK, resp)
@@ -2401,8 +2425,9 @@ func (h *Handlers) PutPostProcessRoadmap(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		Roadmap        []story.RoadmapItem              `json:"roadmap"`
-		ExecuteOptions *story.PostProcessExecuteOptions `json:"execute_options"`
+		Roadmap            []story.RoadmapItem              `json:"roadmap"`
+		ExecuteOptions     *story.PostProcessExecuteOptions `json:"execute_options"`
+		AuthorRequirements *string                          `json:"author_requirements"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
@@ -2413,6 +2438,9 @@ func (h *Handlers) PutPostProcessRoadmap(w http.ResponseWriter, r *http.Request)
 	}
 	if req.ExecuteOptions != nil {
 		h.postprocess.ExecuteOptions = req.ExecuteOptions
+	}
+	if req.AuthorRequirements != nil {
+		h.postprocess.AuthorRequirements = *req.AuthorRequirements
 	}
 	if err := story.SavePostProcess(h.postprocessPath, h.postprocess); err != nil {
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
@@ -2539,7 +2567,7 @@ func (h *Handlers) PostPostProcessRoadmap(w http.ResponseWriter, r *http.Request
 		h.logger.TaskStart("postprocess_roadmap")
 		ctx := h.taskCtx
 
-		roadmap, err := story.BuildRoadmapAction(ctx, h.apiCfg, h.cfg, h.postprocess.DiagnosisReport, h.postprocess.ConsistencyReport, h.logger)
+		roadmap, err := story.BuildRoadmapAction(ctx, h.apiCfg, h.cfg, h.postprocess.DiagnosisReport, h.postprocess.ConsistencyReport, h.postprocess.AuthorRequirements, h.logger)
 		if err != nil {
 			if ctx.Err() != nil {
 				h.logger.WarnKey("log.postprocess_roadmap_cancelled")
@@ -2561,7 +2589,7 @@ func (h *Handlers) PostPostProcessRoadmap(w http.ResponseWriter, r *http.Request
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
-// PostPostProcessExecute 异步：执行已勾选的优化工单。
+// PostPostProcessExecute 异步：执行已勾选的优化工单（有补充要求时覆盖全书各章）。
 func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request) {
 	if !h.ensureProject(w, r) {
 		return
@@ -2570,17 +2598,23 @@ func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request
 		h.writeErrorReq(w, r, http.StatusBadRequest, "book_not_complete")
 		return
 	}
-	if len(h.postprocess.Roadmap) == 0 {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "no_roadmap_items")
-		return
-	}
 
 	var body struct {
-		ExecuteOptions *story.PostProcessExecuteOptions `json:"execute_options"`
+		ExecuteOptions     *story.PostProcessExecuteOptions `json:"execute_options"`
+		AuthorRequirements *string                          `json:"author_requirements"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if body.ExecuteOptions != nil {
 		h.postprocess.ExecuteOptions = body.ExecuteOptions
+	}
+	if body.AuthorRequirements != nil {
+		h.postprocess.AuthorRequirements = *body.AuthorRequirements
+	}
+
+	hasAuthorReq := strings.TrimSpace(h.postprocess.AuthorRequirements) != ""
+	if len(h.postprocess.Roadmap) == 0 && !hasAuthorReq {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "no_roadmap_items")
+		return
 	}
 
 	selected := 0
@@ -2589,9 +2623,12 @@ func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request
 			selected++
 		}
 	}
-	if selected == 0 {
+	if selected == 0 && !hasAuthorReq {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "select_at_least_one_item")
 		return
+	}
+	if hasAuthorReq {
+		_ = story.SavePostProcess(h.postprocessPath, h.postprocess)
 	}
 
 	if !h.tryStartTask() {
