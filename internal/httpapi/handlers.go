@@ -2589,7 +2589,7 @@ func (h *Handlers) PostPostProcessRoadmap(w http.ResponseWriter, r *http.Request
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
-// PostPostProcessExecute 异步：执行已勾选的优化工单。
+// PostPostProcessExecute 异步：执行已勾选的优化工单（有补充要求时覆盖全书各章）。
 func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request) {
 	if !h.ensureProject(w, r) {
 		return
@@ -2598,17 +2598,23 @@ func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request
 		h.writeErrorReq(w, r, http.StatusBadRequest, "book_not_complete")
 		return
 	}
-	if len(h.postprocess.Roadmap) == 0 {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "no_roadmap_items")
-		return
-	}
 
 	var body struct {
-		ExecuteOptions *story.PostProcessExecuteOptions `json:"execute_options"`
+		ExecuteOptions     *story.PostProcessExecuteOptions `json:"execute_options"`
+		AuthorRequirements *string                          `json:"author_requirements"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if body.ExecuteOptions != nil {
 		h.postprocess.ExecuteOptions = body.ExecuteOptions
+	}
+	if body.AuthorRequirements != nil {
+		h.postprocess.AuthorRequirements = *body.AuthorRequirements
+	}
+
+	hasAuthorReq := strings.TrimSpace(h.postprocess.AuthorRequirements) != ""
+	if len(h.postprocess.Roadmap) == 0 && !hasAuthorReq {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "no_roadmap_items")
+		return
 	}
 
 	selected := 0
@@ -2617,9 +2623,12 @@ func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request
 			selected++
 		}
 	}
-	if selected == 0 {
+	if selected == 0 && !hasAuthorReq {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "select_at_least_one_item")
 		return
+	}
+	if hasAuthorReq {
+		_ = story.SavePostProcess(h.postprocessPath, h.postprocess)
 	}
 
 	if !h.tryStartTask() {

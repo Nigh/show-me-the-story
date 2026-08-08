@@ -103,7 +103,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/story/skills.go` | `Skill`（含 `Lang` 字段）结构体（`SkillConfig` 在 `internal/config`），`LoadBuiltinSkills`、`LoadProjectSkills`、`MergeSkills`、`GetEnabledSkills`、`GetEnabledSkillsByCategory`、`FilterSkillsByLang(skills, projectLang)`、`FormatSkillsContent`（按 skill 语言选择双语 header）、`//go:embed embeds/skills` |
 | `internal/story/editing.go` | `EditChapterContent` 章节正文局部编辑（`replace_lines`/`replace_text`/`insert_after_line`/`append`），`EditChapterContentRequest` 结构体，`EditOp` 常量，`FindChapterIdx` 辅助函数 |
 | `internal/story/chat.go` | `ChatSession`、`ChatMessage`（含 `tool_result_key`/`tool_result_args`）、`ToolCall`、`ChatSessionIndex` 结构体，Load/Save/Delete、`ChatSessionsDir`/`GenerateSessionID`/`GenerateChatTitle` |
-| `internal/story/postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体（含 `author_requirements` 全书优化补充要求）、`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`（注入 `{{.AuthorRequirements}}`）、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`ExecuteRoadmapAction`（可选前置衔接优化 + 逐条定向修订/润色，执行时把补充要求附带到各章 feedback + diff 节选）、`IsBookFullyAccepted` |
+| `internal/story/postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体（含 `author_requirements` 全书优化补充要求）、`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`（注入 `{{.AuthorRequirements}}`）、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`planExecuteBatches`（有补充要求时覆盖全书各章并与勾选工单合并为一次修订；否则仅勾选工单）、`ExecuteRoadmapAction`（可选前置衔接优化 + 按批定向修订/润色 + diff 节选）、`IsBookFullyAccepted` |
 | `internal/story/inject.go` | 注入块的双语版本：`buildOutlineConstraintsForLang`（有卷摘要的已完结卷压缩为一行卷摘要）、`buildPreviousChapterTailForLang`、`buildHistorySummaryForLang`、`buildCharacterContextForLang`、`buildWorldviewContextForLang`、`formatActiveForeshadowsForChapterLang`、`formatChapterLine`、`formatForeshadowsForPromptLang`、`buildMemoryForLang`（叙事记忆注入）、`extractSnippet`（按段落位置截取原文片段）、`formatMemoryForUpdatePrompt` |
 | `internal/story/*_test.go` | 领域层单测：存储 roundtrip/脏检查/孤儿清理、Block ID 稳定性与 CRUD、卷区间换算与上下文压缩、导入切章/断点、引用式段落修订、字数区间、删章目标解析等 |
 | `internal/agent/agent.go` | `Tool`、`AgentContext`、`AgentStep` 结构体（`ToolCall` 别名指向 `story.ToolCall`），`RunAgentLoop`（多轮消息历史 + 双语 tool 结果标签）、工具调用解析（`llm.ExtractJSON` 字符串感知；未闭合/解析失败时注入诊断提示让模型重试一次，仍失败则 `agent.output_truncated` / `agent.tool_call_parse_failed`，不修复截断 JSON）、内置工具集（读/写角色/世界观/章节等）、`buildAgentSystemPromptZH`/`buildAgentSystemPromptEN`、`update_project_config` 覆盖已填字段需 `confirm_overwrite: true`、`requireConfirm`（破坏性工具需 `confirm: true`）；文件内含原 `agent_i18n.go` 的 `agentMsg`/`agentErr` i18n 辅助 |
@@ -142,7 +142,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `src/components/TaskTokenBadge.svelte` | 任务 token 展示（`↑ prompt ↓ completion tokens`）；对 `taskTokenUsage` 更新做线性 rAF 插值，动画时长 = `TOKEN_POLL_INTERVAL_MS`；目标值低于当前显示值时该维度从 0 重新向上插值（新一段统计或估算修正）；供 ChatPanel / App 顶栏 / Writing 页复用 |
 | `src/pages/Foreshadows.svelte` | 伏笔页：统计概览 + AI 设计伏笔 + 手动 CRUD（`<dialog class="modal">` 创建/编辑表单，DaisyUI 5 字段标签用 `text-xs … block` + `w-full`，不用已移除的 `form-control`/`label-text`）+ AI 建议确认面板（SSE `foreshadow_suggestions`）+ 伏笔-大纲冲突报告卡片（`last_foreshadow_outline_report`）+ 列表/章节时间线/路线图文档三视图 + 复制/下载 `Foreshadows.md` |
 | `src/pages/Memory.svelte` | 叙事记忆页（只读）：从 `progress.memory_entries` 展示统计（条数/覆盖章节/token 上限/内容字数）+ 列表/按章节时间线两视图 + 分类/章节筛选 + 原文片段预览（v3：片段由后端在 `snippet` 字段解析下发）+ 刷新/复制；分类 badge 用 `badge-sm whitespace-nowrap`（DaisyUI 5 固定高度无 nowrap 时窄列会竖排） |
-| `src/components/PostProcessPanel.svelte` | 全书优化面板：可选「补充要求」textarea（`author_requirements`，分析/重生成路线图前落盘，执行时附带）+ 开始全书分析（诊断+核查+路线图）/ 重新核查 / 重新生成路线图 / 清空；诊断与核查报告 Markdown 展示；优化工单表格（勾选、编辑意见、执行选项、diff 对比弹窗）；执行选项 checkbox 本地编辑时 `!dirty` 才从服务端回填，并用 `checkbox-primary` 保证勾选可见 |
+| `src/components/PostProcessPanel.svelte` | 全书优化面板：可选「补充要求」textarea（`author_requirements`；有内容时执行覆盖全书各章并与勾选工单合并）+ 开始全书分析（诊断+核查+路线图）/ 重新核查 / 重新生成路线图 / 清空；诊断与核查报告 Markdown 展示；优化工单表格（勾选、编辑意见、执行选项、diff 对比弹窗）；执行选项 checkbox 本地编辑时 `!dirty` 才从服务端回填，并用 `checkbox-primary` 保证勾选可见 |
 | `src/lib/forceGraphLayout.js` | 图谱布局纯函数：`layoutParams(n)`（√N 间距/斥力）、`fitTransform`（包围盒适配视口）、`kineticEnergy`；`forceGraphLayout.check.js` 自检 |
 | `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph），无画布硬夹边、α 冷却后 fit-to-view、按节点数 √N 调间距；拖拽唤醒仿真；滚轮缩放 0.15x–3x（以光标为中心）；hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
 | `src/pages/Assistant.svelte` | 助理页：聊天会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
@@ -429,7 +429,7 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 
 - 上下文预算：`api.json` 的 `context_budget_tokens`（默认 900000），配置页可编辑
 - 数据持久化：项目目录 `postprocess.json`（报告、工单、`author_requirements`、执行状态）
-- 补充要求：写作页全书优化面板 textarea；`PUT /api/postprocess/roadmap` 可单独更新 `author_requirements`；生成/重生成路线图前前端先落盘；清空优化数据时一并清除
+- 补充要求：写作页全书优化面板 textarea；`PUT /api/postprocess/roadmap` 可单独更新 `author_requirements`；生成/重生成路线图前前端先落盘；**执行时若补充要求非空则覆盖全书每一章**（与该章已勾选 pending 工单合并为一次修订，仍只跑一轮）；无补充要求时行为不变（仅勾选工单）；清空优化数据时一并清除
 - 单独重跑：`POST /api/postprocess/consistency`（仅核查）、`POST /api/postprocess/roadmap`（仅路线图）
 
 ## 导入流水线（v3）
