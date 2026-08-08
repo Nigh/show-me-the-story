@@ -11,7 +11,6 @@
   })();
 
   $: pp = $postprocess?.state;
-  $: opts = pp?.execute_options || { run_smooth_transitions_first: true, include_polish: false };
 
   let reportTab = 'diagnosis';
   let diffItem = null;
@@ -50,11 +49,20 @@
   $: if (pp?.roadmap && !dirty) {
     roadmapLocal = pp.roadmap.map(r => ({ ...r }));
   }
-  $: if (pp?.execute_options) {
-    optsLocal = { ...pp.execute_options };
+  // Must gate on !dirty — otherwise any $postprocess refresh snaps checkboxes back.
+  $: if (pp?.execute_options && !dirty) {
+    optsLocal = {
+      run_smooth_transitions_first: !!pp.execute_options.run_smooth_transitions_first,
+      include_polish: !!pp.execute_options.include_polish,
+    };
   }
 
   function markDirty() { dirty = true; }
+
+  function setOpt(key, value) {
+    optsLocal = { ...optsLocal, [key]: value };
+    markDirty();
+  }
 
   function selectAllPending(val) {
     roadmapLocal = roadmapLocal.map(r =>
@@ -200,11 +208,22 @@
 
         <div class="flex gap-3 flex-wrap items-center text-xs">
           <label class="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" class="checkbox checkbox-xs" bind:checked={optsLocal.run_smooth_transitions_first} on:change={markDirty} />
+            <!-- checkbox-primary: DaisyUI 5 无色时 checked 背景透明，勾选几乎看不见 -->
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm checkbox-primary"
+              checked={optsLocal.run_smooth_transitions_first}
+              on:change={e => setOpt('run_smooth_transitions_first', e.currentTarget.checked)}
+            />
             {$t('pp.opts.smoothFirst')}
           </label>
           <label class="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" class="checkbox checkbox-xs" bind:checked={optsLocal.include_polish} on:change={markDirty} />
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm checkbox-primary"
+              checked={optsLocal.include_polish}
+              on:change={e => setOpt('include_polish', e.currentTarget.checked)}
+            />
             {$t('pp.opts.includePolish')}
           </label>
           <div class="flex-1"></div>
