@@ -226,6 +226,9 @@
           disabled={$taskRunning}
         ></textarea>
         <p class="text-xs text-base-content/40 mt-1">{$t('pp.authorReq.hint')}</p>
+        {#if hasAuthorReq}
+          <p class="text-xs text-warning mt-1">{$t('pp.authorReq.warnAllChapters')}</p>
+        {/if}
       </div>
 
       <div class="flex gap-2 flex-wrap">
