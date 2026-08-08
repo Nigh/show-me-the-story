@@ -55,3 +55,36 @@ func TestFormatAuthorRequirementsEmpty(t *testing.T) {
 		t.Fatal("empty execute block")
 	}
 }
+
+func TestPlanExecuteBatchesAuthorCoversAllChapters(t *testing.T) {
+	chapters := []ChapterState{{Num: 1}, {Num: 2}, {Num: 3}}
+	roadmap := []RoadmapItem{
+		{ChapterNum: 2, Type: RoadmapTypeStyle, Feedback: "修第二章", Selected: true, Status: RoadmapStatusPending},
+		{ChapterNum: 2, Type: RoadmapTypeLogic, Feedback: "逻辑", Selected: false, Status: RoadmapStatusPending},
+	}
+	batches := planExecuteBatches(chapters, roadmap, "统一称呼")
+	if len(batches) != 3 {
+		t.Fatalf("want 3 batches, got %d", len(batches))
+	}
+	if batches[0].ChapterNum != 1 || len(batches[0].Indices) != 0 {
+		t.Fatalf("ch1: %+v", batches[0])
+	}
+	if batches[1].ChapterNum != 2 || len(batches[1].Indices) != 1 || batches[1].Indices[0] != 0 {
+		t.Fatalf("ch2 should merge one selected ticket, got %+v", batches[1])
+	}
+	if batches[2].ChapterNum != 3 || len(batches[2].Indices) != 0 {
+		t.Fatalf("ch3: %+v", batches[2])
+	}
+
+	noAuthor := planExecuteBatches(chapters, roadmap, "")
+	if len(noAuthor) != 1 || noAuthor[0].ChapterNum != 2 {
+		t.Fatalf("without author req, only selected tickets: %+v", noAuthor)
+	}
+}
+
+func TestMergeChapterRoadmapFeedbackAuthorOnly(t *testing.T) {
+	polishOnly, feedback := mergeChapterRoadmapFeedback(nil, nil, false, "全书统一用「大人」", i18n.LangZH)
+	if polishOnly || !strings.Contains(feedback, "大人") {
+		t.Fatalf("author-only chapter: polishOnly=%v feedback=%q", polishOnly, feedback)
+	}
+}

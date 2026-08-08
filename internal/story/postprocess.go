@@ -557,6 +557,29 @@ func groupPendingRoadmapByChapter(roadmap []RoadmapItem) []chapterRoadmapBatch {
 	return batches
 }
 
+// planExecuteBatches 规划执行批次：无补充要求时仅处理已勾选 pending 工单；
+// 有补充要求时覆盖全书每一章（与该章勾选工单合并为一次修订）。
+func planExecuteBatches(chapters []ChapterState, roadmap []RoadmapItem, authorRequirements string) []chapterRoadmapBatch {
+	if strings.TrimSpace(authorRequirements) == "" {
+		return groupPendingRoadmapByChapter(roadmap)
+	}
+	byChapter := make(map[int][]int)
+	for i, item := range roadmap {
+		if !item.Selected || item.Status != RoadmapStatusPending {
+			continue
+		}
+		byChapter[item.ChapterNum] = append(byChapter[item.ChapterNum], i)
+	}
+	var batches []chapterRoadmapBatch
+	for _, ch := range chapters {
+		batches = append(batches, chapterRoadmapBatch{
+			ChapterNum: ch.Num,
+			Indices:    byChapter[ch.Num],
+		})
+	}
+	return batches
+}
+
 func roadmapTypeLabel(typ string) string {
 	switch typ {
 	case RoadmapTypeLogic:
@@ -577,12 +600,19 @@ func roadmapTypeLabel(typ string) string {
 }
 
 // mergeChapterRoadmapFeedback 合并同章多条工单的修改意见；若全部为润色类则走润色流程。
-// authorRequirements 非空时强制走修订路径（即使工单全是 polish），并附带到 feedback 末尾。
+// authorRequirements 非空时强制走修订路径（即使工单全是 polish 或本批无工单），并附带到 feedback 末尾。
 func mergeChapterRoadmapFeedback(items []RoadmapItem, opts *PostProcessExecuteOptions, hasPolishSkills bool, authorRequirements, lang string) (polishOnly bool, feedback string) {
-	if len(items) == 0 {
-		return false, ""
-	}
 	authorBlock := formatAuthorRequirementsForExecute(authorRequirements, lang)
+	if len(items) == 0 {
+		if authorBlock == "" {
+			return false, ""
+		}
+		feedback = authorBlock
+		if opts != nil && opts.IncludePolish && hasPolishSkills {
+			feedback += "\n\n【附加文风要求】修改完成后顺带去除 AI 套话，对话口语化，不改变情节。"
+		}
+		return false, feedback
+	}
 	allPolish := true
 	for _, item := range items {
 		if item.Type != RoadmapTypePolish {
@@ -710,8 +740,11 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	polishSkills := GetEnabledSkillsByCategory(skills, cfg.SkillConfig, "polish")
 	hasPolishSkills := len(polishSkills) > 0
 
-	batches := groupPendingRoadmapByChapter(pp.Roadmap)
+	batches := planExecuteBatches(state.Chapters, pp.Roadmap, pp.AuthorRequirements)
 	if len(batches) == 0 {
+		if strings.TrimSpace(pp.AuthorRequirements) != "" {
+			return fmt.Errorf("没有可处理的章节")
+		}
 		return fmt.Errorf("没有待执行的已选工单")
 	}
 
@@ -729,7 +762,9 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		for _, idx := range batch.Indices {
 			pp.Roadmap[idx].Status = RoadmapStatusRunning
 		}
-		_ = SavePostProcess(postprocessPath, pp)
+		if len(batch.Indices) > 0 {
+			_ = SavePostProcess(postprocessPath, pp)
+		}
 
 		var batchItems []RoadmapItem
 		for _, idx := range batch.Indices {
@@ -739,6 +774,8 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		label := fmt.Sprintf("正在处理第 %d 章", batch.ChapterNum)
 		if len(batch.Indices) > 1 {
 			label += fmt.Sprintf("（合并 %d 条工单）", len(batch.Indices))
+		} else if len(batch.Indices) == 0 && strings.TrimSpace(pp.AuthorRequirements) != "" {
+			label += "（补充要求）"
 		}
 		label += "..."
 		logger.StepInfo(step+1, len(batches), label)
@@ -763,6 +800,10 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 
 		diffOriginal := excerptForDiff(state.Chapters[chapterIdx].Content, diffExcerptRunes)
 		polishOnly, mergedFeedback := mergeChapterRoadmapFeedback(batchItems, opts, hasPolishSkills, pp.AuthorRequirements, cfg.Language)
+		if !polishOnly && strings.TrimSpace(mergedFeedback) == "" {
+			// 无工单且无补充要求时不应进入此批；防御性跳过。
+			continue
+		}
 
 		var execErr error
 		if polishOnly {

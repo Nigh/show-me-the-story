@@ -140,20 +140,29 @@
 
   function runExecute() {
     const pending = roadmapLocal.filter(r => r.selected && r.status === 'pending');
-    const chapterCount = new Set(pending.map(r => r.chapter_num)).size;
-    if (pending.length === 0) {
+    const hasAuthorReq = !!(authorReqLocal || '').trim();
+    const allChapters = ($progress?.chapters || []).length;
+    const ticketChapters = new Set(pending.map(r => r.chapter_num)).size;
+    const chapterCount = hasAuthorReq ? allChapters : ticketChapters;
+    if (pending.length === 0 && !hasAuthorReq) {
       addToast($t('pp.toast.pickRequired'), 'error');
       return;
     }
-    const mergeHint = pending.length > chapterCount
-      ? $t('pp.confirm.execute.merge', { items: pending.length, chapters: chapterCount })
-      : '';
+    let mergeHint = '';
+    if (hasAuthorReq) {
+      mergeHint = $t('pp.confirm.execute.authorAll', { items: pending.length });
+    } else if (pending.length > ticketChapters) {
+      mergeHint = $t('pp.confirm.execute.merge', { items: pending.length, chapters: ticketChapters });
+    }
     confirmModal.set({
       message: $t('pp.confirm.execute', { chapters: chapterCount, merge: mergeHint }),
       onConfirm: async () => {
         try {
-          if (dirty) await saveRoadmap();
-          await api('POST', '/api/postprocess/execute', { execute_options: optsLocal });
+          if (dirty) await saveRoadmap(false);
+          await api('POST', '/api/postprocess/execute', {
+            execute_options: optsLocal,
+            author_requirements: authorReqLocal,
+          });
           addToast($t('pp.toast.executeStarted'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
       },
@@ -182,6 +191,9 @@
   $: selectedChapterCount = new Set(
     roadmapLocal.filter(r => r.selected && r.status === 'pending').map(r => r.chapter_num)
   ).size;
+  $: hasAuthorReq = !!(authorReqLocal || '').trim();
+  $: executeChapterCount = hasAuthorReq ? ($progress?.chapters || []).length : selectedChapterCount;
+  $: canExecute = !$taskRunning && (selectedPending > 0 || hasAuthorReq);
 </script>
 
 {#if bookComplete}
@@ -239,8 +251,12 @@
         </div>
       {/if}
 
-      {#if roadmapLocal.length > 0}
-        <div class="divider my-0 text-xs">{$t('pp.roadmap.title', { total: roadmapLocal.length, pending: pendingCount })}</div>
+      {#if roadmapLocal.length > 0 || hasAuthorReq}
+        {#if roadmapLocal.length > 0}
+          <div class="divider my-0 text-xs">{$t('pp.roadmap.title', { total: roadmapLocal.length, pending: pendingCount })}</div>
+        {:else}
+          <div class="divider my-0 text-xs">{$t('pp.roadmap.authorOnly')}</div>
+        {/if}
 
         <div class="flex gap-3 flex-wrap items-center text-xs">
           <label class="flex items-center gap-1.5 cursor-pointer">
@@ -263,17 +279,20 @@
             {$t('pp.opts.includePolish')}
           </label>
           <div class="flex-1"></div>
-          <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(true)} disabled={$taskRunning}>{$t('pp.btn.selectAll')}</button>
-          <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(false)} disabled={$taskRunning}>{$t('pp.btn.selectNone')}</button>
-          <button class="btn btn-ghost btn-xs" on:click={resetFailed} disabled={$taskRunning}>{$t('pp.btn.resetFailed')}</button>
+          {#if roadmapLocal.length > 0}
+            <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(true)} disabled={$taskRunning}>{$t('pp.btn.selectAll')}</button>
+            <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(false)} disabled={$taskRunning}>{$t('pp.btn.selectNone')}</button>
+            <button class="btn btn-ghost btn-xs" on:click={resetFailed} disabled={$taskRunning}>{$t('pp.btn.resetFailed')}</button>
+          {/if}
           {#if dirty}
             <button class="btn btn-primary btn-xs" on:click={saveRoadmap} disabled={$taskRunning}>{$t('pp.btn.saveRoadmap')}</button>
           {/if}
-          <button class="btn btn-success btn-sm" on:click={runExecute} disabled={$taskRunning || selectedPending === 0}>
-            {$t('pp.btn.execute', { chapters: selectedChapterCount, items: selectedPending })}
+          <button class="btn btn-success btn-sm" on:click={runExecute} disabled={!canExecute}>
+            {$t('pp.btn.execute', { chapters: executeChapterCount, items: selectedPending })}
           </button>
         </div>
 
+        {#if roadmapLocal.length > 0}
         <div class="overflow-x-auto max-h-80 overflow-y-auto rounded-lg border border-base-300">
           <table class="table table-xs table-zebra">
             <thead class="sticky top-0 bg-base-200 z-10">
@@ -323,6 +342,7 @@
             </tbody>
           </table>
         </div>
+        {/if}
       {/if}
     </div>
   </div>
