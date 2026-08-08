@@ -579,6 +579,8 @@ Do not rewrite the prose, only describe the fix.`,
 [Consistency report]
 {{.ConsistencyReport}}
 
+{{.AuthorRequirements}}
+
 [Requirements]
 1. Merge duplicates and sort by chapter number.
 2. At most 3 revision items per chapter; anything beyond goes to round two.
@@ -587,6 +589,7 @@ Do not rewrite the prose, only describe the fix.`,
 5. feedback must be ready-to-use revision instructions (50 to 150 words) emphasising minimum changes.
 6. **Merge all issues for the same chapter into ONE task** (at most one items entry per chapter).
 7. Suggested execution order: transitions -> P0 logic -> style polish.
+8. If Author requirements appear above, prioritise them as tasks (they may be merged into the same chapter's feedback with report findings).
 
 [Output format]
 JSON only, nothing else:

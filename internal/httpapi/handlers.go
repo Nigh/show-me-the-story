@@ -1351,8 +1351,8 @@ func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Title      string                          `json:"title"`
-		Outline    string                          `json:"outline"`
+		Title      string                           `json:"title"`
+		Outline    string                           `json:"outline"`
 		Characters *[]story.OutlineChapterCharacter `json:"characters"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -2425,8 +2425,9 @@ func (h *Handlers) PutPostProcessRoadmap(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		Roadmap        []story.RoadmapItem              `json:"roadmap"`
-		ExecuteOptions *story.PostProcessExecuteOptions `json:"execute_options"`
+		Roadmap            []story.RoadmapItem              `json:"roadmap"`
+		ExecuteOptions     *story.PostProcessExecuteOptions `json:"execute_options"`
+		AuthorRequirements *string                          `json:"author_requirements"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
@@ -2437,6 +2438,9 @@ func (h *Handlers) PutPostProcessRoadmap(w http.ResponseWriter, r *http.Request)
 	}
 	if req.ExecuteOptions != nil {
 		h.postprocess.ExecuteOptions = req.ExecuteOptions
+	}
+	if req.AuthorRequirements != nil {
+		h.postprocess.AuthorRequirements = *req.AuthorRequirements
 	}
 	if err := story.SavePostProcess(h.postprocessPath, h.postprocess); err != nil {
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
@@ -2563,7 +2567,7 @@ func (h *Handlers) PostPostProcessRoadmap(w http.ResponseWriter, r *http.Request
 		h.logger.TaskStart("postprocess_roadmap")
 		ctx := h.taskCtx
 
-		roadmap, err := story.BuildRoadmapAction(ctx, h.apiCfg, h.cfg, h.postprocess.DiagnosisReport, h.postprocess.ConsistencyReport, h.logger)
+		roadmap, err := story.BuildRoadmapAction(ctx, h.apiCfg, h.cfg, h.postprocess.DiagnosisReport, h.postprocess.ConsistencyReport, h.postprocess.AuthorRequirements, h.logger)
 		if err != nil {
 			if ctx.Err() != nil {
 				h.logger.WarnKey("log.postprocess_roadmap_cancelled")

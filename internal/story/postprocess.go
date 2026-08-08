@@ -54,18 +54,19 @@ type PostProcessExecuteOptions struct {
 }
 
 type PostProcessState struct {
-	DiagnosisReport   string                     `json:"diagnosis_report,omitempty"`
-	ConsistencyReport string                     `json:"consistency_report,omitempty"`
-	Roadmap           []RoadmapItem              `json:"roadmap,omitempty"`
-	BundleMode        string                     `json:"bundle_mode,omitempty"`
-	VolumeCount       int                        `json:"volume_count,omitempty"`
-	TotalBookRunes    int                        `json:"total_book_runes,omitempty"`
-	EstimatedTokens   int                        `json:"estimated_tokens,omitempty"`
-	DiagnosedAt       string                     `json:"diagnosed_at,omitempty"`
-	ConsistencyAt     string                     `json:"consistency_at,omitempty"`
-	RoadmapAt         string                     `json:"roadmap_at,omitempty"`
-	ExecuteOptions    *PostProcessExecuteOptions `json:"execute_options,omitempty"`
-	LastExecuteAt     string                     `json:"last_execute_at,omitempty"`
+	DiagnosisReport    string                     `json:"diagnosis_report,omitempty"`
+	ConsistencyReport  string                     `json:"consistency_report,omitempty"`
+	Roadmap            []RoadmapItem              `json:"roadmap,omitempty"`
+	AuthorRequirements string                     `json:"author_requirements,omitempty"`
+	BundleMode         string                     `json:"bundle_mode,omitempty"`
+	VolumeCount        int                        `json:"volume_count,omitempty"`
+	TotalBookRunes     int                        `json:"total_book_runes,omitempty"`
+	EstimatedTokens    int                        `json:"estimated_tokens,omitempty"`
+	DiagnosedAt        string                     `json:"diagnosed_at,omitempty"`
+	ConsistencyAt      string                     `json:"consistency_at,omitempty"`
+	RoadmapAt          string                     `json:"roadmap_at,omitempty"`
+	ExecuteOptions     *PostProcessExecuteOptions `json:"execute_options,omitempty"`
+	LastExecuteAt      string                     `json:"last_execute_at,omitempty"`
 }
 
 type PostProcessBundle struct {
@@ -469,8 +470,32 @@ func runConsistencyCheckVolume(ctx context.Context, apiCfg *config.APIConfig, cf
 	return strings.TrimSpace(resp), nil
 }
 
+// formatAuthorRequirementsForRoadmap 路线图生成用的作者补充要求块；空则返回空串。
+func formatAuthorRequirementsForRoadmap(req, lang string) string {
+	req = strings.TrimSpace(req)
+	if req == "" {
+		return ""
+	}
+	if lang == i18n.LangEN {
+		return "[Author requirements]\n" + req + "\n(Turn the above into concrete per-chapter tasks. For book-wide unification, emit one task per affected chapter.)"
+	}
+	return "【作者补充要求】\n" + req + "\n（请将以上要求落实为具体章节工单；跨章统一类改写按涉及章节分别出工单。）"
+}
+
+// formatAuthorRequirementsForExecute 执行修订时附带的作者补充要求块；空则返回空串。
+func formatAuthorRequirementsForExecute(req, lang string) string {
+	req = strings.TrimSpace(req)
+	if req == "" {
+		return ""
+	}
+	if lang == i18n.LangEN {
+		return "[Author requirements — apply while revising]\n" + req
+	}
+	return "【作者补充要求（修订时一并落实）】\n" + req
+}
+
 // BuildRoadmapAction 根据诊断与核查报告生成可执行工单。
-func BuildRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, diagnosisReport, consistencyReport string, logger *sse.LogBroadcaster) ([]RoadmapItem, error) {
+func BuildRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, diagnosisReport, consistencyReport, authorRequirements string, logger *sse.LogBroadcaster) ([]RoadmapItem, error) {
 	if err := llm.ValidateConfig(apiCfg); err != nil {
 		return nil, err
 	}
@@ -478,10 +503,13 @@ func BuildRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *conf
 		return nil, fmt.Errorf("缺少诊断或核查报告，无法生成路线图")
 	}
 
+	authorBlock := formatAuthorRequirementsForRoadmap(authorRequirements, cfg.Language)
 	userPrompt := config.RenderPrompt(cfg.Prompts.BookRoadmap, map[string]string{
-		"DiagnosisReport":   diagnosisReport,
-		"ConsistencyReport": consistencyReport,
+		"DiagnosisReport":    diagnosisReport,
+		"ConsistencyReport":  consistencyReport,
+		"AuthorRequirements": authorBlock,
 	})
+	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.BookRoadmap, userPrompt, "{{.AuthorRequirements}}", authorBlock)
 	systemPrompt := i18n.SystemPromptFor(cfg.Language, "book_roadmap")
 
 	resp := llm.CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
@@ -549,10 +577,12 @@ func roadmapTypeLabel(typ string) string {
 }
 
 // mergeChapterRoadmapFeedback 合并同章多条工单的修改意见；若全部为润色类则走润色流程。
-func mergeChapterRoadmapFeedback(items []RoadmapItem, opts *PostProcessExecuteOptions, hasPolishSkills bool) (polishOnly bool, feedback string) {
+// authorRequirements 非空时强制走修订路径（即使工单全是 polish），并附带到 feedback 末尾。
+func mergeChapterRoadmapFeedback(items []RoadmapItem, opts *PostProcessExecuteOptions, hasPolishSkills bool, authorRequirements, lang string) (polishOnly bool, feedback string) {
 	if len(items) == 0 {
 		return false, ""
 	}
+	authorBlock := formatAuthorRequirementsForExecute(authorRequirements, lang)
 	allPolish := true
 	for _, item := range items {
 		if item.Type != RoadmapTypePolish {
@@ -560,7 +590,7 @@ func mergeChapterRoadmapFeedback(items []RoadmapItem, opts *PostProcessExecuteOp
 			break
 		}
 	}
-	if allPolish {
+	if allPolish && authorBlock == "" {
 		return true, ""
 	}
 
@@ -570,6 +600,10 @@ func mergeChapterRoadmapFeedback(items []RoadmapItem, opts *PostProcessExecuteOp
 			n+1, roadmapTypeLabel(item.Type), item.Priority, strings.TrimSpace(item.Feedback)))
 	}
 	feedback = strings.Join(parts, "\n\n")
+	if allPolish && authorBlock != "" {
+		// 纯润色工单 + 作者要求：意见可能为空/无实质，以作者要求为主。
+		feedback = strings.TrimSpace(feedback)
+	}
 
 	needPolishAppend := false
 	if opts != nil && opts.IncludePolish && hasPolishSkills {
@@ -586,6 +620,12 @@ func mergeChapterRoadmapFeedback(items []RoadmapItem, opts *PostProcessExecuteOp
 	}
 	if needPolishAppend && hasNonLogic && hasPolishSkills {
 		feedback += "\n\n【附加文风要求】修改完成后顺带去除 AI 套话，对话口语化，不改变情节。"
+	}
+	if authorBlock != "" {
+		if feedback != "" {
+			feedback += "\n\n"
+		}
+		feedback += authorBlock
 	}
 	return false, feedback
 }
@@ -636,7 +676,7 @@ func FullPostProcessAnalyzeAction(ctx context.Context, apiCfg *config.APIConfig,
 	logger.PostProcessReport("consistency", consistency)
 
 	logger.StepInfo(3, 3, "正在生成优化路线图...")
-	roadmap, err := BuildRoadmapAction(ctx, apiCfg, cfg, diagnosis, consistency, logger)
+	roadmap, err := BuildRoadmapAction(ctx, apiCfg, cfg, diagnosis, consistency, pp.AuthorRequirements, logger)
 	if err != nil {
 		return err
 	}
@@ -722,7 +762,7 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		}
 
 		diffOriginal := excerptForDiff(state.Chapters[chapterIdx].Content, diffExcerptRunes)
-		polishOnly, mergedFeedback := mergeChapterRoadmapFeedback(batchItems, opts, hasPolishSkills)
+		polishOnly, mergedFeedback := mergeChapterRoadmapFeedback(batchItems, opts, hasPolishSkills, pp.AuthorRequirements, cfg.Language)
 
 		var execErr error
 		if polishOnly {

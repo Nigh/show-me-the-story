@@ -589,6 +589,8 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
 【核查报告】
 {{.ConsistencyReport}}
 
+{{.AuthorRequirements}}
+
 【要求】
 1. 合并去重，按章节号排序
 2. 每章最多 3 条修改项，超出标为二轮
@@ -597,6 +599,7 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
 5. feedback 必须可直接作为修订意见（50–150字），强调最小改动
 6. **同一章节的所有问题合并为一条工单**（每章最多 1 条 items），不要在同一章输出多条
 7. 建议执行顺序：衔接类 → P0 逻辑 → 文风润色
+8. 若上方有「作者补充要求」，必须优先落实为工单（可与报告问题合并进同章 feedback）
 
 【输出格式】
 只输出 JSON，不要其他文字：

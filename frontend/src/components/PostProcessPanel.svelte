@@ -16,6 +16,7 @@
   let diffItem = null;
   let roadmapLocal = [];
   let optsLocal = { run_smooth_transitions_first: true, include_polish: false };
+  let authorReqLocal = '';
   let dirty = false;
 
   $: typeLabels = {
@@ -56,6 +57,9 @@
       include_polish: !!pp.execute_options.include_polish,
     };
   }
+  $: if (!dirty) {
+    authorReqLocal = pp?.author_requirements || '';
+  }
 
   function markDirty() { dirty = true; }
 
@@ -78,16 +82,32 @@
     markDirty();
   }
 
-  async function saveRoadmap() {
+  async function saveRoadmap(showToast = true) {
     try {
       const res = await api('PUT', '/api/postprocess/roadmap', {
         roadmap: roadmapLocal,
         execute_options: optsLocal,
+        author_requirements: authorReqLocal,
       });
       postprocess.set(res);
       dirty = false;
-      addToast($t('pp.toast.saved'), 'success');
-    } catch (e) { addToast(e.message, 'error'); }
+      if (showToast) addToast($t('pp.toast.saved'), 'success');
+    } catch (e) {
+      addToast(e.message, 'error');
+      throw e;
+    }
+  }
+
+  /** Persist author requirements (and dirty opts/roadmap) before async analyze steps. */
+  async function persistBeforeAnalyze() {
+    const body = { author_requirements: authorReqLocal };
+    if (dirty) {
+      body.roadmap = roadmapLocal;
+      body.execute_options = optsLocal;
+    }
+    const res = await api('PUT', '/api/postprocess/roadmap', body);
+    postprocess.set(res);
+    dirty = false;
   }
 
   function runDiagnose() {
@@ -95,6 +115,7 @@
       message: $t('pp.confirm.diagnose'),
       onConfirm: async () => {
         try {
+          await persistBeforeAnalyze();
           await api('POST', '/api/postprocess/diagnose');
           addToast($t('pp.toast.diagnoseStarted'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
@@ -111,6 +132,7 @@
 
   async function runRoadmap() {
     try {
+      await persistBeforeAnalyze();
       await api('POST', '/api/postprocess/roadmap');
       addToast($t('pp.toast.roadmapStarted'), 'info');
     } catch (e) { addToast(e.message, 'error'); }
@@ -144,6 +166,8 @@
       onConfirm: async () => {
         try {
           const res = await api('DELETE', '/api/postprocess');
+          dirty = false;
+          authorReqLocal = '';
           postprocess.set(res);
           addToast($t('pp.toast.cleared'), 'info');
         } catch (e) { addToast(e.message, 'error'); }
@@ -179,6 +203,18 @@
       </div>
 
       <p class="text-xs text-base-content/50">{$t('pp.intro')}</p>
+
+      <div>
+        <span class="text-xs text-base-content/50 mb-0.5 block">{$t('pp.authorReq.label')}</span>
+        <textarea
+          class="textarea textarea-bordered textarea-sm w-full min-h-[4.5rem]"
+          placeholder={$t('pp.authorReq.placeholder')}
+          bind:value={authorReqLocal}
+          on:input={markDirty}
+          disabled={$taskRunning}
+        ></textarea>
+        <p class="text-xs text-base-content/40 mt-1">{$t('pp.authorReq.hint')}</p>
+      </div>
 
       <div class="flex gap-2 flex-wrap">
         <button class="btn btn-primary btn-sm" on:click={runDiagnose} disabled={$taskRunning}>{$t('pp.btn.diagnose')}</button>
