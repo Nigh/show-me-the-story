@@ -340,6 +340,7 @@ export default {
   'config.story.saved': 'Story config saved',
   'config.story.reconcileAsk': 'Key settings changed and confirmed chapters exist. Have the AI reconcile new settings with existing content? (Recommended)',
   'config.story.reconcileStarted': 'Settings reconciliation started',
+  'config.form.unsavedNew': 'The form has unsaved changes. Confirm to discard and create new, or cancel and save first.',
 
   'config.style.title': 'Writing style & POV',
   'config.style.label': 'Writing style',
