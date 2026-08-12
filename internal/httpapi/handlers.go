@@ -1873,9 +1873,15 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if h.state.Phase != "outline" {
+	// Continuation is append-only: allow both outline and writing (book-complete
+	// sequels land in writing). Reject empty projects — use generate outline first.
+	if !story.ContinuationOutlineAllowed(h.state.Phase, len(h.state.Chapters)) {
 		h.endTask()
-		h.writeErrorReq(w, r, http.StatusBadRequest, "phase_not_outline")
+		if len(h.state.Chapters) == 0 {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "outline_empty")
+		} else {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "phase_not_outline")
+		}
 		return
 	}
 
@@ -1903,6 +1909,20 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 				h.logger.TaskEnd("continuation_outline", false)
 			}
 			return
+		}
+
+		// Keep config.chapter_count in sync with appended chapters (same as arc append).
+		if n := len(h.state.Chapters); n > h.cfg.Story.ChapterCount {
+			h.cfg.Story.ChapterCount = n
+			if h.state.StoryConfigSnapshot != nil {
+				snapshot := h.cfg.Story
+				h.state.StoryConfigSnapshot = &snapshot
+			}
+			if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
+				h.logger.ErrorKey("log.continuation_outline_failed", err)
+			} else if err := story.SaveProgress(h.progressPath, h.state); err != nil {
+				h.logger.ErrorKey("log.continuation_outline_failed", err)
+			}
 		}
 
 		h.logger.SuccessKey("log.continuation_outline_done")

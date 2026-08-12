@@ -388,6 +388,15 @@ func EditChapterOutline(state *Progress, chapterNum int, title, outline string, 
 // Continuation outline generation for imported / finished books.
 // The v3 import pipeline itself lives in importer.go.
 
+// ContinuationOutlineAllowed gates POST /api/outline/generate-continuation.
+// Append-only: allowed in outline or writing once chapters exist (phase stays unchanged).
+func ContinuationOutlineAllowed(phase string, chapterCount int) bool {
+	if chapterCount <= 0 {
+		return false
+	}
+	return phase == "outline" || phase == "writing"
+}
+
 func GenerateContinuationOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, newChapterCount int, progressPath string, logger *sse.LogBroadcaster) error {
 	logger.StepInfo(1, 2, "正在构建已有章节上下文...")
 
