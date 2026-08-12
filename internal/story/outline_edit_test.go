@@ -53,3 +53,23 @@ func TestEditChapterOutlineCharacters(t *testing.T) {
 		t.Fatalf("empty slice should clear cast, got %+v", state.Chapters[0].Characters)
 	}
 }
+
+func TestContinuationOutlineAllowed(t *testing.T) {
+	cases := []struct {
+		phase string
+		n     int
+		want  bool
+	}{
+		{"outline", 1, true},
+		{"writing", 10, true},
+		{"outline", 0, false},
+		{"writing", 0, false},
+		{"", 5, false},
+		{"done", 5, false},
+	}
+	for _, c := range cases {
+		if got := ContinuationOutlineAllowed(c.phase, c.n); got != c.want {
+			t.Fatalf("ContinuationOutlineAllowed(%q, %d) = %v, want %v", c.phase, c.n, got, c.want)
+		}
+	}
+}

@@ -88,7 +88,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/story/storage.go` | **v3 存储层**：章节正文按章存 `chapters/NNNNNN.json`，`progress.json` 只存元数据（不含正文）；`saveChapterFiles`（fnv 内容哈希 `HashContent` 脏检查，仅重写变更章节 + 清理孤儿文件）、`loadChapterContents`、`ResetProgressFiles`（重置进度含章节目录）、`ProgressView`（API 响应视图：剥离正文、附 `word_count`/`content_rev`、解析记忆 `snippet`） |
 | `internal/story/blocks.go` | **v3 Block 模型**：`Block{ID,Type,Text}`（type: paragraph/dialogue/scene_break 仅展示提示）；`SyncChapterBlocks`（从 Content 派生 blocks，未变段落 ID 稳定，`\n\n` 分段、无空行退化 `\n`，sep 存 `BlockSep`）、`rebuildContentFromBlocks`、`UpdateBlock`/`DeleteBlock`/`InsertBlockAfter`（块编辑后重建 Content）、`ReviseBlockAction`（复用 `ChapterSegmentRevision` prompt 对单 block AI 修订）。内存中 Content 仍是唯一事实源，AI 流程不感知 blocks |
 | `internal/story/arcs.go` | **v3 层级大纲（卷）**：`Arc` 辅助（`arcForChapterNum`/`arcChapters`/`arcCompleted`/`ArcIndexByID`）、`GenerateArcSkeletonAction`（一次小调用生成全书卷骨架，`assignArcRanges` 把各卷章数换算为连续区间并强制总和等于 `chapter_count`；存在已确认/写作中章节时拒绝）、`GenerateArcOutlineAction`（按卷分批生成章纲，注入 `buildPreviousArcContext` 卷摘要前情 + `buildFutureArcsBlock` 后续卷约束）、`AppendArcAction`（追加新卷 + 生成章纲，失败回滚；无限连载增量入口）、`EnsureArcSummaries`（懒生成已完结卷的卷摘要） |
-| `internal/story/outline.go` | `OutlineChapterCharacter`（`name`/`first_appearance`/`note`）、`generateOutline`（注入 settings 角色列表 + 按 `target_words_per_chapter` 计算大纲字数下限，不足时自动重试）、`reviseOutline`、`GenerateOutlineAction`（存在已确认章节时拒绝整体重新生成；完成后 `runOutlinePostProcessChecks`）、`ReviseOutlineAction`、`ConfirmOutlineAction`、`EditChapterOutline`（`pending`/`writing`/`review` 可编辑，`accepted` 拒绝；可选 `characters` 更新结构化出场）、`cleanJSONResponse`、`GenerateContinuationOutline`（生成后续大纲） |
+| `internal/story/outline.go` | `OutlineChapterCharacter`（`name`/`first_appearance`/`note`）、`generateOutline`（注入 settings 角色列表 + 按 `target_words_per_chapter` 计算大纲字数下限，不足时自动重试）、`reviseOutline`、`GenerateOutlineAction`（存在已确认章节时拒绝整体重新生成；完成后 `runOutlinePostProcessChecks`）、`ReviseOutlineAction`、`ConfirmOutlineAction`、`EditChapterOutline`（`pending`/`writing`/`review` 可编辑，`accepted` 拒绝；可选 `characters` 更新结构化出场）、`cleanJSONResponse`、`ContinuationOutlineAllowed`（`outline`/`writing` 且已有章节时可追加）、`GenerateContinuationOutline`（生成后续大纲，append-only，不改 phase） |
 | `internal/story/outline_helpers.go` | `calcOutlineLengthRange`、`formatCharacterListForOutline`、`validateOutlineChapterLengths`、`characterStubsForChapter`（优先 `characters` 结构化出场，缺省回退「首次登场」散文扫描）、`buildOutlineDerivedCharacterContext`（写作时注入未登记大纲人物 stub） |
 | `internal/story/outline_character.go` | `CheckOutlineCharacterConsistency`、`RunOutlineCharacterCheckAndSave`、`runOutlinePostProcessChecks`（伏笔-大纲 + 大纲人物双检查） |
 | `internal/story/writing.go` | `GenerateChapterAction`（开头懒调用 `EnsureArcSummaries`；含写前大纲一致性检查，共 6 步；第 2 步经 `generateChapterContentWithLengthControl` 控字数；第 5 步更新伏笔并落盘 `Foreshadows.md`；第 6 步维护叙事记忆）、`ReviseChapterAction`/`ReviseSpecificChapterAction`（修订后同步更新伏笔与记忆；修改意见含 `> ` 引用行时经 `extractQuotedSentences`/`findParagraphsContaining`/`reviseChapterSegment` 只改匹配自然段，失败回退整章修订）、`ConfirmChapterAction`、`PolishChapterAction`、`SmoothTransitionsAction`（批量优化已确认章节衔接）、`parseFactCheckResult`（JSON 优先 + 字符串 fallback）、`checkOutlineConsistency`（写前检查本章大纲与已写剧情冲突）、`stripChapterMetaProse`、`appendIfMissingPlaceholder`（老项目旧模板缺新占位符时兜底追加）、`splitChapterOpening`、`syncMemoryAfterChapter`、`calcMemoryMaxTokens` |
@@ -276,7 +276,7 @@ API 配置（`APIConfig`）与故事配置（`Config`）完全分离，分别保
 1. **系统提示词安全规则**：`buildAgentSystemPrompt` 包含最高优先级的「安全规则」（修改 ≠ 删除）和「工具选择指南」，明确指示修改章节细节必须用 `revise_chapter` 而非删除重写；删除写作前沿单章用 `delete_chapter`（**禁止**误用 `delete_chapters_from`）；删更早章节及之后正文才用 `delete_chapters_from` 并须复述范围；**缩章/整本重生大纲**（尚无已确认章节）须 `update_project_config` + `generate_outline`，禁止 `revise_outline` 缩章、禁止 `delete_chapters_from` 减章、无需先 `delete_outline`
 2. **破坏性工具二次确认**：`delete_chapter`、`delete_chapters_from`、`delete_outline`、`reset_progress` 必须传入 `confirm: true` 参数，否则返回警告信息要求 AI 先向用户确认
 3. **`revise_chapter` 支持任意章节**：可选 `num` 参数，当前审核中章节走 `ReviseChapterAction`（完整流程），其他章节（含已确认）走 `ReviseSpecificChapterAction`（最小化定向修订，不影响其他章节和大纲）
-4. **大纲重新生成保护**：`GenerateOutlineAction` 和 `generate_outline` 工具在存在已确认章节时拒绝执行（防止覆盖已完成内容），追加章节需使用「生成后续大纲」；`generate_outline` 会完全替换 pending 大纲，读取 `config.json` 的 `chapter_count` / `target_words_per_chapter`
+4. **大纲重新生成保护**：`GenerateOutlineAction` 和 `generate_outline` 工具在存在已确认章节时拒绝执行（防止覆盖已完成内容），追加章节需使用「生成后续大纲」（`outline`/`writing` 均可；空项目拒绝）；`generate_outline` 会完全替换 pending 大纲，读取 `config.json` 的 `chapter_count` / `target_words_per_chapter`
 5. **多轮消息保真**：Agent Loop 通过 `CallAPIMessages`/`CallAPIStreamMessages` 传递完整角色化消息历史，不再扁平化为单条 user 消息
 
 面向用户的使用说明见 [`README.md`](README.md) / [`README.en.md`](README.en.md) 的「AI 助理」一节。
@@ -501,7 +501,7 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | POST | `/api/outline/generate` | 异步 | 生成大纲（存在已确认章节时返回 409 拒绝） |
 | POST | `/api/outline/confirm` | 同步 | 确认大纲 |
 | POST | `/api/outline/revise` | 异步 | 修订大纲 |
-| POST | `/api/outline/generate-continuation` | 异步 | 生成续写大纲 |
+| POST | `/api/outline/generate-continuation` | 异步 | 生成续写大纲（`outline` 或 `writing` 阶段均可；空项目拒绝；成功后同步扩大 `config.chapter_count`） |
 | POST | `/api/arcs/skeleton` | 异步 | 生成全书卷级骨架（存在已确认/写作中章节时 409 拒绝，会清空 pending 章节） |
 | POST | `/api/arcs/{id}/outline` | 异步 | 为指定卷生成逐章大纲（body 可带 `requirements` 补充要求；卷内存在非 pending 章节时拒绝） |
 | POST | `/api/arcs/append` | 异步 | 追加新卷并生成其章纲（`{title?, goal?, chapter_count?}`，默认 20 章；完成后自动扩大 `chapter_count`） |
