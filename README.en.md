@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/show-me-the-story.webp" alt="Show Me The Story" width="240">
+</p>
+
 # Show Me The Story — AI Novel Generator
 
 > 中文文档：[README.md](README.md)
