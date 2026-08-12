@@ -71,6 +71,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | 文件 | 职责 |
 |------|------|
 | `main.go` | 入口，确定程序目录（`progDir`），创建 `storys/` 目录，加载 API 配置（`llm.EnsureContextBudget` 补齐上下文预算），`devlog.Init(progDir, version)`（仅 `version=dev`），`//go:embed frontend/dist` 嵌入前端产物并传给 `httpapi.StartWebServer`；`var version = "dev"` 通过 CI `-ldflags` 注入实际版本号 |
+| `docs/show-me-the-story.webp` | 中英文 README 顶部居中展示的项目 Logo（宽度 240px） |
 | `internal/devlog/devlog.go` | 本地开发日志：`Init`/`Log`/`Enabled`；仅 `version=="dev"` 时向 `progDir/dev.log` 追加带毫秒时间戳的行；发布版 no-op |
 | `internal/fsutil/fsutil.go` | 文件写入原语：`WriteFile`/`Delete`/`Rename`/`WriteFileAtomic`（先写 `.tmp` 再 rename） |
 | `internal/prose/units.go` | `CountProseUnits`（CJK +1；连续字母数字 token +1，内部 `.` `,` `-` `#` 连接；全角字母数字视同半角；标点/空白断词不计数；中英文共用） |
