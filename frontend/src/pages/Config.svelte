@@ -168,6 +168,17 @@
     } catch (e) { addToast(e.message, 'error'); }
   }
 
+  let charFormSnapshot = '';
+  function charFormSnapshotNow() {
+    return JSON.stringify({
+      name: charName, age: charAge, appearance: charAppearance, personality: charPersonality,
+      background: charBackground, motivation: charMotivation, abilities: charAbilities, notes: charNotes,
+    });
+  }
+  function isCharFormDirty() {
+    return showCharForm && charFormSnapshotNow() !== charFormSnapshot;
+  }
+
   function openCharForm(char) {
     showCharForm = true;
     if (char) {
@@ -184,6 +195,15 @@
       $editingCharID = null;
       charName = charAge = charAppearance = charPersonality = charBackground = charMotivation = charAbilities = charNotes = '';
     }
+    charFormSnapshot = charFormSnapshotNow();
+  }
+
+  function requestNewChar() {
+    if (isCharFormDirty()) {
+      showConfirm($t('config.form.unsavedNew'), () => openCharForm(null));
+      return;
+    }
+    openCharForm(null);
   }
 
   function closeCharForm() {
@@ -223,6 +243,14 @@
     addToast($t('config.char.submitted'), 'success');
   }
 
+  let wvFormSnapshot = '';
+  function wvFormSnapshotNow() {
+    return JSON.stringify({ name: wvName, category: wvCategory, description: wvDescription, tags: wvTags });
+  }
+  function isWvFormDirty() {
+    return showWvForm && wvFormSnapshotNow() !== wvFormSnapshot;
+  }
+
   function openWvForm(item) {
     showWvForm = true;
     if (item) {
@@ -235,6 +263,15 @@
       $editingWvID = null;
       wvName = ''; wvCategory = 'other'; wvDescription = ''; wvTags = '';
     }
+    wvFormSnapshot = wvFormSnapshotNow();
+  }
+
+  function requestNewWv() {
+    if (isWvFormDirty()) {
+      showConfirm($t('config.form.unsavedNew'), () => openWvForm(null));
+      return;
+    }
+    openWvForm(null);
   }
 
   function closeWvForm() {
@@ -275,6 +312,14 @@
   }
 
   // —— 组织 CRUD ——
+  let orgFormSnapshot = '';
+  function orgFormSnapshotNow() {
+    return JSON.stringify({ name: orgName, type: orgType, description: orgDescription, members: orgMembers });
+  }
+  function isOrgFormDirty() {
+    return showOrgForm && orgFormSnapshotNow() !== orgFormSnapshot;
+  }
+
   function openOrgForm(org) {
     showOrgForm = true;
     if (org) {
@@ -288,6 +333,15 @@
       orgName = orgType = orgDescription = '';
       orgMembers = [];
     }
+    orgFormSnapshot = orgFormSnapshotNow();
+  }
+
+  function requestNewOrg() {
+    if (isOrgFormDirty()) {
+      showConfirm($t('config.form.unsavedNew'), () => openOrgForm(null));
+      return;
+    }
+    openOrgForm(null);
   }
 
   function closeOrgForm() {
@@ -326,6 +380,14 @@
     return { type: key.slice(0, i), id: key.slice(i + 1) };
   }
 
+  let relFormSnapshot = '';
+  function relFormSnapshotNow() {
+    return JSON.stringify({ source: relSource, target: relTarget, label: relLabel });
+  }
+  function isRelFormDirty() {
+    return showRelForm && relFormSnapshotNow() !== relFormSnapshot;
+  }
+
   function openRelForm(rel) {
     showRelForm = true;
     if (rel) {
@@ -338,6 +400,15 @@
       relSource = relTarget = '';
       relLabel = '';
     }
+    relFormSnapshot = relFormSnapshotNow();
+  }
+
+  function requestNewRel() {
+    if (isRelFormDirty()) {
+      showConfirm($t('config.form.unsavedNew'), () => openRelForm(null));
+      return;
+    }
+    openRelForm(null);
   }
 
   function closeRelForm() {
@@ -578,7 +649,7 @@
         {/if}
 
         <div class="flex gap-1.5">
-          <button class="btn btn-primary btn-xs" on:click={() => openCharForm(null)} disabled={$taskRunning}>{$t('config.char.create')}</button>
+          <button class="btn btn-primary btn-xs" on:click={requestNewChar} disabled={$taskRunning}>{$t('config.char.create')}</button>
           {#if chars.length > 0}
             <button class="btn btn-accent btn-xs" on:click={submitCharacters} disabled={$taskRunning}>{$t('config.char.submit')}</button>
           {/if}
@@ -659,7 +730,7 @@
         {/if}
 
         <div class="flex gap-1.5">
-          <button class="btn btn-primary btn-xs" on:click={() => openWvForm(null)} disabled={$taskRunning}>{$t('config.wv.create')}</button>
+          <button class="btn btn-primary btn-xs" on:click={requestNewWv} disabled={$taskRunning}>{$t('config.wv.create')}</button>
           {#if allWvs.length > 0}
             <button class="btn btn-accent btn-xs" on:click={submitWorldview} disabled={$taskRunning}>{$t('config.wv.submit')}</button>
           {/if}
@@ -738,7 +809,7 @@
         {/if}
 
         <div class="flex gap-1.5">
-          <button class="btn btn-primary btn-xs" on:click={() => openOrgForm(null)} disabled={$taskRunning}>{$t('config.org.create')}</button>
+          <button class="btn btn-primary btn-xs" on:click={requestNewOrg} disabled={$taskRunning}>{$t('config.org.create')}</button>
         </div>
       {/if}
     </div>
@@ -810,7 +881,7 @@
         {/if}
 
         <div class="flex gap-1.5">
-          <button class="btn btn-primary btn-xs" on:click={() => openRelForm(null)} disabled={$taskRunning || entityOptions.length < 2}>{$t('config.rel.create')}</button>
+          <button class="btn btn-primary btn-xs" on:click={requestNewRel} disabled={$taskRunning || entityOptions.length < 2}>{$t('config.rel.create')}</button>
           {#if entityOptions.length < 2}
             <span class="text-xs text-base-content/35 self-center">{$t('config.rel.needTwo')}</span>
           {/if}

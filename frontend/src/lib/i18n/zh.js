@@ -344,6 +344,7 @@ export default {
   'config.story.saved': '故事配置已保存',
   'config.story.reconcileAsk': '检测到关键设定有变化，且已有已确认章节。是否让 AI 协调新设定与已有内容的一致性？（推荐）',
   'config.story.reconcileStarted': '设定协调任务已启动',
+  'config.form.unsavedNew': '当前表单有未保存内容。确认将丢弃并新建；也可取消后先保存。',
 
   'config.style.title': '写作风格与视角',
   'config.style.label': '写作风格',
