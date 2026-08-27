@@ -65,6 +65,9 @@ export const taskNotification = writable(null);
 
 export const confirmModal = writable(null);
 
+// Structured unrecoverable save failure from HTTP or background-task SSE.
+export const storageError = writable(null);
+
 export const postprocess = writable(null);
 
 export const foreshadowSuggestions = writable([]);

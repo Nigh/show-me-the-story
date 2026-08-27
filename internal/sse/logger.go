@@ -3,7 +3,9 @@ package sse
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"showmethestory/internal/devlog"
+	"showmethestory/internal/fsutil"
 	"showmethestory/internal/i18n"
 	"sync"
 	"time"
@@ -85,6 +87,13 @@ func (lb *LogBroadcaster) logBilingual(level, msg, msgEN string) {
 }
 
 func (lb *LogBroadcaster) logKey(level, key string, args ...any) {
+	if level == "error" {
+		for _, arg := range args {
+			if err, ok := arg.(error); ok {
+				lb.StorageError(err)
+			}
+		}
+	}
 	lb.logEntry(LogEntry{
 		Level:   level,
 		MsgKey:  key,
@@ -92,6 +101,23 @@ func (lb *LogBroadcaster) logKey(level, key string, args ...any) {
 		Msg:     i18n.T(i18n.LangZH, key, args...),
 		MsgEN:   i18n.T(i18n.LangEN, key, args...),
 		Time:    time.Now().Format("15:04:05"),
+	})
+}
+
+// StorageError emits structured diagnostics for background-task save errors.
+// It is a no-op for errors unrelated to defensive file writes.
+func (lb *LogBroadcaster) StorageError(err error) {
+	saveErr, ok := fsutil.AsSaveError(err)
+	if !ok {
+		return
+	}
+	lb.Emit("storage_error", map[string]interface{}{
+		"file":               filepath.Base(saveErr.Path),
+		"path":               saveErr.Path,
+		"stage":              saveErr.Stage,
+		"original_preserved": saveErr.OriginalPreserved,
+		"backup_path":        saveErr.BackupPath,
+		"detail":             saveErr.Error(),
 	})
 }
 

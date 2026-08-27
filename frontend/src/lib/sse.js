@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, taskTokenUsage, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions, outlineCharacterSuggestions, outlineCharacterShowSuggestions, pendingConfigChanges, showConfigChangePanel } from './stores.js';
+import { addLog, addToast, config, progress, taskRunning, streamingContent, streamingChapterIdx, taskTokenUsage, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions, outlineCharacterSuggestions, outlineCharacterShowSuggestions, pendingConfigChanges, showConfigChangePanel, storageError } from './stores.js';
 import { api } from './api.js';
 import { getLocale, translate, formatLogEntry, formatToolResult } from './i18n/index.js';
 import { TOKEN_POLL_INTERVAL_MS } from './tokenPoll.js';
@@ -127,6 +127,10 @@ export function connectSSE() {
 
   eventSource.addEventListener('progress_update', () => {
     refreshProgress();
+  });
+
+  eventSource.addEventListener('storage_error', e => {
+    storageError.set(JSON.parse(e.data));
   });
 
   function taskLabel(task) {
