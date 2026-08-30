@@ -80,3 +80,14 @@ export interface LoginResponse {
 export interface LogoutRequest {
   provider_id: string;
 }
+
+export interface SessionSummary {
+  project_id: string;
+  session_id: string;
+  message_count: number;
+  restored: boolean;
+}
+
+export interface SessionSelectRequest {
+  project_name: string;
+}
