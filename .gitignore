@@ -2,6 +2,7 @@
 !pi-runtime/package.json
 !pi-runtime/package-lock.json
 !pi-runtime/tsconfig.json
+!pi-runtime/tsconfig.build.json
 *.exe
 /show-me-the-story
 .kilo

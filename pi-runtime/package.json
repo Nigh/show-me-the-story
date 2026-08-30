@@ -7,8 +7,8 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js"
   },

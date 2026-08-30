@@ -5,6 +5,11 @@ import { join } from "node:path";
 import type { AuthType } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseRuntimeOptions, validateSocketPath } from "./index.js";
+import {
+  LoginConflictError,
+  LoginNotFoundError,
+  LoginValidationError,
+} from "./login-broker.js";
 import type { ModelCatalog } from "./models.js";
 import type {
   LegacyAPIImport,
@@ -77,6 +82,7 @@ class FakeLogins implements LoginService {
   status?: { id: string; after: number };
   response?: { id: string; value: LoginResponse };
   cancelled?: string;
+  failure?: Error;
 
   start(providerId: string, authType: AuthType): LoginSnapshot {
     this.started = { providerId, authType };
@@ -84,6 +90,9 @@ class FakeLogins implements LoginService {
   }
 
   snapshot(id: string, afterCursor: number): LoginSnapshot {
+    if (this.failure !== undefined) {
+      throw this.failure;
+    }
     this.status = { id, after: afterCursor };
     return snapshot(id);
   }
@@ -373,6 +382,19 @@ describe("runtime HTTP routes", () => {
   it("returns null when no story session is selected", async () => {
     const fixture = await serve();
     expectJSON(await fixture.request("GET", "/v1/sessions/current"), 200, null);
+  });
+
+  it.each([
+    [new LoginNotFoundError(), 404, "login_not_found"],
+    [new LoginValidationError("invalid login"), 400, "login_validation"],
+    [new LoginConflictError("login conflict"), 409, "login_conflict"],
+  ])("preserves safe typed login errors", async (failure, status, code) => {
+    const fixture = await serve();
+    fixture.services.logins.failure = failure;
+
+    const response = await fixture.request("GET", "/v1/auth/logins/login-1");
+
+    expectJSON(response, status, { error: { code, message: failure.message } });
   });
 });
 

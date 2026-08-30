@@ -5,6 +5,11 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import {
+  LoginConflictError,
+  LoginNotFoundError,
+  LoginValidationError,
+} from "./login-broker.js";
 import type { ModelCatalog } from "./models.js";
 import type {
   AuthType,
@@ -43,6 +48,18 @@ export function createRuntimeServer(services: RuntimeServices): Server {
       }
       if (error instanceof HTTPError) {
         writeError(response, error.status, error.code, error.message);
+        return;
+      }
+      if (error instanceof LoginNotFoundError) {
+        writeError(response, 404, error.code, error.message);
+        return;
+      }
+      if (error instanceof LoginValidationError) {
+        writeError(response, 400, error.code, error.message);
+        return;
+      }
+      if (error instanceof LoginConflictError) {
+        writeError(response, 409, error.code, error.message);
         return;
       }
       writeError(response, 500, "internal_error", "internal runtime error");
