@@ -91,3 +91,9 @@ export interface SessionSummary {
 export interface SessionSelectRequest {
   project_name: string;
 }
+
+export interface HealthSummary {
+  status: "ok";
+  protocol_version: 1;
+  pi_version: "0.83.0";
+}
