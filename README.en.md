@@ -61,6 +61,15 @@ On first launch you will be asked to create a project. Once a project is open, t
 
 API configuration is shared across all projects.
 
+### Pi foundation runtime (current stage)
+
+Source builds now include a local Pi runtime based on `@earendil-works/pi-coding-agent` 0.83.0. It currently supports macOS only and requires Node.js >= 22.19.0. The foundation exposes Pi's provider/model catalogue, API-key and OAuth/subscription authentication, custom-provider configuration, copy-only import of the existing `api.json`, and persistent per-story sessions.
+
+All Pi configuration, credentials, models, and sessions live in an independent `pi-data/` directory beside the program. The runtime never reads or writes `~/.pi`. Importing `api.json` copies its settings and credential without modifying or deleting the original file. If Node or Pi is unavailable, the application degrades gracefully and all existing novel features keep working.
+
+> [!IMPORTANT]
+> This is the foundation stage of the Pi migration. Outline generation, chapter generation, and the existing assistant still use the legacy execution path. The complete provider-login, dual-workspace, and plugin-management Web UI—including npm, Git, local-path installation, and permission confirmation—is deferred to the later UI/plugin stage. Current release artifacts are not yet guaranteed to bundle Node/Pi, so a source checkout must be fully built as described below.
+
 ### 4. Start writing
 
 1. **Configure the story**: on the Config page set genre, chapter count, target words per chapter, writing style, etc. Characters / world / organizations / relations can be added manually, or generated in one click with "AI generate settings".
@@ -192,6 +201,7 @@ Everything is local plain text / JSON:
 ```
 <data dir>/
 ├── api.json                 # API configuration (shared by all projects)
+├── pi-data/                 # isolated Pi config, credentials, models, and sessions (not ~/.pi)
 └── storys/
     └── <project name>/
         ├── config.json      # story configuration + prompts + skill flags
@@ -284,16 +294,19 @@ The full-book optimisation (diagnosis + consistency check + roadmap) requires th
 
 ### Build
 
-You need Go, Node.js, and optionally [Task](https://taskfile.dev/):
+You need Go, Node.js >= 22.19.0, and optionally [Task](https://taskfile.dev/). The Pi runtime currently supports local macOS environments only:
 
 ```bash
-# Recommended: one-shot full build (frontend + backend)
+# Recommended: one-shot full build (frontend + Pi runtime + Go backend)
 task build
 
 # Or step by step
 cd frontend && npm install && npm run build && cd ..
+cd pi-runtime && npm ci && npm test && npm run typecheck && npm run build && cd ..
 go build -o show-me-the-story .
 ```
+
+When running from source, `pi-runtime/dist/index.js` must remain under the program directory; the supervisor launches Node from that fixed path. The Go server still starts when Pi is missing, but the Pi foundation endpoints report that the capability is unavailable.
 
 ### Dev mode
 
@@ -304,7 +317,7 @@ task dev:frontend   # start the Vite dev server (:5173, HMR, proxies /api → :4
 
 ### Project layout
 
-The backend is a flat layer of Go files split by responsibility (`outline.go` for outlines, `writing.go` for chapter writing, `foreshadow.go` for foreshadows, `agent.go` for the assistant agent loop, `handlers.go` for HTTP routes, etc.). Frontend pages live under `frontend/src/pages/`.
+The backend is a flat layer of Go files split by responsibility (`outline.go` for outlines, `writing.go` for chapter writing, `foreshadow.go` for foreshadows, `agent.go` for the assistant agent loop, `handlers.go` for HTTP routes, etc.). Frontend pages live under `frontend/src/pages/`. `pi-runtime/` is an independent Node/TypeScript runtime connected to Go through a private Unix socket; see [`pi-runtime/README.md`](pi-runtime/README.md) for the boundary details.
 
 The full architecture, API endpoint list, SSE event reference, design patterns, and development guidelines are in [AGENTS.md](AGENTS.md).
 

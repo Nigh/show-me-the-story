@@ -14,13 +14,33 @@ tasks:
   frontend:build:
     desc: 构建前端
     dir: frontend
-    deps: [frontend:install]
+    deps: ["frontend:install"]
+    cmds:
+      - npm run build
+
+  pi:install:
+    desc: 安装 Pi Runtime 依赖
+    dir: pi-runtime
+    cmds:
+      - npm ci
+
+  pi:test:
+    desc: 测试 Pi Runtime
+    dir: pi-runtime
+    cmds:
+      - npm test
+      - npm run typecheck
+
+  pi:build:
+    desc: 构建 Pi Runtime
+    dir: pi-runtime
+    deps: ["pi:install"]
     cmds:
       - npm run build
 
   build:
-    desc: 编译项目（含前端构建）
-    deps: [frontend:build]
+    desc: 编译项目（含前端与 Pi Runtime 构建）
+    deps: ["frontend:build", "pi:build"]
     cmds:
       - go build -o {{.BINARY}} .
 
@@ -38,7 +58,7 @@ tasks:
   dev:frontend:
     desc: 启动前端开发服务器（热重载）
     dir: frontend
-    deps: [frontend:install]
+    deps: ["frontend:install"]
     cmds:
       - npm run dev
 
@@ -50,4 +70,6 @@ tasks:
       - cmd: Remove-Item -Force -ErrorAction SilentlyContinue show-me-the-story.exe
         platforms: [windows]
       - cmd: rm -rf frontend/dist
+        platforms: [linux, darwin]
+      - cmd: rm -rf pi-runtime/dist
         platforms: [linux, darwin]

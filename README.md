@@ -61,6 +61,15 @@
 
 API 配置全局共享，所有项目通用。
 
+### Pi 基础运行时（当前阶段）
+
+源码构建现在包含一个基于 `@earendil-works/pi-coding-agent` 0.83.0 的本机 Pi Runtime，仅支持 macOS，并要求 Node.js >= 22.19.0。它已经提供 Pi provider/model 目录、API Key、OAuth/订阅登录、自定义 provider 配置、旧 `api.json` 复制导入和按小说隔离的持久会话基础 API。
+
+Pi 的配置、凭据和会话全部保存在程序目录下独立的 `pi-data/`；不会读取或写入 `~/.pi`。旧 `api.json` 导入只复制配置和凭据，不修改或删除原文件。Pi 或 Node 不可用时，程序会自动降级，现有小说功能仍可使用。
+
+> [!IMPORTANT]
+> 这是 Pi 改造的基础阶段：当前大纲、章节生成和旧助理仍走原有生成链。provider 登录、双工作区和插件管理的完整 Web UI（含 npm、Git、本地路径安装及权限确认）将在后续界面/插件阶段接入；此版本没有声称已经完成这些网页功能。当前发布包也尚未保证捆绑 Node/Pi，源码运行前必须先完成下方的完整构建。
+
 ### 4. 开始创作
 
 1. **配置故事**：在「配置」页填写故事类型、章节数、每章字数、写作风格等；角色 / 世界观 / 组织 / 关系可手动添加，也可点「AI 生成设定」让 AI 根据你的故事描述自动生成
@@ -179,6 +188,7 @@ planted（已埋设）→ progressing（推进中）→ resolved（已回收）
 ```
 <数据目录>/
 ├── api.json                 # API 配置（全局共享）
+├── pi-data/                 # 独立 Pi 配置、凭据、模型目录和会话（不使用 ~/.pi）
 └── storys/
     └── <项目名>/
         ├── config.json      # 故事配置 + 提示词 + 技能开关
@@ -270,16 +280,19 @@ planted（已埋设）→ progressing（推进中）→ resolved（已回收）
 
 ### 编译
 
-需要 Go、Node.js 以及 [Task](https://taskfile.dev/)（可选）：
+需要 Go、Node.js >= 22.19.0 以及 [Task](https://taskfile.dev/)（可选）。当前 Pi Runtime 仅支持 macOS 本机环境：
 
 ```bash
-# 推荐：一键完整构建（前端 + 后端）
+# 推荐：一键完整构建（前端 + Pi Runtime + Go 后端）
 task build
 
 # 或手动分步
 cd frontend && npm install && npm run build && cd ..
+cd pi-runtime && npm ci && npm test && npm run typecheck && npm run build && cd ..
 go build -o show-me-the-story .
 ```
+
+从源码运行时，`pi-runtime/dist/index.js` 必须位于程序目录下；监管器从该固定路径启动 Node。普通 Go 服务不会因为 Pi 缺失而拒绝启动，但 Pi 基础 API 会报告不可用。
 
 ### 开发模式
 
@@ -290,7 +303,7 @@ task dev:frontend   # 启动 Vite dev server（:5173，热重载，代理 /api �
 
 ### 项目结构
 
-后端按职责拆分为单层 Go 文件（`outline.go` 大纲、`writing.go` 写作、`foreshadow.go` 伏笔、`agent.go` 助理 Agent Loop、`handlers.go` API 处理等），前端页面在 `frontend/src/pages/`。
+后端按职责拆分为单层 Go 文件（`outline.go` 大纲、`writing.go` 写作、`foreshadow.go` 伏笔、`agent.go` 助理 Agent Loop、`handlers.go` API 处理等），前端页面在 `frontend/src/pages/`。`pi-runtime/` 是独立 Node/TypeScript 运行时，通过私有 Unix Socket 与 Go 通信；详细边界见 [`pi-runtime/README.md`](pi-runtime/README.md)。
 
 完整的架构说明、API 端点一览、SSE 事件类型、设计模式与开发约束请见 [AGENTS.md](AGENTS.md)。
 

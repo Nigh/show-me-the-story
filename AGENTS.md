@@ -18,11 +18,12 @@
 ## 编译与运行
 
 ```bash
-# 完整编译（含前端构建）
-task build                          # 推荐：自动 npm run build + go build
+# 完整编译（含前端与 Pi Runtime 构建）
+task build                          # 推荐：自动构建 frontend、pi-runtime 和 Go
 
 # 或手动分步
 cd frontend && npm install && npm run build && cd ..   # 构建前端
+cd pi-runtime && npm ci && npm test && npm run typecheck && npm run build && cd ..
 go build -o show-me-the-story.exe .                    # 编译 Go（嵌入 frontend/dist/）
 
 # 运行
@@ -34,7 +35,16 @@ task dev:frontend                     # 启动 Vite dev server（热重载，端
 task dev                              # 编译并启动 Go 后端
 ```
 
-编译前务必确认 `go build` 无报错。项目无测试框架，编译通过即为基本验证。
+编译前务必确认 Node 与 Go 两侧测试、类型检查及 `go build` 均通过。
+
+## Pi Runtime 基础边界
+
+- `pi-runtime/` 是应用自带的独立 Node/TypeScript 运行时，固定使用 `@earendil-works/pi-coding-agent` 和 `@earendil-works/pi-ai` 0.83.0；仅支持 macOS 本机环境，最低 Node.js 版本为 22.19.0。
+- Go 通过程序目录下 `pi-data/run/pi.sock` 私有 Unix Socket 调用 Node。Go 监管子进程、就绪检查、重启和降级；Node 拥有 Pi provider/model、认证和会话状态。
+- Pi 所有配置和凭据必须位于显式的 `<progDir>/pi-data`，禁止读取或写入 `~/.pi`。Node 禁止读取或写入 Go 管理的 `storys/**`；小说配置、进度、设定、章节的规范写入只能由 Go 完成。
+- API Key、OAuth token、认证响应和子进程输出不得进入浏览器响应或应用日志。公开 DTO 只允许凭据元数据；错误使用固定脱敏消息。
+- 边界变更后必须同时运行 `cd pi-runtime && npm test && npm run typecheck && npm run build` 与 `go test ./...`；并发/生命周期变更还需运行 `go test -race ./...`。
+- 当前只是迁移基础：Pi 会话禁用工具、扩展、skills、prompts、themes 与项目上下文。插件安装、信任/权限、双工作区和 Web UI 属于后续阶段，不得在文档中宣称已完成。
 
 ## 架构概览
 
@@ -641,6 +651,8 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 8. **双语界面**：UI 文案走 `$t('key', {name})`；后端日志/Agent 状态走 `messageCatalog` key + `InfoKey`/`agentMsg`；API 错误走 `writeErrorReq` + `errorCatalog`；新增 key 须同步 `messages.go`（或 `errorCatalog`）与 `zh.js`/`en.js`
 9. **Skill 可选性**：所有 skill 默认禁用，功能性 AI 不注入任何 skill，除非作者显式启用
 10. **多语言一致**：新增 prompt 模板必须同时在 `prompts.go`（`DefaultPromptsZH`）和 `prompts_en.go`（`DefaultPromptsEN`）补齐；新增注入块文本必须在 `i18n_inject.go` 处理两种语言；新增内联 system prompt 必须挂到 `locale.go` 的 `systemPrompts` map
+11. **Pi 数据隔离**：`pi-runtime/` 仅可使用显式 `pi-data/` 和哈希项目工作区，禁止访问 `~/.pi` 或直接写 `storys/**`
+12. **秘密脱敏**：Pi 请求中的 API Key/OAuth/认证响应只可进入私有 Socket 请求和 Pi 凭据存储，不得出现在响应 DTO、日志、测试快照或错误正文
 
 ## 修改检查清单
 
@@ -655,3 +667,4 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 7. 如果新增了 prompt / system prompt / 注入块，确认中英双语都已补齐（见多语言一致约束）
 8. 如果新增了前端可见文案，确认 `zh.js` 与 `en.js` 同步加 key
 9. **同步更新本 AGENTS.md 文件** + 必要时同步更新 [`README.md`](README.md) 与 [`README.en.md`](README.en.md)
+10. 修改 Go ↔ Pi 边界时，运行 Node 测试/类型检查/构建和 Go 普通测试；修改监管器或并发状态时再运行 `go test -race ./...`
