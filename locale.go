@@ -28,6 +28,26 @@ func localeFromRequest(r *http.Request) string {
 // errorCatalog maps a stable error key to its zh/en messages.
 // Messages may contain %s for args.
 var errorCatalog = map[string]map[string]string{
+	"pi_local_only": {
+		LangZH: "Pi 接口仅允许本机网页访问",
+		LangEN: "Pi endpoints are available only to the local web app",
+	},
+	"pi_runtime_unavailable": {
+		LangZH: "Pi 运行时不可用，原有小说功能仍可继续使用",
+		LangEN: "Pi runtime is unavailable; existing novel features remain available",
+	},
+	"pi_runtime_request_failed": {
+		LangZH: "Pi 运行时请求失败",
+		LangEN: "Pi runtime request failed",
+	},
+	"pi_invalid_request": {
+		LangZH: "无效的 Pi 请求",
+		LangEN: "Invalid Pi request",
+	},
+	"pi_invalid_legacy_config": {
+		LangZH: "现有 API 配置无法导入 Pi",
+		LangEN: "The existing API configuration cannot be imported into Pi",
+	},
 	"missing_project_name": {
 		LangZH: "缺少项目名称",
 		LangEN: "Project name is required",

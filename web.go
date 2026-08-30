@@ -21,8 +21,9 @@ import (
 //go:embed frontend/dist
 var staticFiles embed.FS
 
-func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Progress, settings *ProjectSettings, skills []Skill, sessionsDir string, logger *LogBroadcaster, port string, progDir string, version string) {
+func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Progress, settings *ProjectSettings, skills []Skill, sessionsDir string, logger *LogBroadcaster, port string, progDir string, version string, piRuntime PiRuntime) {
 	h := NewHandlers(apiCfg, apiCfgPath, logger, progDir, version)
+	h.SetPiRuntime(piRuntime)
 
 	mux := http.NewServeMux()
 
@@ -40,6 +41,8 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 	mux.HandleFunc("GET /api/config/api", h.GetAPIConfig)
 	mux.HandleFunc("PUT /api/config/api", h.PutAPIConfig)
 	mux.HandleFunc("POST /api/config/api/test", h.PostAPITest)
+
+	registerPiRoutes(mux, h)
 
 	// Project-scoped endpoints (require project selection)
 	mux.HandleFunc("GET /api/config", h.GetConfig)
@@ -174,6 +177,21 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 		fmt.Fprintf(os.Stderr, " [错误] 服务器启动失败: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func registerPiRoutes(mux *http.ServeMux, h *Handlers) {
+	mux.HandleFunc("GET /api/pi/status", localPiOnly(h.GetPiStatus))
+	mux.HandleFunc("GET /api/pi/providers", localPiOnly(h.GetPiProviders))
+	mux.HandleFunc("GET /api/pi/credentials", localPiOnly(h.GetPiCredentials))
+	mux.HandleFunc("POST /api/pi/auth/login", localPiOnly(h.PostPiLogin))
+	mux.HandleFunc("GET /api/pi/auth/login/{id}", localPiOnly(h.GetPiLogin))
+	mux.HandleFunc("POST /api/pi/auth/login/{id}/respond", localPiOnly(h.PostPiLoginResponse))
+	mux.HandleFunc("DELETE /api/pi/auth/login/{id}", localPiOnly(h.DeletePiLogin))
+	mux.HandleFunc("POST /api/pi/auth/logout", localPiOnly(h.PostPiLogout))
+	mux.HandleFunc("POST /api/pi/import-legacy-api/preview", localPiOnly(h.PostPiLegacyImportPreview))
+	mux.HandleFunc("POST /api/pi/import-legacy-api", localPiOnly(h.PostPiLegacyImport))
+	mux.HandleFunc("POST /api/pi/session/select", localPiOnly(h.PostPiSessionSelect))
+	mux.HandleFunc("GET /api/pi/session/current", localPiOnly(h.GetPiSessionCurrent))
 }
 
 // Project management handlers

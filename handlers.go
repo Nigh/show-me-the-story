@@ -18,6 +18,7 @@ type Handlers struct {
 	apiCfgPath string
 	logger     *LogBroadcaster
 	version    string
+	piRuntime  PiRuntime
 
 	// Project management
 	progDir     string
@@ -64,6 +65,10 @@ func NewHandlers(apiCfg *APIConfig, apiCfgPath string, logger *LogBroadcaster, p
 			ExecuteOptions: &PostProcessExecuteOptions{RunSmoothTransitionsFirst: true},
 		},
 	}
+}
+
+func (h *Handlers) SetPiRuntime(runtime PiRuntime) {
+	h.piRuntime = runtime
 }
 
 func (h *Handlers) storysDir() string {

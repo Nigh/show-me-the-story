@@ -73,10 +73,15 @@ func main() {
 
 	logger := NewLogBroadcaster()
 	defer logger.Close()
+	piRuntime := NewPiRuntimeSupervisor(progDir, PiRuntimeOptions{Logger: logger})
+	defer piRuntime.Close()
+	if status := piRuntime.Status(); !status.Available {
+		logger.Warn("Pi 运行时正在启动或不可用，原有小说功能不受影响")
+	}
 
 	fmt.Printf(" [系统] 版本: %s\n", version)
 	fmt.Printf(" [系统] 程序目录: %s\n", progDir)
 	fmt.Printf(" [系统] 项目目录: %s\n", storysDir)
 
-	startWebServer(apiCfg, apiCfgPath, cfg, state, settings, skills, sessionsDir, logger, port, progDir, version)
+	startWebServer(apiCfg, apiCfgPath, cfg, state, settings, skills, sessionsDir, logger, port, progDir, version, piRuntime)
 }
