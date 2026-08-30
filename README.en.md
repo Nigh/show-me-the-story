@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/show-me-the-story.webp" alt="Show Me The Story" width="240">
+</p>
+
 # Show Me The Story — AI Novel Generator
 
 > 中文文档：[README.md](README.md)
@@ -83,7 +87,7 @@ The project language is fixed at creation time. The UI language defaults to the 
 
 ### Continue an existing novel
 
-On the Outline page (when the project is empty) click "Import existing content" and paste the text you already have. The AI extracts the title, synopsis, per-chapter outlines, and per-chapter summaries; after you confirm the import, the existing chapters are marked as confirmed and "Generate continuation outline" lets you proceed.
+On the Outline page (when the project is empty) click "Import existing content" and paste the text you already have. The AI extracts the title, synopsis, per-chapter outlines, and per-chapter summaries; after you confirm the import, the existing chapters are marked as confirmed and "Generate continuation outline" lets you proceed. After the book is finished (still in the writing phase), you can keep using "Generate continuation outline" on the Outline page to append more chapters.
 
 ### Foreshadow system
 

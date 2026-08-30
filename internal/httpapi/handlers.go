@@ -169,7 +169,24 @@ func (h *Handlers) ensureProject(w http.ResponseWriter, r *http.Request) bool {
 // writeErrorReq writes a JSON error response, picking message language from the request.
 func (h *Handlers) writeErrorReq(w http.ResponseWriter, r *http.Request, code int, key string, args ...any) {
 	lang := i18n.FromRequest(r)
-	h.writeJSON(w, code, map[string]string{"error": i18n.T(lang, key, args...)})
+	response := map[string]interface{}{"error": i18n.T(lang, key, args...)}
+	for _, arg := range args {
+		if err, ok := arg.(error); ok {
+			if saveErr, ok := fsutil.AsSaveError(err); ok {
+				response["code"] = "storage_save_failed"
+				response["storage_error"] = map[string]interface{}{
+					"file":               filepath.Base(saveErr.Path),
+					"path":               saveErr.Path,
+					"stage":              saveErr.Stage,
+					"original_preserved": saveErr.OriginalPreserved,
+					"backup_path":        saveErr.BackupPath,
+					"detail":             saveErr.Error(),
+				}
+				break
+			}
+		}
+	}
+	h.writeJSON(w, code, response)
 }
 
 func (h *Handlers) writeJSON(w http.ResponseWriter, code int, v interface{}) {
@@ -326,7 +343,7 @@ func (h *Handlers) PutAPIConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := fsutil.WriteFileAtomic(h.apiCfgPath, data); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_api_config_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_api_config_failed", err)
 		return
 	}
 
@@ -408,7 +425,7 @@ func (h *Handlers) PutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := fsutil.WriteFileAtomic(h.cfgPath, data); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_config_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_config_failed", err)
 		return
 	}
 
@@ -457,15 +474,15 @@ func (h *Handlers) PostApplyConfigChanges(w http.ResponseWriter, r *http.Request
 	story.ApplySelectedPendingChanges(h.cfg, h.state, pending, body.Fields)
 
 	if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_config_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_config_failed", err)
 		return
 	}
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 	if err := story.RemovePendingFields(pendingPath, body.Fields...); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_pending_config_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_pending_config_failed", err)
 		return
 	}
 
@@ -545,7 +562,7 @@ func (h *Handlers) blockEditChapter(w http.ResponseWriter, r *http.Request, num 
 		return
 	}
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 	story.SaveChapterMarkdown(h.projectDir(), *ch, h.state.Title)
@@ -805,7 +822,7 @@ func (h *Handlers) PostOutlineConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := story.ConfirmOutlineAction(h.state, h.progressPath); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "outline_confirm_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "outline_confirm_failed", err)
 		return
 	}
 
@@ -902,7 +919,7 @@ func (h *Handlers) PostOutlineCharactersConfirm(w http.ResponseWriter, r *http.R
 	}
 
 	if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -1023,7 +1040,7 @@ func (h *Handlers) PostChapterConflictResolve(w http.ResponseWriter, r *http.Req
 			return
 		}
 		if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 			return
 		}
 		h.logger.SuccessKey("log.chapter_kept_review", ch.Num)
@@ -1036,7 +1053,7 @@ func (h *Handlers) PostChapterConflictResolve(w http.ResponseWriter, r *http.Req
 		}
 		h.state.PendingWritingConflict = nil
 		if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 			return
 		}
 		h.broadcastProgress()
@@ -1116,7 +1133,7 @@ func (h *Handlers) PostChapterEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 
@@ -1293,13 +1310,13 @@ func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 		case story.ErrDeleteFrontierUnavailable:
 			h.writeErrorReq(w, r, http.StatusConflict, "delete_frontier_unavailable")
 		default:
-			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		}
 		return
 	}
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 
@@ -1329,7 +1346,7 @@ func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
 	h.state.CurrentChapterIndex = 0
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 
@@ -1366,7 +1383,7 @@ func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 
@@ -1463,7 +1480,7 @@ func (h *Handlers) DeleteChaptersFrom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 
@@ -1628,7 +1645,7 @@ func (h *Handlers) PostForeshadow(w http.ResponseWriter, r *http.Request) {
 	h.state.Foreshadows = append(h.state.Foreshadows, fs)
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -1693,7 +1710,7 @@ func (h *Handlers) PutForeshadow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -1727,7 +1744,7 @@ func (h *Handlers) DeleteForeshadow(w http.ResponseWriter, r *http.Request) {
 	h.state.Foreshadows = append(h.state.Foreshadows[:idx], h.state.Foreshadows[idx+1:]...)
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -1758,7 +1775,7 @@ func (h *Handlers) PostForeshadowsConfirm(w http.ResponseWriter, r *http.Request
 	h.state.Foreshadows = append(h.state.Foreshadows, req.Foreshadows...)
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -1844,7 +1861,7 @@ func (h *Handlers) finishImportTask(ctx context.Context, err error) {
 		if ctx.Err() != nil {
 			h.logger.WarnKey("log.import_task_cancelled")
 		} else {
-			h.logger.ErrorKey("log.import_task_failed", err.Error())
+			h.logger.ErrorKey("log.import_task_failed", err)
 		}
 		h.logger.TaskEnd("import_pipeline", false)
 		h.broadcastProgress()
@@ -1873,9 +1890,15 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if h.state.Phase != "outline" {
+	// Continuation is append-only: allow both outline and writing (book-complete
+	// sequels land in writing). Reject empty projects — use generate outline first.
+	if !story.ContinuationOutlineAllowed(h.state.Phase, len(h.state.Chapters)) {
 		h.endTask()
-		h.writeErrorReq(w, r, http.StatusBadRequest, "phase_not_outline")
+		if len(h.state.Chapters) == 0 {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "outline_empty")
+		} else {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "phase_not_outline")
+		}
 		return
 	}
 
@@ -1903,6 +1926,20 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 				h.logger.TaskEnd("continuation_outline", false)
 			}
 			return
+		}
+
+		// Keep config.chapter_count in sync with appended chapters (same as arc append).
+		if n := len(h.state.Chapters); n > h.cfg.Story.ChapterCount {
+			h.cfg.Story.ChapterCount = n
+			if h.state.StoryConfigSnapshot != nil {
+				snapshot := h.cfg.Story
+				h.state.StoryConfigSnapshot = &snapshot
+			}
+			if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
+				h.logger.ErrorKey("log.continuation_outline_failed", err)
+			} else if err := story.SaveProgress(h.progressPath, h.state); err != nil {
+				h.logger.ErrorKey("log.continuation_outline_failed", err)
+			}
 		}
 
 		h.logger.SuccessKey("log.continuation_outline_done")
@@ -1969,7 +2006,7 @@ func (h *Handlers) PostCharacter(w http.ResponseWriter, r *http.Request) {
 	h.settings.Characters = append(h.settings.Characters, c)
 
 	if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -2016,7 +2053,7 @@ func (h *Handlers) PutCharacter(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
 
@@ -2038,7 +2075,7 @@ func (h *Handlers) DeleteCharacter(w http.ResponseWriter, r *http.Request) {
 		if c.ID == id {
 			h.settings.Characters = append(h.settings.Characters[:i], h.settings.Characters[i+1:]...)
 			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
 			h.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -2067,7 +2104,7 @@ func (h *Handlers) PostWorldview(w http.ResponseWriter, r *http.Request) {
 	h.settings.Worldview = append(h.settings.Worldview, wv)
 
 	if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -2102,7 +2139,7 @@ func (h *Handlers) PutWorldview(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
 
@@ -2124,7 +2161,7 @@ func (h *Handlers) DeleteWorldview(w http.ResponseWriter, r *http.Request) {
 		if wv.ID == id {
 			h.settings.Worldview = append(h.settings.Worldview[:i], h.settings.Worldview[i+1:]...)
 			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
 			h.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -2153,7 +2190,7 @@ func (h *Handlers) PostOrganization(w http.ResponseWriter, r *http.Request) {
 	h.settings.Organizations = append(h.settings.Organizations, o)
 
 	if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -2188,7 +2225,7 @@ func (h *Handlers) PutOrganization(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
 
@@ -2210,7 +2247,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		if o.ID == id {
 			h.settings.Organizations = append(h.settings.Organizations[:i], h.settings.Organizations[i+1:]...)
 			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
 			h.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -2239,7 +2276,7 @@ func (h *Handlers) PostRelation(w http.ResponseWriter, r *http.Request) {
 	h.settings.Relations = append(h.settings.Relations, rel)
 
 	if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
@@ -2277,7 +2314,7 @@ func (h *Handlers) PutRelation(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
 
@@ -2299,7 +2336,7 @@ func (h *Handlers) DeleteRelation(w http.ResponseWriter, r *http.Request) {
 		if rel.ID == id {
 			h.settings.Relations = append(h.settings.Relations[:i], h.settings.Relations[i+1:]...)
 			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
-				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
 			h.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -2443,7 +2480,7 @@ func (h *Handlers) PutPostProcessRoadmap(w http.ResponseWriter, r *http.Request)
 		h.postprocess.AuthorRequirements = *req.AuthorRequirements
 	}
 	if err := story.SavePostProcess(h.postprocessPath, h.postprocess); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 	h.logger.PostProcessUpdate(h.postprocess)
@@ -2716,7 +2753,7 @@ func (h *Handlers) PutSkillToggle(w http.ResponseWriter, r *http.Request) {
 	h.cfg.SkillConfig.EnabledSkills[id] = req.Enabled
 
 	if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_config_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_config_failed", err)
 		return
 	}
 
@@ -2833,7 +2870,7 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 
 	if err := story.SaveChatSession(h.sessionsDir, session); err != nil {
 		h.endTask()
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_session_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_session_failed", err)
 		return
 	}
 
@@ -3000,14 +3037,14 @@ func (h *Handlers) PostArcSkeleton(w http.ResponseWriter, r *http.Request) {
 			if ctx.Err() != nil {
 				h.logger.WarnKey("log.arc_task_cancelled")
 			} else {
-				h.logger.ErrorKey("log.arc_task_failed", err.Error())
+				h.logger.ErrorKey("log.arc_task_failed", err)
 			}
 			h.logger.TaskEnd("arc_skeleton", false)
 			return
 		}
 		h.state.Phase = "outline"
 		if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-			h.logger.ErrorKey("log.arc_task_failed", err.Error())
+			h.logger.ErrorKey("log.arc_task_failed", err)
 		}
 		h.logger.TaskEnd("arc_skeleton", true)
 		h.broadcastProgress()
@@ -3044,7 +3081,7 @@ func (h *Handlers) PostArcOutline(w http.ResponseWriter, r *http.Request) {
 			if ctx.Err() != nil {
 				h.logger.WarnKey("log.arc_task_cancelled")
 			} else {
-				h.logger.ErrorKey("log.arc_task_failed", err.Error())
+				h.logger.ErrorKey("log.arc_task_failed", err)
 			}
 			h.logger.TaskEnd("arc_outline", false)
 			return
@@ -3082,7 +3119,7 @@ func (h *Handlers) PostArcAppend(w http.ResponseWriter, r *http.Request) {
 			if ctx.Err() != nil {
 				h.logger.WarnKey("log.arc_task_cancelled")
 			} else {
-				h.logger.ErrorKey("log.arc_task_failed", err.Error())
+				h.logger.ErrorKey("log.arc_task_failed", err)
 			}
 			h.logger.TaskEnd("arc_append", false)
 			return
@@ -3096,7 +3133,7 @@ func (h *Handlers) PostArcAppend(w http.ResponseWriter, r *http.Request) {
 				h.state.StoryConfigSnapshot = &snapshot
 			}
 			if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
-				h.logger.ErrorKey("log.arc_task_failed", err.Error())
+				h.logger.ErrorKey("log.arc_task_failed", err)
 			}
 			story.SaveProgress(h.progressPath, h.state)
 		}

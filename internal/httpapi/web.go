@@ -289,7 +289,7 @@ func (h *Handlers) PostProject(w http.ResponseWriter, r *http.Request) {
 
 	cfg := config.DefaultConfigForLang(lang)
 	if err := config.SaveConfig(filepath.Join(projectDir, "config.json"), cfg); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "init_project_config_failed", err.Error())
+		h.writeErrorReq(w, r, http.StatusInternalServerError, "init_project_config_failed", err)
 		return
 	}
 
