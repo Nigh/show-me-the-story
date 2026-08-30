@@ -36,3 +36,47 @@ export interface LegacyImportResult {
   available: boolean;
   made_default: boolean;
 }
+
+export interface AuthPromptView {
+  id: string;
+  type: "text" | "secret" | "select" | "manual_code";
+  message: string;
+  placeholder?: string;
+  options?: Array<{ id: string; label: string; description?: string }>;
+}
+
+export interface AuthEventView {
+  cursor: number;
+  type: "info" | "auth_url" | "device_code" | "progress";
+  message?: string;
+  url?: string;
+  code?: string;
+  links?: Array<{ url: string; label?: string }>;
+  interval_seconds?: number;
+  expires_in_seconds?: number;
+}
+
+export interface LoginSnapshot {
+  id: string;
+  provider_id: string;
+  auth_type: AuthType;
+  state: "running" | "waiting" | "succeeded" | "failed" | "cancelled";
+  prompt?: AuthPromptView;
+  events: AuthEventView[];
+  next_cursor: number;
+  error?: string;
+}
+
+export interface LoginStartRequest {
+  provider_id: string;
+  auth_type: AuthType;
+}
+
+export interface LoginResponse {
+  prompt_id: string;
+  value: string;
+}
+
+export interface LogoutRequest {
+  provider_id: string;
+}
