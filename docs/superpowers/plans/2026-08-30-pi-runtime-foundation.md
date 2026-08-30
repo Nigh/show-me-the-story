@@ -167,7 +167,7 @@ For `TestProjectReadEndpointsDoNotMutateCanonicalFiles`, create `snapshotCanonic
 Add the following focused tests to `project_compat_test.go`:
 
 - `TestProjectSwitchKeepsEachProjectIsolated`: create two fixtures with different titles/progress, switch A → B → A, verify the in-memory title/current index each time, and verify both projects' canonical snapshots are unchanged after each switch.
-- `TestLegacyWorkflowTransitionsPersistWithoutPi`: begin from an outline-phase fixture; call `ImportOutlineAction`, assert all imported chapters are `pending`; call `ConfirmOutlineAction`, assert phase `writing`; call `ImportChapterAction`, assert the frontier becomes `review` and `Chapter_01.md` is written; call `ConfirmChapterAction`, assert the chapter becomes `accepted` and `CurrentChapterIndex` advances. Reload `progress.json` after every transition and compare it to memory.
+- `TestLegacyReviewConfirmTransitionsPersist`: begin from an outline-phase fixture with pending chapters; call `ConfirmOutlineAction` and assert phase `writing`; persist a representative generated chapter in `review` state plus `Chapter_01.md`; call `ConfirmChapterAction`, assert the chapter becomes `accepted` and `CurrentChapterIndex` advances. Reload `progress.json` after every transition and compare it to memory. The previously planned outline/chapter import characterization is omitted because those handlers were part of the pre-existing uncommitted work that the user explicitly deleted before implementation; this foundation does not recreate them.
 - `TestTaskCancellationLeavesCanonicalCheckpointUntouched`: build a selected handler, capture its canonical snapshot, install a cancellable running task context under `taskMu`, invoke `PostTaskStop`, require status 200 and `ctx.Err() == context.Canceled`, then require the snapshot is unchanged. Call `endTask` during cleanup so the test leaves no running state.
 
 These tests call current action/handler APIs and must not introduce a fake Pi dependency.
@@ -213,7 +213,7 @@ If the AST reveals a current direct site missing from this list, inspect it and 
 Run:
 
 ```bash
-go test ./... -run 'TestLegacyProject|TestProjectReadEndpointsDoNotMutateCanonicalFiles|TestProjectSwitchKeepsEachProjectIsolated|TestLegacyWorkflowTransitionsPersistWithoutPi|TestTaskCancellationLeavesCanonicalCheckpointUntouched|TestCanonicalWritePrimitivesRemainAllowlisted' -count=1
+go test ./... -run 'TestLegacyProject|TestProjectReadEndpointsDoNotMutateCanonicalFiles|TestProjectSwitchKeepsEachProjectIsolated|TestLegacyReviewConfirmTransitionsPersist|TestTaskCancellationLeavesCanonicalCheckpointUntouched|TestCanonicalWritePrimitivesRemainAllowlisted' -count=1
 ```
 
 Expected: PASS. These are characterization tests, so this task intentionally starts green; any failure is an existing compatibility problem that must be understood before Pi work begins.
