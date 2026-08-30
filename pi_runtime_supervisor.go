@@ -26,11 +26,12 @@ type PiRuntimeOptions struct {
 	Command    func(context.Context, string, ...string) *exec.Cmd
 	NewClient  func(string) PiRuntime
 
-	ReadinessTimeout time.Duration
-	ReadinessPoll    time.Duration
-	ShutdownTimeout  time.Duration
-	Now              func() time.Time
-	Sleep            func(context.Context, time.Duration) error
+	ReadinessTimeout  time.Duration
+	ReadinessPoll     time.Duration
+	ValidationTimeout time.Duration
+	ShutdownTimeout   time.Duration
+	Now               func() time.Time
+	Sleep             func(context.Context, time.Duration) error
 }
 
 type PiRuntimeStatus struct {
@@ -121,6 +122,9 @@ func withPiRuntimeDefaults(progDir string, options PiRuntimeOptions) PiRuntimeOp
 	if options.ReadinessPoll <= 0 {
 		options.ReadinessPoll = 100 * time.Millisecond
 	}
+	if options.ValidationTimeout <= 0 {
+		options.ValidationTimeout = 3 * time.Second
+	}
 	if options.ShutdownTimeout <= 0 {
 		options.ShutdownTimeout = 5 * time.Second
 	}
@@ -143,7 +147,9 @@ func (s *PiRuntimeSupervisor) validate() (piNodeVersion, string) {
 	}
 
 	output := newPiBoundedOutput(32 * 1024)
-	command := s.options.Command(s.ctx, s.options.NodePath, "--version")
+	ctx, cancel := context.WithTimeout(s.ctx, s.options.ValidationTimeout)
+	defer cancel()
+	command := s.options.Command(ctx, s.options.NodePath, "--version")
 	command.Stdout = output
 	command.Stderr = output
 	if err := command.Run(); err != nil {

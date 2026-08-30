@@ -23,17 +23,25 @@ export interface StorySessionFactory {
 export class StorySessionRegistry {
   private active?: { handle: SessionHandle; summary: SessionSummary };
   private queue: Promise<void> = Promise.resolve();
+  private closed = false;
 
   constructor(private readonly factory: StorySessionFactory) {}
 
   select(projectName: string): Promise<SessionSummary> {
     const selection = this.queue.then(async () => {
+      if (this.closed) {
+        throw new Error("story session registry is closed");
+      }
       const id = projectId(projectName);
       if (this.active?.handle.projectId === id) {
         return copySummary(this.active.summary);
       }
 
       const replacement = await this.factory.open(projectName);
+      if (this.closed) {
+        replacement.handle.dispose();
+        throw new Error("story session registry is closed");
+      }
       const summary = replacement.handle.summary(replacement.restored);
       const previous = this.active;
       this.active = { handle: replacement.handle, summary: copySummary(summary) };
@@ -52,6 +60,7 @@ export class StorySessionRegistry {
   }
 
   dispose(): void {
+    this.closed = true;
     this.active?.handle.dispose();
     this.active = undefined;
   }

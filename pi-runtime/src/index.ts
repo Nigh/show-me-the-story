@@ -60,6 +60,15 @@ export function validateSocketPath(socketPath: string, runDir: string): string {
   return socket;
 }
 
+export function startLoginSweeper(
+  logins: Pick<LoginBroker, "sweepExpired">,
+  intervalMs = 60_000,
+): () => void {
+  const timer = setInterval(() => logins.sweepExpired(), intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
 export async function startRuntime(options: RuntimeOptions): Promise<() => Promise<void>> {
   const paths = resolveRuntimePaths(options.dataDir);
   await ensureRuntimePaths(paths);
@@ -68,6 +77,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<() => Promi
   const modelRuntime = await createPiModelRuntime(paths);
   const models = new ModelService(modelRuntime, settings, paths);
   const logins = new LoginBroker(modelRuntime);
+  const stopLoginSweeper = startLoginSweeper(logins);
   const sessions = new StorySessionRegistry(new PiStorySessionFactory(paths, modelRuntime));
   const server = createRuntimeServer({ models, logins, sessions });
 
@@ -75,6 +85,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<() => Promi
   try {
     closeSocket = await listenOnPrivateSocket(server, socketPath);
   } catch (error) {
+    stopLoginSweeper();
     logins.dispose();
     sessions.dispose();
     throw error;
@@ -87,6 +98,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<() => Promi
     }
     closed = true;
     const closingSocket = closeSocket!();
+    stopLoginSweeper();
     logins.dispose();
     sessions.dispose();
     await closingSocket;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AuthType } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseRuntimeOptions, validateSocketPath } from "./index.js";
+import { parseRuntimeOptions, startLoginSweeper, validateSocketPath } from "./index.js";
 import {
   LoginConflictError,
   LoginNotFoundError,
@@ -444,5 +444,17 @@ describe("runtime startup validation", () => {
     expect(() => parseRuntimeOptions(["--data-dir", root])).toThrow("--socket");
     expect(() => validateSocketPath(join(root, "outside.sock"), runDir)).toThrow("outside");
     expect(validateSocketPath(socket, runDir)).toBe(socket);
+  });
+
+  it("periodically sweeps expired login records and stops cleanly", async () => {
+    let sweeps = 0;
+    const stop = startLoginSweeper({ sweepExpired: () => (sweeps += 1) }, 5);
+    await new Promise((resolve) => setTimeout(resolve, 18));
+    stop();
+    const stoppedAt = sweeps;
+    await new Promise((resolve) => setTimeout(resolve, 12));
+
+    expect(stoppedAt).toBeGreaterThan(0);
+    expect(sweeps).toBe(stoppedAt);
   });
 });

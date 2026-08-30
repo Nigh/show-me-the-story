@@ -213,6 +213,39 @@ func TestPiRoutesRejectRemoteOrMismatchedOriginBeforeRuntime(t *testing.T) {
 	}
 }
 
+func TestPiRoutesGuardPreflightBeforeCORS(t *testing.T) {
+	t.Parallel()
+	h := NewHandlers(DefaultAPIConfig(), "", NewLogBroadcaster(), t.TempDir(), "test")
+	h.SetPiRuntime(newRecordingPiRuntime())
+	mux := http.NewServeMux()
+	registerPiRoutes(mux, h)
+	handler := corsMiddleware(mux)
+
+	tests := []struct {
+		name       string
+		remoteAddr string
+		origin     string
+		want       int
+	}{
+		{"remote", "203.0.113.10:1234", "http://local.test", http.StatusForbidden},
+		{"origin mismatch", "127.0.0.1:1234", "http://evil.test", http.StatusForbidden},
+		{"allowed", "127.0.0.1:1234", "http://local.test", http.StatusOK},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodOptions, "/api/pi/providers", nil)
+			request.RemoteAddr = tc.remoteAddr
+			request.Host = "local.test"
+			request.Header.Set("Origin", tc.origin)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != tc.want {
+				t.Fatalf("status = %d, want %d: %s", response.Code, tc.want, response.Body.String())
+			}
+		})
+	}
+}
+
 func piRouteRequest(handler http.Handler, method, target string, body any) *httptest.ResponseRecorder {
 	var encoded []byte
 	if body != nil {

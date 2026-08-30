@@ -132,6 +132,27 @@ describe("StorySessionRegistry", () => {
     expect(factory.sessions[0]?.disposed).toBe(true);
     expect(registry.current()).toBeUndefined();
   });
+
+  it("rejects and disposes a session that finishes opening after shutdown", async () => {
+    const factory = new FakeFactory();
+    let release!: () => void;
+    factory.delays.set(
+      "late",
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const registry = new StorySessionRegistry(factory);
+
+    const selection = registry.select("late");
+    await Promise.resolve();
+    registry.dispose();
+    release();
+
+    await expect(selection).rejects.toThrow("closed");
+    expect(factory.sessions[0]?.disposed).toBe(true);
+    expect(registry.current()).toBeUndefined();
+  });
 });
 
 describe("PiStorySessionFactory", () => {

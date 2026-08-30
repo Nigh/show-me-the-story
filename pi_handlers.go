@@ -299,16 +299,24 @@ func nonNegativeQueryInteger(r *http.Request, name string) (int, error) {
 
 func localPiOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		ip := net.ParseIP(host)
-		if err != nil || ip == nil || !ip.IsLoopback() || !piOriginAllowed(r) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": T(localeFromRequest(r), "pi_local_only")})
+		if !piRequestAllowed(r) {
+			writePiLocalForbidden(w, r)
 			return
 		}
 		next(w, r)
 	}
+}
+
+func piRequestAllowed(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	ip := net.ParseIP(host)
+	return err == nil && ip != nil && ip.IsLoopback() && piOriginAllowed(r)
+}
+
+func writePiLocalForbidden(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": T(localeFromRequest(r), "pi_local_only")})
 }
 
 func piOriginAllowed(r *http.Request) bool {

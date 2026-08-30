@@ -242,6 +242,25 @@ func TestPiRuntimeSupervisorDegradesWithoutNodeEntryOrReadiness(t *testing.T) {
 		}
 	})
 
+	t.Run("hung node version", func(t *testing.T) {
+		root, entry, _, _ := piSupervisorPaths(t)
+		started := time.Now()
+		supervisor := NewPiRuntimeSupervisor(root, PiRuntimeOptions{
+			EntryPath:         entry,
+			ValidationTimeout: 20 * time.Millisecond,
+			Command: func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, "/bin/sh", "-c", "sleep 10")
+			},
+		})
+		defer supervisor.Close()
+		if elapsed := time.Since(started); elapsed > time.Second {
+			t.Fatalf("constructor blocked for %v", elapsed)
+		}
+		if status := supervisor.Status(); status.Available || status.Reason != "node_unavailable" {
+			t.Fatalf("Status() = %#v", status)
+		}
+	})
+
 	t.Run("readiness timeout", func(t *testing.T) {
 		root, entry, dataDir, socketPath := piSupervisorPaths(t)
 		supervisor := NewPiRuntimeSupervisor(root, PiRuntimeOptions{

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 )
 
 var (
@@ -15,6 +18,13 @@ const (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Determine program directory (progDir)
 	// Priority: os.Args[1] if it's a valid existing directory, otherwise use cwd
 	progDir := ""
@@ -32,7 +42,7 @@ func main() {
 		cwd, err := os.Getwd()
 		if err != nil {
 			fmt.Printf(" [错误] 无法获取当前目录: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		progDir = cwd
 	}
@@ -48,7 +58,7 @@ func main() {
 	apiCfg, err := LoadAPIConfig(apiCfgPath)
 	if err != nil {
 		fmt.Printf(" [错误] 加载API配置失败: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	if apiCfg.BaseURL == "" || apiCfg.Model == "" {
@@ -83,5 +93,9 @@ func main() {
 	fmt.Printf(" [系统] 程序目录: %s\n", progDir)
 	fmt.Printf(" [系统] 项目目录: %s\n", storysDir)
 
-	startWebServer(apiCfg, apiCfgPath, cfg, state, settings, skills, sessionsDir, logger, port, progDir, version, piRuntime)
+	if err := startWebServer(ctx, apiCfg, apiCfgPath, cfg, state, settings, skills, sessionsDir, logger, port, progDir, version, piRuntime); err != nil {
+		fmt.Fprintf(os.Stderr, " [错误] 服务器启动失败: %v\n", err)
+		return 1
+	}
+	return 0
 }

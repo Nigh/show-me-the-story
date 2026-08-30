@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -21,7 +22,7 @@ import (
 //go:embed frontend/dist
 var staticFiles embed.FS
 
-func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Progress, settings *ProjectSettings, skills []Skill, sessionsDir string, logger *LogBroadcaster, port string, progDir string, version string, piRuntime PiRuntime) {
+func startWebServer(ctx context.Context, apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Progress, settings *ProjectSettings, skills []Skill, sessionsDir string, logger *LogBroadcaster, port string, progDir string, version string, piRuntime PiRuntime) error {
 	h := NewHandlers(apiCfg, apiCfgPath, logger, progDir, version)
 	h.SetPiRuntime(piRuntime)
 
@@ -173,10 +174,27 @@ func startWebServer(apiCfg *APIConfig, apiCfgPath string, cfg *Config, state *Pr
 
 	go openBrowser(fmt.Sprintf("http://localhost%s", port))
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintf(os.Stderr, " [错误] 服务器启动失败: %v\n", err)
-		os.Exit(1)
+	return serveHTTPServer(ctx, srv, srv.ListenAndServe)
+}
+
+func serveHTTPServer(ctx context.Context, srv *http.Server, serve func() error) error {
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutdownCtx)
+		case <-done:
+		}
+	}()
+
+	err := serve()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
 	}
+	return err
 }
 
 func registerPiRoutes(mux *http.ServeMux, h *Handlers) {
@@ -372,6 +390,10 @@ func (h *Handlers) DeleteProject(w http.ResponseWriter, r *http.Request) {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions && strings.HasPrefix(r.URL.Path, "/api/pi/") && !piRequestAllowed(r) {
+			writePiLocalForbidden(w, r)
+			return
+		}
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
