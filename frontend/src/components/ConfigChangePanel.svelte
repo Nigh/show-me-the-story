@@ -72,11 +72,11 @@
 </script>
 
 {#if $showConfigChangePanel && $pendingConfigChanges.length > 0}
-  <div class="card bg-base-200 border border-primary/30 shadow-sm">
-    <div class="card-body py-4 gap-3">
+  <div class="config-change-panel card bg-base-200 border border-primary/30 shadow-sm">
+    <div class="config-change-body card-body py-4 gap-3">
       <h3 class="font-semibold">{$t('configChange.title', { n: $pendingConfigChanges.length })}</h3>
       <p class="text-sm text-base-content/60">{$t('configChange.hint')}</p>
-      <div class="space-y-2 max-h-80 overflow-y-auto">
+      <div class="config-change-list space-y-2 max-h-80 overflow-y-auto">
         {#each $pendingConfigChanges as c}
           <label class="flex gap-3 p-3 rounded-lg bg-base-300/50 cursor-pointer">
             <input type="checkbox" class="checkbox checkbox-sm mt-1" bind:checked={c._selected} disabled={$taskRunning} />
@@ -96,10 +96,21 @@
           </label>
         {/each}
       </div>
-      <div class="flex gap-2">
+      <div class="config-change-actions flex gap-2">
         <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={applySelected}>{$t('configChange.adopt')}</button>
         <button class="btn btn-ghost btn-sm" disabled={$taskRunning} on:click={dismissAll}>{$t('configChange.dismiss')}</button>
       </div>
     </div>
   </div>
 {/if}
+
+<style>
+  @media (max-width: 63.999rem) {
+    .config-change-body { min-width: 0; padding: 1rem; }
+    .config-change-list { max-height: min(20rem, 50dvh); overscroll-behavior: contain; }
+    .config-change-list label { min-width: 0; }
+    .config-change-list p, .config-change-list .text-xs { overflow-wrap: anywhere; }
+    .config-change-actions { width: 100%; }
+    .config-change-actions .btn { flex: 1; min-height: 44px; }
+  }
+</style>

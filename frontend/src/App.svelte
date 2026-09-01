@@ -1,9 +1,9 @@
 <script>
   import { currentPage } from './lib/router.js';
-  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage } from './lib/stores.js';
+  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage, currentChatSession } from './lib/stores.js';
   import { connectSSE } from './lib/sse.js';
   import { api } from './lib/api.js';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { t, uiLocale, setLocale } from './lib/i18n/index.js';
   import TaskTokenBadge from './components/TaskTokenBadge.svelte';
   import Projects from './pages/Projects.svelte';
@@ -20,6 +20,22 @@
 
   let chatPanel;
 
+  let chatPanelContainer;
+
+  const navItems = [
+    ['config', '⚙️', 'nav.config'],
+    ['outline', '📝', 'nav.outline'],
+    ['writing', '✍️', 'nav.writing'],
+    ['foreshadows', '🔗', 'nav.foreshadows'],
+    ['memory', '🧠', 'nav.memory'],
+    ['relations', '🕸️', 'nav.relations'],
+    ['skills', '🧩', 'nav.skills']
+  ];
+
+  let mobileNavigationOpen = false;
+  let mobileWorkspaceOpen = true;
+  let mobileAssistantOpen = false;
+  let accordionProject;
   let appVersion = '';
   let latestVersion = '';
   let hasUpdate = false;
@@ -27,6 +43,15 @@
   const latestReleaseURL = 'https://github.com/Nigh/show-me-the-story/releases/latest';
 
   $: $contextPage = $currentPage;
+  $: currentNavItem = navItems.find(([page]) => page === $currentPage) || navItems[0];
+
+  // Accordion state is intentionally session-only and starts fresh for each project.
+  $: if ($currentProject !== accordionProject) {
+    accordionProject = $currentProject;
+    mobileNavigationOpen = false;
+    mobileWorkspaceOpen = true;
+    mobileAssistantOpen = false;
+  }
 
   onMount(async () => {
     connectSSE();
@@ -77,7 +102,49 @@
   })();
 
   async function sendToChat(text) {
-    if (chatPanel) await chatPanel.sendMessageToChat(text);
+    await revealAssistant();
+    if (chatPanel) {
+      await chatPanel.sendMessageToChat(text);
+      await chatPanel.reveal();
+    }
+  }
+
+  function isMobileLayout() {
+    return typeof window !== 'undefined' && window.matchMedia('(max-width: 63.999rem)').matches;
+  }
+
+  async function revealAssistant() {
+    mobileAssistantOpen = true;
+    await tick();
+    if (isMobileLayout() && chatPanelContainer) {
+      chatPanelContainer.scrollIntoView({ block: 'nearest' });
+    }
+    if (chatPanel) await chatPanel.reveal();
+  }
+
+  async function toggleAssistant() {
+    if (mobileAssistantOpen) {
+      mobileAssistantOpen = false;
+      return;
+    }
+    await revealAssistant();
+  }
+
+  async function toggleWorkspace() {
+    mobileWorkspaceOpen = !mobileWorkspaceOpen;
+    if (mobileWorkspaceOpen) {
+      await tick();
+      // Canvas-based pages use the window resize event to remeasure after reveal.
+      window.dispatchEvent(new Event('resize'));
+    }
+  }
+
+  async function navigateTo(page) {
+    mobileNavigationOpen = false;
+    mobileWorkspaceOpen = true;
+    window.location.hash = '#' + page;
+    await tick();
+    window.dispatchEvent(new Event('resize'));
   }
 
   function backToProjects() {
@@ -89,46 +156,46 @@
   }
 </script>
 
-<div class="flex flex-col h-screen bg-base-300 text-base-content overflow-hidden">
+<div class="app-shell flex flex-col bg-base-300 text-base-content overflow-hidden">
   <!-- Header -->
-  <header class="navbar bg-base-200 border-b border-base-content/10 px-6 min-h-[46px] shrink-0 gap-4">
-    <span class="text-lg font-semibold">{$t('app.title')}</span>
+  <header class="app-header navbar bg-base-200 border-b border-base-content/10 px-6 min-h-[46px] shrink-0 gap-4">
+    <span class="app-title text-lg font-semibold">{$t('app.title')}</span>
     {#if appVersion}
-      <span class="badge badge-xs badge-ghost font-mono">{appVersion}</span>
+      <span class="header-meta badge badge-xs badge-ghost font-mono">{appVersion}</span>
     {/if}
     {#if hasUpdate}
-      <a href={latestReleaseURL} target="_blank" rel="noopener" class="badge badge-xs badge-warning gap-0.5 no-underline">
+      <a href={latestReleaseURL} target="_blank" rel="noopener" class="header-meta badge badge-xs badge-warning gap-0.5 no-underline">
         {$t('app.newVersion')}
       </a>
     {/if}
     {#if $currentProject}
-      <span class="badge badge-sm badge-outline">{$currentProject}</span>
-      <span class="badge badge-sm badge-accent uppercase" title={$projectLanguage === 'en' ? 'English' : '中文'}>
+      <span class="header-meta header-project badge badge-sm badge-outline">{$currentProject}</span>
+      <span class="header-meta badge badge-sm badge-accent uppercase" title={$projectLanguage === 'en' ? 'English' : '中文'}>
         {$projectLanguage === 'en' ? 'EN' : 'ZH'}
       </span>
       <button
-        class="btn btn-ghost btn-xs gap-1"
+        class="header-meta header-action btn btn-ghost btn-xs gap-1"
         on:click={backToProjects}
         disabled={$taskRunning}
         title={$taskRunning ? $t('app.switchProject.disabled') : $t('app.switchProject.tooltip')}
       >
         {$t('app.switchProject')}
       </button>
-      <span class="badge badge-sm" class:badge-primary={$progress}>{phase}</span>
+      <span class="header-meta badge badge-sm" class:badge-primary={$progress}>{phase}</span>
       {#if chapterStats}
-        <span class="badge badge-sm badge-ghost">{chapterStats}</span>
+        <span class="header-meta badge badge-sm badge-ghost">{chapterStats}</span>
       {/if}
       {#if $taskRunning}
-        <span class="badge badge-sm badge-warning gap-1">
+        <span class="header-meta badge badge-sm badge-warning gap-1">
           <span class="loading loading-spinner loading-xs"></span>
           {$t('app.aiThinking')}
           <TaskTokenBadge className="badge badge-xs badge-warning font-mono border-0" />
         </span>
       {/if}
     {/if}
-    <span class="flex-1"></span>
+    <span class="header-spacer flex-1"></span>
     <button
-      class="btn btn-ghost btn-xs gap-1"
+      class="header-locale btn btn-ghost btn-xs gap-1"
       on:click={toggleLocale}
       title={$t('app.uiLang.label')}
     >
@@ -138,33 +205,66 @@
 
   {#if !$currentProject}
     <!-- Project selection -->
-    <main class="flex-1 overflow-y-auto p-6">
+    <main class="project-main flex-1 overflow-y-auto p-6">
       <Projects />
     </main>
   {:else}
-    <div class="flex flex-1 overflow-hidden">
+    <div class="workspace-shell flex flex-1 overflow-hidden">
+      <button
+        type="button"
+        class="mobile-section-toggle"
+        data-mobile-toggle="navigation"
+        aria-expanded={mobileNavigationOpen}
+        aria-controls="mobile-navigation-panel"
+        title={mobileNavigationOpen ? $t('app.mobile.collapse') : $t('app.mobile.expand')}
+        on:click={() => mobileNavigationOpen = !mobileNavigationOpen}
+      >
+        <span aria-hidden="true">☰</span>
+        <span class="font-semibold">{$t('app.mobile.navigation')}</span>
+        <span class="mobile-section-summary">{$t(currentNavItem[2])}</span>
+        <span class:rotate-180={mobileNavigationOpen} class="mobile-section-chevron" aria-hidden="true">⌄</span>
+      </button>
+
       <!-- Left: vertical nav -->
-      <nav class="flex flex-col w-44 shrink-0 bg-base-200 border-r border-base-content/10 py-3 px-2 gap-0.5">
-        {#each [
-          ['config', '⚙️', 'nav.config'],
-          ['outline', '📝', 'nav.outline'],
-          ['writing', '✍️', 'nav.writing'],
-          ['foreshadows', '🔗', 'nav.foreshadows'],
-          ['memory', '🧠', 'nav.memory'],
-          ['relations', '🕸️', 'nav.relations'],
-          ['skills', '🧩', 'nav.skills']
-        ] as [page, icon, labelKey]}
+      <nav
+        id="mobile-navigation-panel"
+        class="mobile-nav flex flex-col w-44 shrink-0 bg-base-200 border-r border-base-content/10 py-3 px-2 gap-0.5"
+        class:mobile-panel-collapsed={!mobileNavigationOpen}
+        data-mobile-body="navigation"
+        aria-label={$t('app.mobile.navigation')}
+      >
+        {#each navItems as [page, icon, labelKey]}
           <button
             class="btn btn-sm justify-start w-full gap-2 px-3 text-sm {$currentPage === page ? 'btn-primary font-medium' : 'btn-ghost'}"
-            on:click={() => window.location.hash = '#' + page}
+            on:click={() => navigateTo(page)}
           >
             <span class="text-xs">{icon}</span>{$t(labelKey)}
           </button>
         {/each}
       </nav>
 
+      <button
+        type="button"
+        class="mobile-section-toggle"
+        data-mobile-toggle="workspace"
+        aria-expanded={mobileWorkspaceOpen}
+        aria-controls="mobile-workspace-panel"
+        title={mobileWorkspaceOpen ? $t('app.mobile.collapse') : $t('app.mobile.expand')}
+        on:click={toggleWorkspace}
+      >
+        <span aria-hidden="true">📖</span>
+        <span class="font-semibold">{$t('app.mobile.workspace')}</span>
+        <span class="mobile-section-summary">{$t(currentNavItem[2])}</span>
+        <span class:rotate-180={mobileWorkspaceOpen} class="mobile-section-chevron" aria-hidden="true">⌄</span>
+      </button>
+
       <!-- Center: page content -->
-      <main class="flex-1 min-w-0 overflow-y-auto p-4 border-r border-base-content/10">
+      <main
+        id="mobile-workspace-panel"
+        class="mobile-workspace flex-1 min-w-0 overflow-y-auto p-4 border-r border-base-content/10"
+        class:mobile-panel-collapsed={!mobileWorkspaceOpen}
+        data-mobile-body="workspace"
+      >
         {#if $currentPage === 'config'}
           <Config {sendToChat} />
         {:else if $currentPage === 'outline'}
@@ -182,15 +282,38 @@
         {/if}
       </main>
 
+      <button
+        type="button"
+        class="mobile-section-toggle"
+        data-mobile-toggle="assistant"
+        aria-expanded={mobileAssistantOpen}
+        aria-controls="mobile-assistant-panel"
+        title={mobileAssistantOpen ? $t('app.mobile.collapse') : $t('app.mobile.expand')}
+        on:click={toggleAssistant}
+      >
+        <span aria-hidden="true">💬</span>
+        <span class="font-semibold">{$t('app.mobile.assistant')}</span>
+        <span class="mobile-section-summary">
+          {#if $taskRunning}{$t('app.aiThinking')}{:else}{$currentChatSession?.title || $t('chat.session.placeholder')}{/if}
+        </span>
+        <span class:rotate-180={mobileAssistantOpen} class="mobile-section-chevron" aria-hidden="true">⌄</span>
+      </button>
+
       <!-- Right: Chat Panel -->
-      <div class="flex-1 min-w-0 bg-base-200 overflow-hidden">
+      <div
+        id="mobile-assistant-panel"
+        bind:this={chatPanelContainer}
+        class="mobile-chat-panel flex-1 min-w-0 bg-base-200 overflow-hidden"
+        class:mobile-panel-collapsed={!mobileAssistantOpen}
+        data-mobile-body="assistant"
+      >
         <ChatPanel bind:this={chatPanel} contextPage={$currentPage} />
       </div>
     </div>
   {/if}
 
   <!-- Toasts -->
-  <div class="fixed top-5 right-5 z-50 flex flex-col gap-2">
+  <div class="app-toasts fixed top-5 right-5 z-50 flex flex-col gap-2">
     {#each $toastStore as t (t.id)}
       <div class="alert alert-sm {t.type === 'success' ? 'alert-success' : t.type === 'error' ? 'alert-error' : 'alert-info'} toast-enter shadow-lg max-w-sm">
         <span>{t.msg}</span>

@@ -16,6 +16,8 @@
   let showWvForm = false;
   let charCollapse = false;
   let wvCollapse = false;
+  let mobileApiOpen = false;
+  let mobileStoryOpen = true;
 
   let charName = '', charAge = '', charAppearance = '', charPersonality = '', charBackground = '', charMotivation = '', charAbilities = '', charNotes = '';
   let wvName = '', wvCategory = 'other', wvDescription = '', wvTags = '';
@@ -446,14 +448,16 @@
   }
 </script>
 
-<div class="space-y-3">
+<div class="config-page space-y-3">
   <ConfigChangePanel />
   <!-- API + Story Config: side by side -->
-  <div class="grid grid-cols-2 gap-3">
+  <div class="config-main-grid grid grid-cols-2 gap-3">
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4 gap-2">
-        <h3 class="card-title text-base">{$t('config.api.title')}</h3>
-        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        <button type="button" class="mobile-config-toggle" data-mobile-toggle="config-api" aria-expanded={mobileApiOpen} on:click={() => mobileApiOpen = !mobileApiOpen}><span>{$t('config.api.title')}</span><span class:rotate-180={mobileApiOpen} aria-hidden="true">⌄</span></button>
+        <div class="config-disclosure-content" data-mobile-body="config-api" class:mobile-config-collapsed={!mobileApiOpen}>
+        <h3 class="desktop-config-title card-title text-base">{$t('config.api.title')}</h3>
+        <div class="mobile-stack-grid grid grid-cols-2 gap-x-3 gap-y-1.5">
           <div class="col-span-2">
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.baseUrl')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localApiCfg.base_url} placeholder="https://api.openai.com/v1" disabled={$taskRunning || testingApi} />
@@ -508,18 +512,21 @@
           </button>
           <button class="btn btn-primary btn-xs" on:click={saveAPIConfig} disabled={$taskRunning || testingApi}>{$t('common.save')}</button>
         </div>
+        </div>
       </div>
     </div>
 
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4 gap-2">
-        <h3 class="card-title text-base">{$t('config.story.title')}</h3>
+        <button type="button" class="mobile-config-toggle" data-mobile-toggle="config-story" aria-expanded={mobileStoryOpen} on:click={() => mobileStoryOpen = !mobileStoryOpen}><span>{$t('config.story.title')}</span><span class:rotate-180={mobileStoryOpen} aria-hidden="true">⌄</span></button>
+        <div class="config-disclosure-content" data-mobile-body="config-story" class:mobile-config-collapsed={!mobileStoryOpen}>
+        <h3 class="desktop-config-title card-title text-base">{$t('config.story.title')}</h3>
         {#if hasAccepted}
           <div class="alert alert-warning text-xs py-1.5 px-3">
             <span>{$t('config.story.acceptedHint')}</span>
           </div>
         {/if}
-        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        <div class="mobile-stack-grid grid grid-cols-2 gap-x-3 gap-y-1.5">
           <div>
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.type')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localStoryCfg.type} placeholder={$t('config.story.type.placeholder')} disabled={$taskRunning} />
@@ -539,6 +546,7 @@
         </div>
         <div class="flex justify-end">
           <button class="btn btn-primary btn-xs" on:click={saveStoryConfig} disabled={$taskRunning}>{$t('common.save')}</button>
+        </div>
         </div>
       </div>
     </div>
@@ -583,7 +591,7 @@
         <svg class="w-4 h-4 text-base-content/40 transition-transform" class:rotate-180={charCollapse} viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
       </div>
       {#if !charCollapse}
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+        <div class="mobile-card-grid grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
           {#if chars.length === 0}
             <p class="text-xs text-base-content/40 col-span-full py-2">{$t('config.char.empty')}</p>
           {:else}
@@ -594,7 +602,7 @@
                   <div class="text-sm font-medium truncate">{stripNameMarks(c.name)}</div>
                   <div class="text-xs text-base-content/40 line-clamp-1">{c.personality || c.background || c.age || ''}</div>
                 </div>
-                <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <div class="touch-visible-actions flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                   <button class="btn btn-ghost btn-xs px-1" on:click={() => openCharForm(c)} disabled={$taskRunning}>{$t('common.edit')}</button>
                   <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteCharacter(c.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
@@ -605,7 +613,7 @@
 
         {#if showCharForm}
           <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+            <div class="mobile-stack-grid grid grid-cols-2 gap-x-3 gap-y-1.5">
               <div>
                 <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.name')}</span>
                 <input type="text" class="input input-sm w-full" bind:value={charName} disabled={$taskRunning} />
@@ -615,7 +623,7 @@
                 <input type="text" class="input input-sm w-full" bind:value={charAge} disabled={$taskRunning} />
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+            <div class="mobile-stack-grid grid grid-cols-2 gap-x-3 gap-y-1.5">
               <div>
                 <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.char.appearance')}</span>
                 <textarea class="textarea textarea-sm w-full h-14 text-sm" bind:value={charAppearance} disabled={$taskRunning}></textarea>
@@ -641,14 +649,14 @@
                 <textarea class="textarea textarea-sm w-full h-14 text-sm" bind:value={charNotes} disabled={$taskRunning}></textarea>
               </div>
             </div>
-            <div class="flex gap-1.5">
+            <div class="flex gap-1.5 max-lg:flex-wrap">
               <button class="btn btn-success btn-xs" on:click={saveCharacter} disabled={$taskRunning}>{$t('config.char.save')}</button>
               <button class="btn btn-ghost btn-xs" on:click={closeCharForm}>{$t('common.cancel')}</button>
             </div>
           </div>
         {/if}
 
-        <div class="flex gap-1.5">
+        <div class="flex gap-1.5 max-lg:flex-wrap">
           <button class="btn btn-primary btn-xs" on:click={requestNewChar} disabled={$taskRunning}>{$t('config.char.create')}</button>
           {#if chars.length > 0}
             <button class="btn btn-accent btn-xs" on:click={submitCharacters} disabled={$taskRunning}>{$t('config.char.submit')}</button>
@@ -668,7 +676,7 @@
         <svg class="w-4 h-4 text-base-content/40 transition-transform" class:rotate-180={wvCollapse} viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
       </div>
       {#if !wvCollapse}
-        <div class="tabs tabs-box tabs-xs bg-base-300 w-fit">
+        <div class="mobile-tabs tabs tabs-box tabs-xs bg-base-300 w-fit">
           {#each wvTabs as [cat, label]}
             <button class="tab tab-xs {$wvFilter === cat ? 'tab-active' : ''}" on:click={() => wvFilter.set(cat)}>
               {label}
@@ -676,7 +684,7 @@
           {/each}
         </div>
 
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+        <div class="mobile-card-grid grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
           {#if filteredWvs.length === 0}
             <p class="text-xs text-base-content/40 col-span-full py-2">{$t('config.wv.empty')}</p>
           {:else}
@@ -687,7 +695,7 @@
                   <div class="text-sm font-medium truncate">{w.name} <span class="text-xs font-normal text-base-content/30">[{catLabels[w.category] || w.category}]</span></div>
                   <div class="text-xs text-base-content/40 line-clamp-1">{w.description}</div>
                 </div>
-                <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <div class="touch-visible-actions flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                   <button class="btn btn-ghost btn-xs px-1" on:click={() => openWvForm(w)} disabled={$taskRunning}>{$t('common.edit')}</button>
                   <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteWorldview(w.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
@@ -698,7 +706,7 @@
 
         {#if showWvForm}
           <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+            <div class="mobile-stack-grid grid grid-cols-2 gap-x-3 gap-y-1.5">
               <div>
                 <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.name')}</span>
                 <input type="text" class="input input-sm w-full" bind:value={wvName} disabled={$taskRunning} />
@@ -722,14 +730,14 @@
               <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.wv.tags')}</span>
               <input type="text" class="input input-sm w-full" bind:value={wvTags} placeholder={$t('config.wv.tags.placeholder')} disabled={$taskRunning} />
             </div>
-            <div class="flex gap-1.5">
+            <div class="flex gap-1.5 max-lg:flex-wrap">
               <button class="btn btn-success btn-xs" on:click={saveWorldview} disabled={$taskRunning}>{$t('common.save')}</button>
               <button class="btn btn-ghost btn-xs" on:click={closeWvForm}>{$t('common.cancel')}</button>
             </div>
           </div>
         {/if}
 
-        <div class="flex gap-1.5">
+        <div class="flex gap-1.5 max-lg:flex-wrap">
           <button class="btn btn-primary btn-xs" on:click={requestNewWv} disabled={$taskRunning}>{$t('config.wv.create')}</button>
           {#if allWvs.length > 0}
             <button class="btn btn-accent btn-xs" on:click={submitWorldview} disabled={$taskRunning}>{$t('config.wv.submit')}</button>
@@ -749,7 +757,7 @@
         <svg class="w-4 h-4 text-base-content/40 transition-transform" class:rotate-180={orgCollapse} viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
       </div>
       {#if !orgCollapse}
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+        <div class="mobile-card-grid grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
           {#if orgs.length === 0}
             <p class="text-xs text-base-content/40 col-span-full py-2">{$t('config.org.empty')}</p>
           {:else}
@@ -763,7 +771,7 @@
                     <div class="text-xs text-base-content/35 line-clamp-1 mt-0.5">{$t('config.org.membersList', { names: (o.members || []).map(id => nameById[id] || id).join(', ') })}</div>
                   {/if}
                 </div>
-                <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <div class="touch-visible-actions flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                   <button class="btn btn-ghost btn-xs px-1" on:click={() => openOrgForm(o)} disabled={$taskRunning}>{$t('common.edit')}</button>
                   <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteOrganization(o.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
@@ -774,7 +782,7 @@
 
         {#if showOrgForm}
           <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+            <div class="mobile-stack-grid grid grid-cols-2 gap-x-3 gap-y-1.5">
               <div>
                 <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.org.name')}</span>
                 <input type="text" class="input input-sm w-full" bind:value={orgName} disabled={$taskRunning} />
@@ -801,14 +809,14 @@
                 </div>
               </div>
             {/if}
-            <div class="flex gap-1.5">
+            <div class="flex gap-1.5 max-lg:flex-wrap">
               <button class="btn btn-success btn-xs" on:click={saveOrganization} disabled={$taskRunning}>{$t('config.org.save')}</button>
               <button class="btn btn-ghost btn-xs" on:click={closeOrgForm}>{$t('common.cancel')}</button>
             </div>
           </div>
         {/if}
 
-        <div class="flex gap-1.5">
+        <div class="flex gap-1.5 max-lg:flex-wrap">
           <button class="btn btn-primary btn-xs" on:click={requestNewOrg} disabled={$taskRunning}>{$t('config.org.create')}</button>
         </div>
       {/if}
@@ -825,7 +833,7 @@
         <svg class="w-4 h-4 text-base-content/40 transition-transform" class:rotate-180={relCollapse} viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
       </div>
       {#if !relCollapse}
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
+        <div class="mobile-card-grid grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
           {#if rels.length === 0}
             <p class="text-xs text-base-content/40 col-span-full py-2">{$t('config.rel.empty')}</p>
           {:else}
@@ -837,7 +845,7 @@
                   <span class="text-base-content/40">→</span>
                   <span class="font-medium">{entityIcons[r.target_type] || ''} {nameById[r.target_id] || r.target_id}</span>
                 </div>
-                <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <div class="touch-visible-actions flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                   <button class="btn btn-ghost btn-xs px-1" on:click={() => openRelForm(r)} disabled={$taskRunning}>{$t('common.edit')}</button>
                   <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteRelation(r.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
@@ -848,7 +856,7 @@
 
         {#if showRelForm}
           <div class="bg-base-300 rounded-lg p-3 space-y-2 mt-1">
-            <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
+            <div class="mobile-relation-grid grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
               <div>
                 <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.rel.source')}</span>
                 <select class="select select-sm w-full" bind:value={relSource} disabled={$taskRunning}>
@@ -873,14 +881,14 @@
               <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.rel.label')}</span>
               <input type="text" class="input input-sm w-full" bind:value={relLabel} placeholder={$t('config.rel.label.placeholder')} disabled={$taskRunning} />
             </div>
-            <div class="flex gap-1.5">
+            <div class="flex gap-1.5 max-lg:flex-wrap">
               <button class="btn btn-success btn-xs" on:click={saveRelation} disabled={$taskRunning}>{$t('config.rel.save')}</button>
               <button class="btn btn-ghost btn-xs" on:click={closeRelForm}>{$t('common.cancel')}</button>
             </div>
           </div>
         {/if}
 
-        <div class="flex gap-1.5">
+        <div class="flex gap-1.5 max-lg:flex-wrap">
           <button class="btn btn-primary btn-xs" on:click={requestNewRel} disabled={$taskRunning || entityOptions.length < 2}>{$t('config.rel.create')}</button>
           {#if entityOptions.length < 2}
             <span class="text-xs text-base-content/35 self-center">{$t('config.rel.needTwo')}</span>
@@ -890,3 +898,26 @@
     </div>
   </div>
 </div>
+
+<style>
+  .mobile-config-toggle { display: none; }
+  .config-disclosure-content { display: contents; }
+  @media (max-width: 63.999rem) {
+    .config-main-grid { grid-template-columns: minmax(0, 1fr); }
+    .mobile-config-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; text-align: left; font-weight: 600; }
+    .mobile-config-toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+    .mobile-config-toggle > span:last-child { transition: transform .15s ease; }
+    .desktop-config-title { display: none; }
+    .config-disclosure-content { display: flex; flex-direction: column; gap: .5rem; }
+    .config-disclosure-content.mobile-config-collapsed { display: none; }
+    .mobile-stack-grid, .mobile-card-grid { grid-template-columns: minmax(0, 1fr); }
+    .mobile-stack-grid > .col-span-2 { grid-column: auto; }
+    .mobile-relation-grid { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+    .mobile-relation-grid > span { justify-self: center; padding: 0; transform: rotate(90deg); }
+    .touch-visible-actions { opacity: 1; }
+    .mobile-tabs { max-width: 100%; overflow-x: auto; }
+    .config-page input, .config-page textarea, .config-page select { font-size: 16px; }
+    .config-page .btn { min-height: 44px; }
+    .config-page .card-body > div.cursor-pointer { min-height: 44px; }
+  }
+</style>

@@ -15,6 +15,11 @@ export default {
   'app.uiLang.label': '界面语言',
   'app.uiLang.zh': '中',
   'app.uiLang.en': 'EN',
+  'app.mobile.navigation': '导航',
+  'app.mobile.workspace': '工作区',
+  'app.mobile.assistant': '创作助手',
+  'app.mobile.expand': '展开区域',
+  'app.mobile.collapse': '收起区域',
 
   // Navigation
   'nav.config': '配置',
@@ -545,6 +550,9 @@ export default {
   'outline.toasts.arcAppendStarted': '追加新卷任务已启动',
 
   // ---- Writing page ----
+  'writing.mobile.chapters': '章节列表',
+  'writing.mobile.editor': '编辑器',
+  'writing.mobile.actions': '操作',
   'writing.notReady.title': '尚未进入写作阶段',
   'writing.notReady.hint': '请先在「大纲」页生成并确认大纲',
   'writing.notReady.goto': '前往大纲页',
@@ -736,6 +744,10 @@ export default {
   'relations.legend.character': '角色',
   'relations.legend.worldview': '世界观',
   'relations.legend.organization': '组织',
+  'relations.zoomIn': '放大',
+  'relations.zoomOut': '缩小',
+  'relations.resetView': '重置视图',
+  'relations.gestureHint': '拖动平移 · 双指捏合或滚动缩放',
 
   // ---- Skills page ----
   'skills.title': '技能管理',

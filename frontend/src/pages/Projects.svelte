@@ -93,11 +93,11 @@
 </script>
 
 <div class="flex items-center justify-center min-h-[60vh]">
-  <div class="w-full max-w-xl space-y-6">
+  <div class="w-full max-w-xl space-y-6 max-lg:space-y-4">
     <!-- Title -->
     <div class="text-center">
-      <div class="text-5xl mb-4">📚</div>
-      <h2 class="text-2xl font-bold mb-1">{$t('projects.title')}</h2>
+      <div class="text-5xl mb-4 max-lg:text-4xl max-lg:mb-2">📚</div>
+      <h2 class="text-2xl font-bold mb-1 max-lg:text-xl">{$t('projects.title')}</h2>
       <p class="text-sm text-base-content/50">{$t('projects.subtitle')}</p>
     </div>
 
@@ -113,8 +113,8 @@
           on:keydown={handleKeydown}
           disabled={creating}
         />
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex items-center gap-2">
+        <div class="flex items-center justify-between gap-3 max-lg:flex-col max-lg:items-stretch">
+          <div class="flex items-center gap-2 max-lg:justify-between">
             <span class="text-xs text-base-content/50">{$t('projects.create.lang')}</span>
             <div class="join">
               <button
@@ -132,7 +132,7 @@
             </div>
           </div>
           <button
-            class="btn btn-primary btn-sm"
+            class="btn btn-primary btn-sm max-lg:w-full"
             on:click={createProject}
             disabled={creating || !newProjectName.trim()}
           >
@@ -159,7 +159,7 @@
               <!-- svelte-ignore a11y-click-events-have-key-events -->
               <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div
-                class="flex items-center gap-3 bg-base-300 rounded-lg p-3 transition-colors group {p.compatibility === 'supported' ? 'cursor-pointer hover:bg-base-300/80' : 'opacity-60'}"
+                class="flex items-center gap-3 max-lg:gap-2 max-lg:flex-wrap bg-base-300 rounded-lg p-3 transition-colors group {p.compatibility === 'supported' ? 'cursor-pointer hover:bg-base-300/80' : 'opacity-60'}"
                 class:ring-1={$currentProject === p.name}
                 class:ring-primary={$currentProject === p.name}
                 on:click={() => selectProject(p.name)}
@@ -192,7 +192,7 @@
                   <span class="badge badge-primary badge-xs">{$t('projects.current')}</span>
                 {:else}
                   <button
-                    class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                    class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 max-lg:opacity-100 transition-opacity"
                     on:click|stopPropagation={() => deleteProject(p.name)}
                     disabled={$taskRunning}
                   >

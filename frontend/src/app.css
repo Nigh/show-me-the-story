@@ -43,13 +43,226 @@
 }
 
 html, body, #app {
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 
 body {
   font-family: var(--font-sans);
   font-size: 15px;
+}
+
+.app-shell {
+  height: 100vh;
+}
+
+.mobile-section-toggle {
+  display: none;
+}
+
+@media (max-width: 63.999rem) {
+  body {
+    overscroll-behavior: none;
+  }
+
+  .app-shell {
+    box-sizing: border-box;
+    height: 100svh;
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .app-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 0.375rem 0.5rem;
+    min-height: 3rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .app-title {
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header-locale {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .header-meta {
+    order: 3;
+  }
+
+  .header-spacer {
+    display: none;
+  }
+
+  .header-project {
+    display: inline-block;
+    max-width: min(12rem, 55vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-main {
+    padding: 0.75rem;
+  }
+
+  .workspace-shell {
+    flex-direction: column;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-section-toggle {
+    display: flex;
+    flex: none;
+    align-items: center;
+    width: 100%;
+    min-height: 3rem;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+    color: var(--color-base-content);
+    text-align: left;
+    background: var(--color-base-200);
+    border: 0;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  }
+
+  .mobile-section-toggle:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+  }
+
+  .mobile-section-summary {
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-section-chevron {
+    flex: none;
+    transition: transform 0.2s ease;
+  }
+
+  .mobile-panel-collapsed {
+    display: none !important;
+  }
+
+  .mobile-nav {
+    display: grid;
+    flex: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 0.375rem;
+    padding: 0.5rem;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  }
+
+  .mobile-workspace {
+    flex: none;
+    width: 100%;
+    padding: 0.75rem;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  }
+
+  .mobile-chat-panel {
+    flex: none;
+    width: 100%;
+    height: clamp(18rem, calc(100vh - 14rem), 48rem);
+    height: clamp(18rem, calc(100svh - 14rem), 48rem);
+    height: clamp(18rem, calc(100dvh - 14rem), 48rem);
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  }
+
+  .app-header .btn,
+  .mobile-nav .btn,
+  .mobile-workspace .btn,
+  .mobile-chat-panel .btn {
+    height: auto;
+    min-height: 2.75rem;
+  }
+
+  .chat-toolbar,
+  .chat-failure-bar {
+    flex-wrap: wrap;
+  }
+
+  .chat-toolbar > span {
+    min-width: 4rem;
+  }
+
+  .chat-session-delete {
+    opacity: 1;
+  }
+
+  .chat-messages {
+    min-height: 0;
+  }
+
+  .chat-composer textarea,
+  .app-shell input,
+  .app-shell select,
+  .app-shell textarea {
+    font-size: 16px;
+  }
+
+  .app-toasts {
+    top: max(0.75rem, env(safe-area-inset-top));
+    right: max(0.75rem, env(safe-area-inset-right));
+    left: max(0.75rem, env(safe-area-inset-left));
+  }
+
+  .app-toasts .alert {
+    width: 100%;
+    max-width: none;
+  }
+
+  .md-body {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .md-body pre {
+    max-width: 100%;
+  }
+
+  .md-body table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .md-body img,
+  .md-body video,
+  .md-body svg {
+    max-width: 100%;
+    height: auto;
+  }
 }
 
 /* Toast animation */
