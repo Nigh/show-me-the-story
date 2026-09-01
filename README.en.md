@@ -15,6 +15,7 @@ The program ships with no story content of its own — the genre, world, charact
 ## Highlights
 
 - **Single executable**: one binary plus a browser, no database or other dependencies
+- **Responsive on phone and desktop**: desktop keeps the navigation / workspace / AI-assistant three-pane layout; narrow screens switch to stacked collapsible sections with mobile-friendly tables, forms, writing controls, and safe-area handling
 - **Multi-project**: each novel lives in its own project; switch / create / delete freely
 - **Two-phase writing**: AI first drafts a full outline for you to review and revise; once confirmed, it writes chapter by chapter
 - **Chapter review**: after each chapter, confirm or request revisions; the AI does targeted, minimal edits without disturbing other chapters

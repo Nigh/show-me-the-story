@@ -8,6 +8,7 @@
   let canvas;
   let container;
   let graph = null;
+  let resizeObserver = null;
   let memberEdgeLabel = '';
 
   function stripNameMarks(name) {
@@ -30,6 +31,11 @@
       this.alpha = 1;
       this.needsFit = true;
       this.params = layoutParams(1);
+      this.activePointers = new Map();
+      this.dragPointerId = null;
+      this.panPointerId = null;
+      this.lastPanPoint = null;
+      this.pinch = null;
       this.running = true;
       this.updateData(data);
       this.setupEvents();
@@ -91,6 +97,7 @@
       }
     }
     resize(w, h) {
+      if (w <= 0 || h <= 0 || (this.canvas.width === w && this.canvas.height === h)) return;
       this.canvas.width = w;
       this.canvas.height = h;
       // Viewport changed after a settled layout — re-fit so the graph still fills the area.
@@ -98,7 +105,17 @@
         this.needsFit = true;
       }
     }
-    destroy() { this.running = false; }
+    destroy() {
+      this.running = false;
+      const c = this.canvas;
+      c.removeEventListener('pointerdown', this.onPointerDown);
+      c.removeEventListener('pointermove', this.onPointerMove);
+      c.removeEventListener('pointerup', this.onPointerUp);
+      c.removeEventListener('pointercancel', this.onPointerCancel);
+      c.removeEventListener('lostpointercapture', this.onLostPointerCapture);
+      c.removeEventListener('pointerleave', this.onPointerLeave);
+      c.removeEventListener('wheel', this.onWheel);
+    }
     toWorld(mx, my) { return { x: (mx - this.panX) / this.scale, y: (my - this.panY) / this.scale }; }
     wake(minAlpha = 0.35) {
       this.alpha = Math.max(this.alpha, minAlpha);
@@ -109,54 +126,182 @@
       this.panX = t.panX;
       this.panY = t.panY;
     }
+    localPoint(e) {
+      const r = this.canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top, pointerType: e.pointerType };
+    }
+    hitTest(point) {
+      const p = this.toWorld(point.x, point.y);
+      for (let i = this.nodes.length - 1; i >= 0; i--) {
+        const n = this.nodes[i];
+        if (Math.hypot(n.x - p.x, n.y - p.y) < n.r + 4) return n;
+      }
+      return null;
+    }
+    updateHover(point) {
+      this.hovering = this.hitTest(point);
+      this.canvas.style.cursor = this.hovering ? 'pointer' : 'default';
+    }
+    clampScale(value) { return Math.max(0.15, Math.min(3, value)); }
+    zoomAt(factor, mx, my) {
+      const next = this.clampScale(this.scale * factor);
+      if (next === this.scale) return;
+      this.panX = mx - (mx - this.panX) * (next / this.scale);
+      this.panY = my - (my - this.panY) * (next / this.scale);
+      this.scale = next;
+      this.needsFit = false; // user took over the camera
+    }
+    zoomBy(factor) {
+      this.zoomAt(factor, this.canvas.clientWidth / 2, this.canvas.clientHeight / 2);
+    }
+    resetView() {
+      this.fitView();
+      this.needsFit = false;
+      this.hovering = null;
+      this.canvas.style.cursor = 'default';
+    }
+    touchPointers() {
+      return [...this.activePointers.entries()].filter(([, p]) => p.pointerType === 'touch');
+    }
+    beginPinch() {
+      const pointers = this.touchPointers();
+      if (pointers.length < 2) return;
+      const [, a] = pointers[0];
+      const [, b] = pointers[1];
+      const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const anchor = this.toWorld(midpoint.x, midpoint.y);
+      this.pinch = {
+        distance: Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1),
+        scale: this.scale,
+        anchor,
+      };
+      this.dragging = null;
+      this.dragPointerId = null;
+      this.panPointerId = null;
+      this.lastPanPoint = null;
+      this.hovering = null;
+      this.needsFit = false;
+    }
+    finishPointer(pointerId) {
+      this.activePointers.delete(pointerId);
+      if (this.dragPointerId === pointerId) {
+        this.dragging = null;
+        this.dragPointerId = null;
+      }
+      if (this.panPointerId === pointerId) {
+        this.panPointerId = null;
+        this.lastPanPoint = null;
+      }
+      if (this.pinch) {
+        const remaining = this.touchPointers();
+        this.pinch = null;
+        if (remaining.length === 1) {
+          const [id, point] = remaining[0];
+          this.panPointerId = id;
+          this.lastPanPoint = point;
+        }
+      }
+    }
     setupEvents() {
       const c = this.canvas;
-      c.addEventListener('mousedown', e => {
-        const r = c.getBoundingClientRect();
-        const p = this.toWorld(e.clientX - r.left, e.clientY - r.top);
-        for (let i = this.nodes.length - 1; i >= 0; i--) {
-          const n = this.nodes[i];
-          if (Math.hypot(n.x - p.x, n.y - p.y) < n.r + 4) {
-            this.dragging = n;
-            this.offsetX = n.x - p.x;
-            this.offsetY = n.y - p.y;
-            this.wake(0.4);
-            break;
-          }
+      this.onPointerDown = e => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        const point = this.localPoint(e);
+        this.activePointers.set(e.pointerId, point);
+        try { c.setPointerCapture(e.pointerId); } catch {}
+
+        if (e.pointerType === 'touch' && this.touchPointers().length >= 2) {
+          this.beginPinch();
+          e.preventDefault();
+          return;
         }
-      });
-      c.addEventListener('mousemove', e => {
-        const r = c.getBoundingClientRect();
-        const p = this.toWorld(e.clientX - r.left, e.clientY - r.top);
-        if (this.dragging) {
-          this.dragging.x = p.x + this.offsetX;
-          this.dragging.y = p.y + this.offsetY;
+
+        const node = this.hitTest(point);
+        if (node) {
+          const world = this.toWorld(point.x, point.y);
+          this.dragging = node;
+          this.dragPointerId = e.pointerId;
+          this.offsetX = node.x - world.x;
+          this.offsetY = node.y - world.y;
+          this.hovering = node;
+          this.wake(0.4);
+        } else if (e.pointerType === 'touch') {
+          this.panPointerId = e.pointerId;
+          this.lastPanPoint = point;
+          this.hovering = null;
+          this.needsFit = false;
+        }
+        if (e.pointerType === 'touch') e.preventDefault();
+      };
+      this.onPointerMove = e => {
+        const point = this.localPoint(e);
+        if (this.activePointers.has(e.pointerId)) this.activePointers.set(e.pointerId, point);
+
+        if (this.pinch) {
+          const pointers = this.touchPointers();
+          if (pointers.length >= 2) {
+            const [, a] = pointers[0];
+            const [, b] = pointers[1];
+            const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            const distance = Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1);
+            const next = this.clampScale(this.pinch.scale * distance / this.pinch.distance);
+            this.scale = next;
+            this.panX = midpoint.x - this.pinch.anchor.x * next;
+            this.panY = midpoint.y - this.pinch.anchor.y * next;
+          }
+          e.preventDefault();
+          return;
+        }
+
+        if (this.dragging && this.dragPointerId === e.pointerId) {
+          const world = this.toWorld(point.x, point.y);
+          this.dragging.x = world.x + this.offsetX;
+          this.dragging.y = world.y + this.offsetY;
           this.dragging.vx = 0;
           this.dragging.vy = 0;
+          this.hovering = this.dragging;
           this.wake(0.25);
+          if (e.pointerType === 'touch') e.preventDefault();
+          return;
         }
-        this.hovering = null;
-        for (let i = this.nodes.length - 1; i >= 0; i--) {
-          if (Math.hypot(this.nodes[i].x - p.x, this.nodes[i].y - p.y) < this.nodes[i].r + 4) {
-            this.hovering = this.nodes[i];
-            break;
-          }
+
+        if (this.panPointerId === e.pointerId && this.lastPanPoint) {
+          this.panX += point.x - this.lastPanPoint.x;
+          this.panY += point.y - this.lastPanPoint.y;
+          this.lastPanPoint = point;
+          this.needsFit = false;
+          e.preventDefault();
+          return;
         }
-        c.style.cursor = this.hovering ? 'pointer' : 'default';
-      });
-      c.addEventListener('mouseup', () => { this.dragging = null; });
-      c.addEventListener('mouseleave', () => { this.dragging = null; this.hovering = null; });
-      c.addEventListener('wheel', e => {
+
+        if (e.pointerType === 'mouse') this.updateHover(point);
+      };
+      this.onPointerUp = e => {
+        this.finishPointer(e.pointerId);
+        try { c.releasePointerCapture(e.pointerId); } catch {}
+      };
+      this.onPointerCancel = e => this.finishPointer(e.pointerId);
+      this.onLostPointerCapture = e => this.finishPointer(e.pointerId);
+      this.onPointerLeave = e => {
+        if (e.pointerType === 'mouse' && !this.activePointers.has(e.pointerId)) {
+          this.hovering = null;
+          c.style.cursor = 'default';
+        }
+      };
+      this.onWheel = e => {
         e.preventDefault();
         const r = c.getBoundingClientRect();
         const mx = e.clientX - r.left, my = e.clientY - r.top;
-        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-        const next = Math.max(0.15, Math.min(3, this.scale * factor));
-        this.panX = mx - (mx - this.panX) * (next / this.scale);
-        this.panY = my - (my - this.panY) * (next / this.scale);
-        this.scale = next;
-        this.needsFit = false; // user took over the camera
-      }, { passive: false });
+        this.zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, mx, my);
+      };
+
+      c.addEventListener('pointerdown', this.onPointerDown);
+      c.addEventListener('pointermove', this.onPointerMove);
+      c.addEventListener('pointerup', this.onPointerUp);
+      c.addEventListener('pointercancel', this.onPointerCancel);
+      c.addEventListener('lostpointercapture', this.onLostPointerCapture);
+      c.addEventListener('pointerleave', this.onPointerLeave);
+      c.addEventListener('wheel', this.onWheel, { passive: false });
     }
     tick() {
       if (!this.running) return;
@@ -297,6 +442,10 @@
     try { settings.set(await api('GET', '/api/settings')); } catch (e) {}
     initGraph();
     window.addEventListener('resize', handleResize);
+    if (typeof ResizeObserver !== 'undefined' && container) {
+      resizeObserver = new ResizeObserver(() => handleResize());
+      resizeObserver.observe(container);
+    }
   });
 
   // Refresh graph when UI locale changes so the embedded "member of" edge label tracks language.
@@ -310,25 +459,31 @@
 
   onDestroy(() => {
     if (graph) graph.destroy();
+    if (resizeObserver) resizeObserver.disconnect();
     window.removeEventListener('resize', handleResize);
   });
 
   function handleResize() {
-    if (graph && container && canvas) {
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
-      graph.resize(canvas.width, canvas.height);
-    }
+    if (!graph || !container || !canvas) return;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    // A collapsed mobile workspace measures 0x0. Preserve the current
+    // simulation and canvas until the disclosure is visible again.
+    if (width <= 0 || height <= 0) return;
+    graph.resize(width, height);
   }
 
   function initGraph() {
     if (!canvas || !container || !$settings) return;
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    if (width <= 0 || height <= 0) return;
     if (graph) {
-      graph.resize(canvas.width, canvas.height);
+      graph.resize(width, height);
       graph.updateData($settings);
     } else {
+      canvas.width = width;
+      canvas.height = height;
       graph = new ForceGraph(canvas, $settings);
     }
   }
@@ -336,11 +491,23 @@
   $: if ($settings && graph) {
     graph.updateData($settings);
   }
+
+  function zoomIn() { if (graph) graph.zoomBy(1.2); }
+  function zoomOut() { if (graph) graph.zoomBy(1 / 1.2); }
+  function resetView() { if (graph) graph.resetView(); }
 </script>
 
-<div bind:this={container} class="relative w-full bg-base-200 border border-base-content/10 rounded-lg overflow-hidden" style="height:calc(100vh - 180px)">
-  <canvas bind:this={canvas}></canvas>
-  <div class="absolute bottom-3 right-3 bg-base-300 border border-base-content/10 rounded-lg p-2 text-xs flex gap-4">
+<div bind:this={container} class="relative w-full h-[calc(100vh-180px)] max-lg:h-[min(62dvh,34rem)] max-lg:min-h-88 bg-base-200 border border-base-content/10 rounded-lg overflow-hidden">
+  <canvas bind:this={canvas} class="block w-full h-full" style="touch-action:none"></canvas>
+  <div class="hidden max-lg:flex absolute top-2 right-2 z-10 join bg-base-300/95 rounded-lg shadow-md">
+    <button type="button" class="btn btn-sm btn-ghost join-item" on:click={zoomOut} title={$t('relations.zoomOut')} aria-label={$t('relations.zoomOut')}>−</button>
+    <button type="button" class="btn btn-sm btn-ghost join-item" on:click={resetView} title={$t('relations.resetView')} aria-label={$t('relations.resetView')}>↺</button>
+    <button type="button" class="btn btn-sm btn-ghost join-item" on:click={zoomIn} title={$t('relations.zoomIn')} aria-label={$t('relations.zoomIn')}>+</button>
+  </div>
+  <div class="hidden max-lg:block absolute top-3 left-3 right-36 z-10 text-[11px] leading-tight text-base-content/60 pointer-events-none">
+    {$t('relations.gestureHint')}
+  </div>
+  <div class="absolute bottom-3 right-3 max-lg:left-2 max-lg:right-2 max-lg:bottom-2 bg-base-300 max-lg:bg-base-300/95 border border-base-content/10 rounded-lg p-2 text-xs max-lg:text-[11px] flex gap-4 max-lg:flex-wrap max-lg:justify-center max-lg:gap-x-3 max-lg:gap-y-1">
     <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#5b8af5] mr-1 align-middle"></span>{$t('relations.legend.character')}</span>
     <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#4caf50] mr-1 align-middle"></span>{$t('relations.legend.worldview')}</span>
     <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-[#ff9800] mr-1 align-middle"></span>{$t('relations.legend.organization')}</span>

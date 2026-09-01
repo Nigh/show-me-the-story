@@ -120,17 +120,17 @@
   {:else}
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body py-4 gap-3">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="tabs tabs-boxed tabs-sm">
-            <button class="tab {viewMode === 'list' ? 'tab-active' : ''}" on:click={() => viewMode = 'list'}>
+        <div class="flex flex-wrap items-center justify-between gap-2 max-lg:items-stretch">
+          <div class="tabs tabs-boxed tabs-sm max-lg:w-full">
+            <button class="tab max-lg:flex-1 {viewMode === 'list' ? 'tab-active' : ''}" on:click={() => viewMode = 'list'}>
               {$t('memory.tabs.list')}
             </button>
-            <button class="tab {viewMode === 'timeline' ? 'tab-active' : ''}" on:click={() => viewMode = 'timeline'}>
+            <button class="tab max-lg:flex-1 {viewMode === 'timeline' ? 'tab-active' : ''}" on:click={() => viewMode = 'timeline'}>
               {$t('memory.tabs.timeline')}
             </button>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <select class="select select-bordered select-xs" bind:value={categoryFilter}>
+          <div class="flex flex-wrap gap-2 max-lg:w-full">
+            <select class="select select-bordered select-xs max-lg:flex-1 max-lg:min-w-0" bind:value={categoryFilter}>
               <option value="all">{$t('memory.filter.allCategories')}</option>
               {#each categoryKeys as key}
                 {#if categoryCounts[key] > 0}
@@ -138,7 +138,7 @@
                 {/if}
               {/each}
             </select>
-            <select class="select select-bordered select-xs" bind:value={chapterFilter}>
+            <select class="select select-bordered select-xs max-lg:flex-1 max-lg:min-w-0" bind:value={chapterFilter}>
               <option value="all">{$t('memory.filter.allChapters')}</option>
               {#each chapterNums as num}
                 <option value={num}>{$t('memory.chapterLabel', { n: num })}</option>
@@ -150,7 +150,34 @@
         {#if filtered.length === 0}
           <p class="text-sm text-base-content/50 py-6 text-center">{$t('memory.filter.noMatch')}</p>
         {:else if viewMode === 'list'}
-          <div class="overflow-x-auto">
+          <div class="hidden max-lg:grid gap-3">
+            {#each filtered as e (e.id)}
+              {@const snippet = extractSnippet(e)}
+              <article class="rounded-lg bg-base-300/55 p-3 space-y-3 border border-base-content/10">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-mono text-xs text-base-content/50">#{e.id}</span>
+                  <span class="badge badge-xs {categoryBadge[e.category] || 'badge-ghost'}">
+                    {$t('memory.category.' + (e.category || 'other'))}
+                  </span>
+                  <span class="text-xs text-base-content/60">{$t('memory.chapterLabel', { n: e.chapter })}</span>
+                  {#if e.position > 0}
+                    <span class="text-xs text-base-content/40">{$t('memory.positionLabel', { n: e.position })}</span>
+                  {/if}
+                </div>
+                <div>
+                  <div class="text-xs text-base-content/45 mb-1">{$t('memory.col.content')}</div>
+                  <p class="text-sm leading-relaxed break-words">{e.content}</p>
+                </div>
+                {#if snippet}
+                  <div>
+                    <div class="text-xs text-base-content/45 mb-1">{$t('memory.col.snippet')}</div>
+                    <p class="text-xs leading-relaxed text-base-content/65 break-words">「{snippet}」</p>
+                  </div>
+                {/if}
+              </article>
+            {/each}
+          </div>
+          <div class="overflow-x-auto max-lg:hidden">
             <table class="table table-sm">
               <thead>
                 <tr>
@@ -193,7 +220,7 @@
             {#each timelineRows as row}
               <div class="rounded-lg bg-base-300/40 p-3">
                 <div class="font-medium text-sm mb-2">
-                  {$t('memory.timeline.chapter', { n: row.num })}
+                  {$t('memory.chapterLabel', { n: row.num })}
                   {#if row.title}
                     <span class="text-base-content/50 font-normal">· {row.title}</span>
                   {/if}

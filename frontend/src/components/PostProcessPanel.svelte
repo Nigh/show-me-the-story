@@ -14,6 +14,8 @@
 
   let reportTab = 'diagnosis';
   let diffItem = null;
+  let diffBeforeOpen = true;
+  let diffAfterOpen = true;
   let roadmapLocal = [];
   let optsLocal = { run_smooth_transitions_first: true, include_polish: false };
   let authorReqLocal = '';
@@ -66,6 +68,17 @@
   function setOpt(key, value) {
     optsLocal = { ...optsLocal, [key]: value };
     markDirty();
+  }
+
+  function updateRoadmapItem(index, changes) {
+    roadmapLocal = roadmapLocal.map((item, i) => i === index ? { ...item, ...changes } : item);
+    markDirty();
+  }
+
+  function openDiff(item) {
+    diffItem = item;
+    diffBeforeOpen = true;
+    diffAfterOpen = true;
   }
 
   function selectAllPending(val) {
@@ -231,7 +244,7 @@
         {/if}
       </div>
 
-      <div class="flex gap-2 flex-wrap">
+      <div class="postprocess-actions flex gap-2 flex-wrap">
         <button class="btn btn-primary btn-sm" on:click={runDiagnose} disabled={$taskRunning}>{$t('pp.btn.diagnose')}</button>
         <button class="btn btn-ghost btn-sm" on:click={runConsistency} disabled={$taskRunning || !pp?.diagnosis_report}>{$t('pp.btn.consistency')}</button>
         <button class="btn btn-ghost btn-sm" on:click={runRoadmap} disabled={$taskRunning || (!pp?.diagnosis_report && !pp?.consistency_report)}>{$t('pp.btn.roadmap')}</button>
@@ -243,7 +256,7 @@
           <button class="tab {reportTab === 'diagnosis' ? 'tab-active' : ''}" on:click={() => reportTab = 'diagnosis'}>{$t('pp.tab.diagnosis')}</button>
           <button class="tab {reportTab === 'consistency' ? 'tab-active' : ''}" on:click={() => reportTab = 'consistency'}>{$t('pp.tab.consistency')}</button>
         </div>
-        <div class="bg-base-300 rounded-lg p-3 max-h-64 overflow-y-auto text-sm">
+        <div class="postprocess-report bg-base-300 rounded-lg p-3 max-h-64 overflow-y-auto text-sm">
           {#if reportTab === 'diagnosis' && diagnosisHtml}
             <div class="md-body">{@html diagnosisHtml}</div>
           {:else if reportTab === 'consistency' && consistencyHtml}
@@ -261,7 +274,7 @@
           <div class="divider my-0 text-xs">{$t('pp.roadmap.authorOnly')}</div>
         {/if}
 
-        <div class="flex gap-3 flex-wrap items-center text-xs">
+        <div class="roadmap-actions flex gap-3 flex-wrap items-center text-xs">
           <label class="flex items-center gap-1.5 cursor-pointer">
             <!-- checkbox-primary: DaisyUI 5 无色时 checked 背景透明，勾选几乎看不见 -->
             <input
@@ -296,7 +309,7 @@
         </div>
 
         {#if roadmapLocal.length > 0}
-        <div class="overflow-x-auto max-h-80 overflow-y-auto rounded-lg border border-base-300">
+        <div class="desktop-roadmap overflow-x-auto max-h-80 overflow-y-auto rounded-lg border border-base-300">
           <table class="table table-xs table-zebra">
             <thead class="sticky top-0 bg-base-200 z-10">
               <tr>
@@ -337,13 +350,46 @@
                   </td>
                   <td>
                     {#if item.diff_original || item.diff_revised}
-                      <button class="btn btn-ghost btn-xs" on:click={() => diffItem = item}>{$t('pp.diff.btn')}</button>
+                      <button class="btn btn-ghost btn-xs" on:click={() => openDiff(item)}>{$t('pp.diff.btn')}</button>
                     {/if}
                   </td>
                 </tr>
               {/each}
             </tbody>
           </table>
+        </div>
+        <div class="mobile-roadmap space-y-2">
+          {#each roadmapLocal as item, i}
+            <article class="rounded-lg border border-base-300 bg-base-300/30 p-3 space-y-3" data-mobile-roadmap-item={item.id || i}>
+              <div class="flex items-start gap-3">
+                {#if item.status === 'pending'}
+                  <input type="checkbox" class="checkbox checkbox-sm checkbox-primary mt-0.5" checked={item.selected} on:change={(event) => updateRoadmapItem(i, { selected: event.currentTarget.checked })} disabled={$taskRunning} />
+                {/if}
+                <div class="min-w-0 flex-1 flex items-start justify-between gap-2">
+                  <div class="flex min-w-0 flex-wrap items-center gap-2">
+                    <span class="font-medium">{$t('pp.chapter.label', { n: item.chapter_num })}</span>
+                    <span class="badge badge-sm badge-ghost">{typeLabels[item.type] || item.type}</span>
+                    <span class="badge badge-sm {item.priority === 'P0' ? 'badge-error' : item.priority === 'P1' ? 'badge-warning' : 'badge-ghost'}">{item.priority}</span>
+                  </div>
+                  <span class="badge badge-sm shrink-0 {statusCls[item.status] || 'badge-ghost'}">{statusLabels[item.status] || item.status}</span>
+                </div>
+              </div>
+              <div>
+                <div class="text-xs text-base-content/50 mb-1">{$t('pp.col.feedback')}</div>
+                {#if item.status === 'pending'}
+                  <textarea class="textarea w-full min-h-24" value={item.feedback || ''} on:input={(event) => updateRoadmapItem(i, { feedback: event.currentTarget.value })} disabled={$taskRunning}></textarea>
+                {:else}
+                  <p class="text-sm text-base-content/70 whitespace-pre-wrap break-words">{item.feedback}</p>
+                {/if}
+              </div>
+              {#if item.error}
+                <p class="text-xs text-error break-words">{item.error}</p>
+              {/if}
+              {#if item.diff_original || item.diff_revised}
+                <button class="btn btn-ghost btn-sm" on:click={() => openDiff(item)}>{$t('pp.diff.btn')}</button>
+              {/if}
+            </article>
+          {/each}
         </div>
         {/if}
       {/if}
@@ -352,17 +398,19 @@
 {/if}
 
 {#if diffItem}
-  <dialog class="modal modal-open">
-    <div class="modal-box max-w-4xl">
+  <dialog class="diff-modal modal modal-open">
+    <div class="diff-modal-box modal-box max-w-4xl">
       <h3 class="font-bold text-base mb-2">{$t('pp.diff.title', { n: diffItem.chapter_num })}</h3>
-      <div class="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">{$t('pp.diff.before')}</div>
-          <div class="bg-base-300 rounded p-3 whitespace-pre-wrap max-h-64 overflow-y-auto font-serif">{diffItem.diff_original || '—'}</div>
+      <div class="diff-grid grid grid-cols-2 gap-3 text-sm">
+        <div class="diff-pane">
+          <div class="desktop-diff-label text-xs text-base-content/50 mb-1">{$t('pp.diff.before')}</div>
+          <button type="button" class="mobile-diff-toggle text-xs text-base-content/50 mb-1" aria-expanded={diffBeforeOpen} on:click={() => diffBeforeOpen = !diffBeforeOpen}><span>{$t('pp.diff.before')}</span><span class:rotate-180={diffBeforeOpen} aria-hidden="true">⌄</span></button>
+          <div class="diff-content bg-base-300 rounded p-3 whitespace-pre-wrap max-h-64 overflow-y-auto font-serif" class:mobile-diff-collapsed={!diffBeforeOpen}>{diffItem.diff_original || '—'}</div>
         </div>
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">{$t('pp.diff.after')}</div>
-          <div class="bg-base-300 rounded p-3 whitespace-pre-wrap max-h-64 overflow-y-auto font-serif">{diffItem.diff_revised || '—'}</div>
+        <div class="diff-pane">
+          <div class="desktop-diff-label text-xs text-base-content/50 mb-1">{$t('pp.diff.after')}</div>
+          <button type="button" class="mobile-diff-toggle text-xs text-base-content/50 mb-1" aria-expanded={diffAfterOpen} on:click={() => diffAfterOpen = !diffAfterOpen}><span>{$t('pp.diff.after')}</span><span class:rotate-180={diffAfterOpen} aria-hidden="true">⌄</span></button>
+          <div class="diff-content bg-base-300 rounded p-3 whitespace-pre-wrap max-h-64 overflow-y-auto font-serif" class:mobile-diff-collapsed={!diffAfterOpen}>{diffItem.diff_revised || '—'}</div>
         </div>
       </div>
       <div class="modal-action">
@@ -372,3 +420,27 @@
     <form method="dialog" class="modal-backdrop"><button on:click={() => diffItem = null}>close</button></form>
   </dialog>
 {/if}
+
+<style>
+  .mobile-roadmap { display: none; }
+  .mobile-diff-toggle { display: none; }
+  @media (max-width: 63.999rem) {
+    .postprocess-actions .btn, .roadmap-actions .btn { min-height: 44px; }
+    .roadmap-actions label { min-height: 44px; }
+    .roadmap-actions .btn-success { flex: 1 1 100%; max-width: 100%; height: auto; white-space: normal; }
+    .roadmap-actions > .flex-1 { display: none; }
+    .postprocess-report { max-height: none; overflow-y: visible; }
+    .desktop-roadmap { display: none; }
+    .mobile-roadmap { display: block; }
+    .mobile-roadmap textarea { font-size: 16px; }
+    .diff-modal { padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
+    .diff-modal-box { width: 100%; max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain; }
+    .diff-grid { grid-template-columns: minmax(0, 1fr); }
+    .desktop-diff-label { display: none; }
+    .mobile-diff-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; text-align: left; }
+    .mobile-diff-toggle > span:last-child { transition: transform .15s ease; }
+    .diff-content.mobile-diff-collapsed { display: none; }
+    .diff-content { max-height: none; overflow-y: visible; overflow-wrap: anywhere; }
+    .diff-modal .modal-action .btn { min-height: 44px; }
+  }
+</style>

@@ -91,6 +91,11 @@
   let insertAfterId = null;    // 正在其后插入新 block 的 id（0 = 开头）
   let insertText = '';
 
+  let openBlockMenuId = null;
+
+  let mobileChaptersOpen = false;
+  let mobileEditorOpen = true;
+
   function startBlockEdit(b) {
     editingBlockId = b.id;
     editingText = b.text;
@@ -113,7 +118,40 @@
     editingBlockId = null;
     revisingBlockId = null;
     insertAfterId = null;
+    openBlockMenuId = null;
   }
+
+  function toggleBlockMenu(id, event) {
+    event.stopPropagation();
+    openBlockMenuId = openBlockMenuId === id ? null : id;
+  }
+
+  function runBlockAction(action) {
+    openBlockMenuId = null;
+    action();
+  }
+
+  onMount(() => {
+    function closeBlockMenu(event) {
+      if (!event.target?.closest?.('[data-block-menu]')) openBlockMenuId = null;
+    }
+    function handleEscape(event) {
+      if (event.key === 'Escape') openBlockMenuId = null;
+    }
+    function handleSelectionChange() {
+      if (window.matchMedia('(max-width: 63.999rem)').matches) {
+        scheduleSelectionCheck();
+      }
+    }
+    document.addEventListener('pointerdown', closeBlockMenu);
+    document.addEventListener('keydown', handleEscape);
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('pointerdown', closeBlockMenu);
+      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  });
 
   async function saveBlockEdit() {
     if (editingBlockId == null || !editingText.trim() || !ch) return;
@@ -220,6 +258,7 @@
 
   // 框选原文后的浮动「引用」按钮：null 表示隐藏
   let quotePopover = null;
+  let selectionCheckPending = false;
 
   function checkContentSelection() {
     const sel = window.getSelection();
@@ -232,12 +271,33 @@
     }
     const rect = range.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) { quotePopover = null; return; }
+    const mobile = window.innerWidth < 1024;
+    const visualViewport = window.visualViewport;
+    const viewportLeft = visualViewport?.offsetLeft || 0;
+    const viewportTop = visualViewport?.offsetTop || 0;
+    const viewportWidth = visualViewport?.width || window.innerWidth;
+    const viewportHeight = visualViewport?.height || window.innerHeight;
+    const xMargin = Math.min(76, viewportWidth / 2);
+    const x = mobile ? Math.max(viewportLeft + xMargin, Math.min(viewportLeft + viewportWidth - xMargin, rect.left + rect.width / 2)) : rect.left + rect.width / 2;
+    const placeBelow = mobile && rect.top < viewportTop + 56;
+    const y = mobile ? (placeBelow ? Math.min(rect.bottom + 8, viewportTop + viewportHeight - 48) : Math.max(rect.top - 8, viewportTop + 48)) : rect.top;
     quotePopover = {
       text,
-      x: rect.left + rect.width / 2,
-      y: rect.top,
+      x,
+      y,
+      placeBelow,
     };
   }
+
+  function scheduleSelectionCheck() {
+    if (selectionCheckPending) return;
+    selectionCheckPending = true;
+    requestAnimationFrame(() => {
+      selectionCheckPending = false;
+      checkContentSelection();
+    });
+  }
+  function checkTouchSelection() { scheduleSelectionCheck(); }
 
   function hideQuotePopover() { quotePopover = null; }
 
@@ -294,6 +354,8 @@
 
   function selectChapter(i) {
     selectedChapter.set(i);
+    mobileChaptersOpen = false;
+    mobileEditorOpen = true;
     showRevise = false;
     reviseFeedback = '';
     hideQuotePopover();
@@ -398,7 +460,7 @@
     <!-- 进度 -->
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4 gap-2">
-        <div class="flex items-center gap-3">
+        <div class="writing-progress-header flex items-center gap-3">
           <h2 class="card-title text-base flex-1">{$t('writing.progress.title')}</h2>
           <label class="flex items-center gap-1.5 cursor-pointer" title={$t('writing.progress.autoConfirmTip')}>
             <input type="checkbox" class="toggle toggle-xs toggle-success" checked={$autoConfirm} on:change={toggleAutoConfirm} />
@@ -497,9 +559,17 @@
     <PostProcessPanel />
 
     <!-- 章节区 -->
-    <div class="grid grid-cols-[230px_1fr] gap-3" style="min-height:400px">
+    <div class="writing-split grid grid-cols-[230px_1fr] gap-3" style="min-height:400px">
       <!-- 章节列表 -->
-      <div class="card bg-base-200 shadow-sm overflow-y-auto max-h-[calc(100vh-280px)]">
+      <div class="chapter-list-card card bg-base-200 shadow-sm overflow-y-auto max-h-[calc(100vh-280px)]">
+        <button type="button" class="mobile-pane-toggle" data-mobile-toggle="writing-chapters" aria-expanded={mobileChaptersOpen} on:click={() => mobileChaptersOpen = !mobileChaptersOpen}>
+          <span>{$t('writing.mobile.chapters')}</span>
+          <span class="mobile-pane-summary">
+            {#if ch}{$t('writing.chapter.title', { num: ch.num, title: ch.title })}{/if}
+          </span>
+          <span class:rotate-180={mobileChaptersOpen} aria-hidden="true">⌄</span>
+        </button>
+        <div data-mobile-body="writing-chapters" class:mobile-pane-collapsed={!mobileChaptersOpen}>
         <ul class="menu menu-sm p-0 w-full">
           {#each chapters as c, i}
             <li>
@@ -514,10 +584,17 @@
             </li>
           {/each}
         </ul>
+        </div>
       </div>
 
       <!-- 内容区 -->
-      <div class="min-w-0">
+      <div class="mobile-editor-shell min-w-0">
+        <button type="button" class="mobile-pane-toggle" data-mobile-toggle="writing-editor" aria-expanded={mobileEditorOpen} on:click={() => mobileEditorOpen = !mobileEditorOpen}>
+          <span>{$t('writing.mobile.editor')}</span>
+          <span class="mobile-pane-summary">{ch ? $t('writing.chapter.title', { num: ch.num, title: ch.title }) : ''}</span>
+          <span class:rotate-180={mobileEditorOpen} aria-hidden="true">⌄</span>
+        </button>
+        <div data-mobile-body="writing-editor" class:mobile-pane-collapsed={!mobileEditorOpen}>
         {#if ch}
           <div class="card bg-base-200 shadow-sm">
             <div class="card-body p-4 gap-2">
@@ -555,6 +632,7 @@
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div bind:this={contentEl} class="bg-base-300 rounded-lg p-4 text-[15px] chapter-content reading-area max-h-[calc(100vh-420px)] min-h-[200px] overflow-y-auto"
                      on:mouseup={checkContentSelection}
+                     on:touchend={checkTouchSelection}
                      on:scroll={hideQuotePopover}>
                   {#if isStreamingThis}
                     {displayContent}
@@ -562,7 +640,7 @@
                   {:else if chapterBlocks.length > 0}
                     <div class="space-y-3">
                       {#each chapterBlocks as b (b.id)}
-                        <div class="group relative rounded hover:bg-base-100/40 -mx-2 px-2 py-0.5">
+                        <div class="chapter-block group relative rounded hover:bg-base-100/40 -mx-2 px-2 py-0.5">
                           {#if editingBlockId === b.id}
                             <textarea class="textarea textarea-sm w-full text-[15px] leading-relaxed" rows={Math.max(3, Math.ceil(b.text.length / 40))} bind:value={editingText} disabled={$taskRunning}></textarea>
                             <div class="flex gap-2 justify-end mt-1">
@@ -571,11 +649,22 @@
                             </div>
                           {:else}
                             <div class="whitespace-pre-wrap {b.type === 'scene_break' ? 'text-center text-base-content/40' : ''}">{b.text}</div>
-                            <div class="absolute right-1 top-0.5 hidden group-hover:flex gap-1 bg-base-200/90 rounded shadow px-1 py-0.5">
+                            <div class="desktop-block-actions absolute right-1 top-0.5 hidden group-hover:flex gap-1 bg-base-200/90 rounded shadow px-1 py-0.5">
                               <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.edit')} disabled={$taskRunning} on:click={() => startBlockEdit(b)}>✏️</button>
                               <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.revise')} disabled={$taskRunning} on:click={() => startBlockRevise(b)}>🤖</button>
                               <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.insertAfter')} disabled={$taskRunning} on:click={() => startBlockInsert(b.id)}>➕</button>
                               <button class="btn btn-ghost btn-xs px-1.5 text-error" title={$t('writing.block.delete')} disabled={$taskRunning} on:click={() => deleteBlock(b)}>🗑</button>
+                            </div>
+                            <div class="mobile-block-actions absolute right-1 top-0.5" data-block-menu data-mobile-block-actions="container">
+                              <button type="button" class="btn btn-ghost" data-mobile-block-actions="trigger" aria-label={$t('writing.mobile.actions')} aria-expanded={openBlockMenuId === b.id} disabled={$taskRunning} on:click={(event) => toggleBlockMenu(b.id, event)}>⋯</button>
+                              {#if openBlockMenuId === b.id}
+                                <div class="mobile-block-menu" data-mobile-block-actions="menu">
+                                  <button type="button" class="btn btn-ghost" on:click={() => runBlockAction(() => startBlockEdit(b))}>✏️ <span>{$t('writing.block.edit')}</span></button>
+                                  <button type="button" class="btn btn-ghost" on:click={() => runBlockAction(() => startBlockRevise(b))}>🤖 <span>{$t('writing.block.revise')}</span></button>
+                                  <button type="button" class="btn btn-ghost" on:click={() => runBlockAction(() => startBlockInsert(b.id))}>➕ <span>{$t('writing.block.insertAfter')}</span></button>
+                                  <button type="button" class="btn btn-ghost text-error" on:click={() => runBlockAction(() => deleteBlock(b))}>🗑 <span>{$t('writing.block.delete')}</span></button>
+                                </div>
+                              {/if}
                             </div>
                           {/if}
                           {#if revisingBlockId === b.id}
@@ -605,8 +694,8 @@
                 </div>
                 {#if quotePopover}
                   <button type="button"
-                    class="fixed z-50 btn btn-primary btn-xs shadow-lg"
-                    style="left: {quotePopover.x}px; top: {quotePopover.y}px; transform: translate(-50%, -100%); margin-top: -6px;"
+                    class="quote-popover fixed z-50 btn btn-primary btn-xs shadow-lg" class:quote-popover-below={quotePopover.placeBelow}
+                    style="left: {quotePopover.x}px; top: {quotePopover.y}px;"
                     on:click={insertQuoteToFeedback}
                     title={$t('writing.revise.quoteBtn.tip')}>
                     {$t('writing.revise.quoteBtn')}
@@ -623,7 +712,7 @@
               {/if}
 
               <!-- 操作 -->
-              <div class="flex gap-2 flex-wrap items-center mt-1">
+              <div class="chapter-actions flex gap-2 flex-wrap items-center mt-1">
                 {#if ch.status === 'pending' && isCurrent}
                   <button class="btn btn-primary btn-sm" on:click={doGenerate} disabled={$taskRunning}>{$t('writing.btn.generate')}</button>
                 {/if}
@@ -674,7 +763,39 @@
         {:else}
           <div class="text-center py-16 text-base-content/50 text-base">{$t('writing.emptySelection')}</div>
         {/if}
+        </div>
       </div>
     </div>
   </div>
 {/if}
+
+<style>
+  .mobile-pane-toggle, .mobile-block-actions { display: none; }
+  [data-mobile-body="writing-chapters"], [data-mobile-body="writing-editor"] { display: contents; }
+  .quote-popover { transform: translate(-50%, -100%); margin-top: -6px; }
+  .quote-popover.quote-popover-below { transform: translate(-50%, 0); margin-top: 0; }
+  @media (max-width: 63.999rem) {
+    .writing-progress-header { flex-wrap: wrap; }
+    .writing-split { grid-template-columns: minmax(0, 1fr); min-height: 0 !important; }
+    .chapter-list-card { max-height: none !important; overflow-y: visible; }
+    .mobile-pane-toggle { display: flex; align-items: center; gap: .625rem; width: 100%; min-height: 44px; padding: .65rem .85rem; text-align: left; font-weight: 600; }
+    .mobile-pane-toggle:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+    .mobile-pane-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in oklab, currentColor 55%, transparent); font-size: .75rem; font-weight: 400; }
+    .mobile-pane-toggle > span:last-child { flex: none; transition: transform .15s ease; }
+    [data-mobile-body="writing-chapters"], [data-mobile-body="writing-editor"] { display: block; }
+    .mobile-pane-collapsed { display: none; }
+    [data-mobile-body="writing-chapters"] .menu button { min-height: 44px; }
+    .reading-area { max-height: none !important; min-height: 120px; overflow-y: visible; -webkit-touch-callout: default; user-select: text; touch-action: pan-y; }
+    .chapter-block { padding-right: 3rem; }
+    .desktop-block-actions { display: none !important; }
+    .mobile-block-actions { display: block; }
+    .mobile-block-actions > .btn { width: 44px; min-height: 44px; padding: 0; font-size: 1.25rem; }
+    .mobile-block-menu { position: absolute; z-index: 30; top: 46px; right: 0; display: flex; flex-direction: column; width: max-content; min-width: 12rem; padding: .25rem; border: 1px solid color-mix(in oklab, currentColor 15%, transparent); border-radius: .5rem; background: var(--color-base-200); box-shadow: 0 12px 30px rgb(0 0 0 / .35); }
+    .mobile-block-menu .btn { justify-content: flex-start; width: 100%; min-height: 44px; }
+    .chapter-actions > .btn, .chapter-actions .join .btn { min-height: 44px; }
+    .chapter-actions > .flex-1 { display: none; }
+    .chapter-actions .join { display: flex; width: 100%; }
+    .chapter-actions .join .btn { flex: 1; }
+    .reading-area textarea { font-size: 16px; }
+  }
+</style>

@@ -1,5 +1,5 @@
 <script>
-  import { onMount, afterUpdate } from 'svelte';
+  import { onMount, afterUpdate, tick } from 'svelte';
   import { api } from '../lib/api.js';
   import { renderMarkdown } from '../lib/markdown.js';
   import { chatSessions, currentChatSession, addToast, showConfirm, taskRunning, lastFailedTask, logEntries, currentTaskName } from '../lib/stores.js';
@@ -114,6 +114,14 @@
     autoScroll = nearBottom;
   }
 
+  export async function reveal() {
+    autoScroll = true;
+    await tick();
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  }
+
   // 滚动守卫：afterUpdate 在任何 store 变化（如 token 计数、
   // 日志追加）后都会触发，无条件写 scrollTop 会造成高频强制重排。
   // 仅在消息区内容实际变化时才滚动。
@@ -186,6 +194,7 @@
   }
 
   function handleKeydown(e) {
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 
@@ -238,9 +247,9 @@
   ];
 </script>
 
-<div class="flex flex-col h-full">
+<div class="chat-panel flex flex-col h-full">
   <!-- 会话栏 -->
-  <div class="border-b border-base-content/10 px-3 py-2 flex items-center gap-2 shrink-0">
+  <div class="chat-toolbar border-b border-base-content/10 px-3 py-2 flex items-center gap-2 shrink-0">
     <button
       class="btn btn-sm gap-1 border border-base-content/20 hover:border-primary/50 hover:bg-base-300 transition-colors"
       class:border-primary={showSessionList}
@@ -274,7 +283,7 @@
             <div class="text-sm font-medium truncate">{s.title}</div>
             <div class="text-xs text-base-content/40">{new Date(s.updated_at).toLocaleString($uiLocale === 'en' ? 'en-US' : 'zh-CN')} · {$t('chat.session.msgs', { n: s.msg_count || 0 })}</div>
           </div>
-          <button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity" on:click={(e) => deleteSession(s.id, e)}>{$t('common.delete')}</button>
+          <button class="chat-session-delete btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity" on:click={(e) => deleteSession(s.id, e)}>{$t('common.delete')}</button>
         </div>
       {/each}
       {#if sessions.length === 0}
@@ -314,7 +323,7 @@
   {/if}
 
   <!-- 消息区 -->
-  <div bind:this={messagesContainer} on:scroll={handleScroll} class="flex-1 overflow-y-auto p-3 space-y-2">
+  <div bind:this={messagesContainer} on:scroll={handleScroll} class="chat-messages flex-1 min-w-0 overflow-y-auto p-3 space-y-2">
     {#if !$currentChatSession}
       <div class="text-center text-base-content/40 py-8 text-base">{$t('chat.notSelected')}</div>
     {:else}
@@ -428,7 +437,7 @@
 
   <!-- 失败重试 -->
   {#if $lastFailedTask && !$taskRunning}
-    <div class="border-t border-error/30 bg-error/10 px-3 py-2 flex items-center gap-2 shrink-0">
+    <div class="chat-failure-bar border-t border-error/30 bg-error/10 px-3 py-2 flex items-center gap-2 shrink-0">
       <span class="text-sm text-error">❌ {$lastFailedTask.taskName}{$t('chat.failed.suffix')}</span>
       <div class="flex-1"></div>
       <button class="btn btn-error btn-xs" on:click={retryTask}>{$t('chat.failed.retry')}</button>
@@ -438,10 +447,10 @@
 
   <!-- 输入区 -->
   {#if $currentChatSession}
-    <div class="border-t border-base-content/10 p-2 flex gap-2 items-end shrink-0">
+    <div class="chat-composer border-t border-base-content/10 p-2 flex gap-2 items-end shrink-0">
       <textarea
         bind:this={inputEl}
-        class="textarea textarea-sm flex-1 min-h-[38px] max-h-[120px] resize-none text-base leading-relaxed"
+        class="textarea textarea-sm flex-1 min-w-0 min-h-[38px] max-h-[120px] resize-none text-base leading-relaxed"
         bind:value={chatInput}
         placeholder={$taskRunning ? $t('chat.input.placeholderBusy') : $t('chat.input.placeholder')}
         on:keydown={handleKeydown}

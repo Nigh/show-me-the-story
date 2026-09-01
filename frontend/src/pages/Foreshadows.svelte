@@ -235,14 +235,14 @@
     <div class="card-body py-4 gap-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="card-title text-base">{$t('fs.title')}</h2>
-        <div class="flex flex-wrap gap-2">
-          <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={suggestForeshadows}>
+        <div class="flex flex-wrap gap-2 max-lg:w-full">
+          <button class="btn btn-primary btn-sm max-lg:flex-1" disabled={$taskRunning} on:click={suggestForeshadows}>
             {$t('fs.designAi')}
           </button>
-          <button class="btn btn-outline btn-sm" disabled={$taskRunning} on:click={openCreate}>
+          <button class="btn btn-outline btn-sm max-lg:flex-1" disabled={$taskRunning} on:click={openCreate}>
             {$t('fs.addManual')}
           </button>
-          <button class="btn btn-ghost btn-sm" on:click={() => switchView('markdown')}>
+          <button class="btn btn-ghost btn-sm max-lg:basis-full" on:click={() => switchView('markdown')}>
             {$t('fs.viewRoadmap')}
           </button>
         </div>
@@ -266,7 +266,7 @@
       <div class="card-body py-4 gap-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="font-semibold text-warning">{$t('fs.outlineConflict.title')}</h3>
-          <div class="flex gap-2">
+          <div class="flex gap-2 max-lg:flex-wrap">
             <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={runOutlineCheck}>{$t('fs.outlineConflict.recheck')}</button>
             <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoOutline}>{$t('fs.outlineConflict.gotoOutline')}</button>
           </div>
@@ -307,7 +307,7 @@
             </label>
           {/each}
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 max-lg:flex-wrap">
           <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={confirmSuggestions}>{$t('fs.suggestions.adopt')}</button>
           <button class="btn btn-ghost btn-sm" on:click={dismissSuggestions}>{$t('fs.suggestions.dismiss')}</button>
         </div>
@@ -330,10 +330,10 @@
   {/if}
 
   <!-- 视图切换 -->
-  <div class="tabs tabs-boxed bg-base-200 w-fit">
-    <button class="tab tab-sm" class:tab-active={viewMode === 'list'} on:click={() => viewMode = 'list'}>{$t('fs.tabs.list')}</button>
-    <button class="tab tab-sm" class:tab-active={viewMode === 'timeline'} on:click={() => viewMode = 'timeline'}>{$t('fs.tabs.timeline')}</button>
-    <button class="tab tab-sm" class:tab-active={viewMode === 'markdown'} on:click={() => switchView('markdown')}>{$t('fs.tabs.markdown')}</button>
+  <div class="tabs tabs-boxed bg-base-200 w-fit max-lg:w-full">
+    <button class="tab tab-sm max-lg:flex-1" class:tab-active={viewMode === 'list'} on:click={() => viewMode = 'list'}>{$t('fs.tabs.list')}</button>
+    <button class="tab tab-sm max-lg:flex-1" class:tab-active={viewMode === 'timeline'} on:click={() => viewMode = 'timeline'}>{$t('fs.tabs.timeline')}</button>
+    <button class="tab tab-sm max-lg:flex-1" class:tab-active={viewMode === 'markdown'} on:click={() => switchView('markdown')}>{$t('fs.tabs.markdown')}</button>
   </div>
 
   {#if foreshadows.length === 0}
@@ -426,7 +426,7 @@
           <span class="text-sm text-base-content/60">
             {#if roadmapPath}{$t('fs.markdown.file', { name: roadmapPath.split('/').pop() })}{/if}
           </span>
-          <div class="flex gap-2">
+          <div class="flex gap-2 max-lg:flex-wrap">
             <button class="btn btn-ghost btn-xs" disabled={loadingRoadmap} on:click={loadRoadmap}>{$t('common.refresh')}</button>
             <button class="btn btn-ghost btn-xs" disabled={!roadmapMarkdown} on:click={copyRoadmap}>{$t('common.copy')}</button>
             <button class="btn btn-ghost btn-xs" disabled={!roadmapMarkdown} on:click={downloadRoadmap}>{$t('common.download')}</button>
@@ -445,7 +445,7 @@
 <!-- 编辑/创建弹窗（DaisyUI 5：不用已移除的 form-control / 旧 label-text） -->
 {#if showForm}
   <dialog class="modal modal-open">
-    <div class="modal-box max-w-lg">
+    <div class="modal-box max-w-lg max-lg:w-[calc(100%-1rem)] max-lg:max-h-[calc(100dvh-1rem)] max-lg:p-4">
       <h3 class="font-bold text-lg">{editing ? $t('fs.form.edit') : $t('fs.form.create')}</h3>
       <div class="flex flex-col gap-3 mt-4">
         <div>
@@ -456,7 +456,7 @@
           <span class="text-xs text-base-content/50 mb-0.5 block">{$t('fs.form.description')}</span>
           <textarea class="textarea textarea-bordered text-sm w-full" rows="3" bind:value={form.description} disabled={$taskRunning}></textarea>
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
           <div>
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('fs.form.plant')}</span>
             <input type="number" min="1" class="input input-bordered input-sm w-full" bind:value={form.plant_chapter} disabled={$taskRunning} />
@@ -481,7 +481,7 @@
           </div>
         {/if}
       </div>
-      <div class="modal-action">
+      <div class="modal-action max-lg:flex-wrap">
         <button class="btn btn-ghost btn-sm" on:click={() => showForm = false}>{$t('common.cancel')}</button>
         <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={saveForm}>{$t('common.save')}</button>
       </div>

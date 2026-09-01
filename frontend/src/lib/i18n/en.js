@@ -14,6 +14,11 @@ export default {
   'app.uiLang.label': 'UI language',
   'app.uiLang.zh': 'ZH',
   'app.uiLang.en': 'EN',
+  'app.mobile.navigation': 'Navigation',
+  'app.mobile.workspace': 'Workspace',
+  'app.mobile.assistant': 'Writing assistant',
+  'app.mobile.expand': 'Expand section',
+  'app.mobile.collapse': 'Collapse section',
 
   // Navigation
   'nav.config': 'Config',
@@ -541,6 +546,9 @@ export default {
   'outline.toasts.arcAppendStarted': 'Append arc task started',
 
   // ---- Writing page ----
+  'writing.mobile.chapters': 'Chapters',
+  'writing.mobile.editor': 'Editor',
+  'writing.mobile.actions': 'Actions',
   'writing.notReady.title': 'Writing phase not started',
   'writing.notReady.hint': 'Generate and confirm the outline first on the Outline page',
   'writing.notReady.goto': 'Go to outline',
@@ -732,6 +740,10 @@ export default {
   'relations.legend.character': 'Character',
   'relations.legend.worldview': 'Worldview',
   'relations.legend.organization': 'Organization',
+  'relations.zoomIn': 'Zoom in',
+  'relations.zoomOut': 'Zoom out',
+  'relations.resetView': 'Reset view',
+  'relations.gestureHint': 'Drag to pan · Pinch or scroll to zoom',
 
   // ---- Skills page ----
   'skills.title': 'Skills',

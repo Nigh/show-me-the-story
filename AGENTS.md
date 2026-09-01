@@ -123,10 +123,10 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `package.json` | 前端依赖：Svelte 4、Vite 5、Tailwind CSS 4、DaisyUI 5、marked + dompurify（聊天 markdown 渲染） |
 | `vite.config.js` | Vite 配置：`@tailwindcss/vite` 插件、Svelte 插件、dev server 代理 `/api` → `:48090`、构建输出到 `dist/` |
 | `svelte.config.js` | Svelte 预处理器配置 |
-| `index.html` | 入口 HTML，`data-theme="xianii"` |
+| `index.html` | 入口 HTML，`data-theme="xianii"`；viewport 启用 `viewport-fit=cover` 与 `interactive-widget=resizes-content`，适配手机安全区域和软键盘 |
 | `src/main.js` | Svelte 应用挂载点 |
-| `src/app.css` | 全局样式：Tailwind 指令 + 自定义滚动条/toast 动画 |
-| `src/App.svelte` | 根组件：Header（项目badge + 项目语言 badge ZH/EN + 版本号badge + 更新提示 + 项目切换 + 阶段/章节/任务状态 + UI 语言切换）+ 左侧导航 + 中间页面 + 右侧 ChatPanel + Toast；挂载全局 `StorageErrorModal`；初始加载若有当前项目则 `setLocale(project.language)` |
+| `src/app.css` | 全局样式：Tailwind 指令 + 自定义滚动条/toast 动画；`<64rem` 响应式壳层、手机安全区域、触控尺寸、表格/Markdown 防横向溢出 |
+| `src/App.svelte` | 根组件：Header（项目badge + 项目语言 badge ZH/EN + 版本号badge + 更新提示 + 项目切换 + 阶段/章节/任务状态 + UI 语言切换）+ 导航 + 页面工作区 + ChatPanel + Toast；桌面保持三栏，`<64rem` 改为导航/工作区/助理三个从上到下且保持组件挂载状态的可折叠分区；挂载全局 `StorageErrorModal`；初始加载若有当前项目则 `setLocale(project.language)` |
 | `src/lib/apiUrl.js` | `resolveChatCompletionsURL`：与后端 `api.go` 同逻辑的 URL 预览（配置页展示实际请求地址） |
 | `src/lib/api.js` | `api(method, url, body)` — fetch 封装，自动带语言头，错误消息走 `translateServerMessage`；收到 `storage_save_failed` 时写入全局结构化存储错误 store |
 | `src/lib/router.js` | `currentPage` store + hash 路由监听 |
@@ -667,6 +667,9 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 
 前端使用 Vite 5 + Svelte 4 + Tailwind CSS 4 + DaisyUI 5 构建，产物输出到 `frontend/dist/`，通过 `//go:embed frontend/dist` 内嵌到 Go 二进制。主题使用 xianii 暗色主题（定义在 `src/app.css` 的 `@plugin "daisyui/theme"` 块中）。
 
+- **响应式壳层**：`64rem` 为桌面/移动断点。桌面继续显示左侧导航 + 中间工作区 + 右侧助理三栏；窄屏使用导航/工作区/助理纵向折叠壳层。折叠只切换展示而不卸载组件，避免丢失未保存表单；分区重新展开或路由切换后派发 `resize`，让 Canvas 等组件重新测量。
+- **页面级移动适配**：Config 的 API / 故事配置与 Writing 的章节列表 / 编辑器使用二级折叠；Outline / Foreshadows 的宽操作行在窄屏换行或单列；Memory / Skills / PostProcess 的宽表格改用移动卡片，PostProcess diff 可分别折叠；确认弹窗和聊天工具栏适配窄屏及软键盘。
+- **触控与安全区域**：触控目标最小高度 44px，iOS 输入字号保持 16px 防止自动缩放；应用壳层使用动态 viewport 与 safe-area inset。Relations Canvas 使用 Pointer Events，支持触控拖动节点、单指平移、双指缩放，并保留桌面 hover / 拖动 / 滚轮缩放。
 - **页面**：`config`（配置直接保存 + 角色管理 + 世界观管理 + 组织管理（卡片 + 角色成员勾选）+ 关系管理（卡片 + 源/目标实体下拉，实体覆盖角色/组织/世界观，值编码为 `type:id`））、`outline`（大纲直接操作 + 内联编辑 + 导入续写）、`writing`（写作直接操作 + 定向修订 + 自动确认模式开关 + 伏笔追踪摘要 + 导出 TXT）、`foreshadows`（伏笔 CRUD + AI 建议确认 + 列表/时间线/路线图三视图）、`memory`（叙事记忆只读观测）、`relations`（关系图谱 Canvas）、`skills`（技能管理）
 - **状态管理**：Svelte stores（`src/lib/stores.js`），包含 progress、config、settings、taskRunning、taskTokenUsage（任务 token 累计）、autoConfirm（自动确认模式）、foreshadowSuggestions/foreshadowShowSuggestions（AI 伏笔建议待确认）、pendingConfigChanges/showConfigChangePanel（AI 配置变更待确认）等全局状态
 - **路由**：hash 路由（`src/lib/router.js`），`currentPage` store + `window.hashchange` 监听

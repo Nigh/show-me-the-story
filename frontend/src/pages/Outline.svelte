@@ -278,11 +278,11 @@
 <div class="space-y-3">
   {#if !hasOutline}
     <!-- 空状态 -->
-    <div class="text-center py-14 text-base-content/50">
+    <div class="text-center py-14 max-lg:py-8 text-base-content/50">
       <div class="text-5xl mb-3">📝</div>
       <p class="text-base mb-1">{$t('outline.empty.title')}</p>
       <p class="text-sm text-base-content/35 mb-6">{$t('outline.empty.hint')}</p>
-      <div class="flex justify-center gap-2">
+      <div class="flex justify-center gap-2 max-lg:flex-wrap">
         <button class="btn btn-primary btn-sm" on:click={generateOutline} disabled={$taskRunning}>{$t('outline.btn.generate')}</button>
         <button class="btn btn-secondary btn-sm" on:click={generateSkeleton} disabled={$taskRunning}>{$t('outline.btn.skeleton')}</button>
         <button class="btn btn-ghost btn-sm" on:click={() => showImport = !showImport} disabled={$taskRunning}>{$t('outline.btn.import')}</button>
@@ -306,11 +306,11 @@
               <div class="text-sm font-medium">{$t('outline.import.previewTitle', { n: importPreview.length })}</div>
               <div class="max-h-64 overflow-y-auto space-y-1">
                 {#each importPreview as ch (ch.num)}
-                  <div class="bg-base-100/50 rounded p-2 text-xs flex items-baseline gap-2">
+                  <div class="bg-base-100/50 rounded p-2 text-xs flex items-baseline gap-2 max-lg:flex-wrap">
                     <span class="font-bold text-base-content/40 w-8 shrink-0">{ch.num}</span>
                     <span class="font-medium shrink-0">{ch.title}</span>
                     <span class="text-base-content/40 shrink-0">{$t('outline.import.words', { n: ch.word_count })}</span>
-                    <span class="text-base-content/50 truncate">{ch.preview}</span>
+                    <span class="text-base-content/50 truncate max-lg:basis-full max-lg:pl-10">{ch.preview}</span>
                   </div>
                 {/each}
               </div>
@@ -325,7 +325,7 @@
     {/if}
   {:else}
     {#if importStatus}
-      <div class="alert alert-warning py-2 text-sm flex items-center justify-between">
+      <div class="alert alert-warning py-2 text-sm flex items-center justify-between max-lg:flex-wrap max-lg:gap-2">
         <span>{$t('outline.import.resumeBanner', { done: importStatus.cursor, total: importStatus.total })}</span>
         <button class="btn btn-primary btn-xs" on:click={resumeImport} disabled={$taskRunning}>{$t('outline.import.resume')}</button>
       </div>
@@ -353,7 +353,7 @@
               </label>
             {/each}
           </div>
-          <div class="flex gap-2">
+          <div class="flex gap-2 max-lg:flex-wrap">
             <button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={confirmCharacterSuggestions}>{$t('outline.charSuggestions.adopt')}</button>
             <button class="btn btn-ghost btn-sm" on:click={dismissCharacterSuggestions}>{$t('outline.charSuggestions.dismiss')}</button>
           </div>
@@ -365,7 +365,7 @@
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4 gap-2">
         <div class="flex items-center gap-2 flex-wrap">
-          <h3 class="text-base font-semibold flex-1 min-w-0 truncate">📖 {displayTitle || $t('common.untitled')}</h3>
+          <h3 class="text-base font-semibold flex-1 min-w-0 truncate max-lg:basis-full">📖 {displayTitle || $t('common.untitled')}</h3>
           {#if inOutlinePhase}
             <button class="btn btn-success btn-xs" on:click={confirmOutline} disabled={$taskRunning || chapters.length === 0}>{$t('outline.btn.confirm')}</button>
           {/if}
@@ -386,9 +386,9 @@
         {#if showRevise}
           <div class="bg-base-300 rounded-lg p-3 space-y-2">
             <textarea class="textarea textarea-sm w-full h-20 text-sm" bind:value={reviseFeedback} placeholder={$t('outline.revise.placeholder')} disabled={$taskRunning}></textarea>
-            <div class="flex justify-between items-center">
+            <div class="flex justify-between items-center max-lg:flex-col max-lg:items-stretch max-lg:gap-2">
               <span class="text-xs text-base-content/40">{$t('outline.revise.hint')}</span>
-              <div class="flex gap-2">
+              <div class="flex gap-2 max-lg:flex-wrap">
                 <button class="btn btn-ghost btn-xs" on:click={() => { showRevise = false; reviseFeedback = ''; }}>{$t('common.cancel')}</button>
                 <button class="btn btn-primary btn-xs" on:click={reviseOutline} disabled={$taskRunning || !reviseFeedback.trim()}>{$t('outline.revise.submit')}</button>
               </div>
@@ -415,16 +415,16 @@
     {#if arcs.length > 0}
       <div class="card bg-base-200 shadow-sm">
         <div class="card-body p-4 gap-2">
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between max-lg:flex-wrap max-lg:gap-2">
             <h4 class="text-sm font-semibold text-base-content/60">{$t('outline.arcs.title')} <span class="font-normal text-base-content/35">({arcs.length})</span></h4>
             <button class="btn btn-ghost btn-xs" on:click={() => showAppendArc = !showAppendArc} disabled={$taskRunning}>{$t('outline.arcs.append')}</button>
           </div>
 
           {#if showAppendArc}
             <div class="bg-base-300 rounded-lg p-3 space-y-2">
-              <div class="flex gap-2">
-                <input type="text" class="input input-sm flex-1" bind:value={appendArcTitle} placeholder={$t('outline.arcs.appendTitle')} disabled={$taskRunning} />
-                <input type="number" min="1" max="100" class="input input-sm w-20" bind:value={appendArcCount} disabled={$taskRunning} title={$t('outline.arcs.appendCount')} />
+              <div class="flex gap-2 max-lg:flex-wrap">
+                <input type="text" class="input input-sm flex-1 max-lg:basis-full" bind:value={appendArcTitle} placeholder={$t('outline.arcs.appendTitle')} disabled={$taskRunning} />
+                <input type="number" min="1" max="100" class="input input-sm w-20 max-lg:w-full" bind:value={appendArcCount} disabled={$taskRunning} title={$t('outline.arcs.appendCount')} />
               </div>
               <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={appendArcGoal} placeholder={$t('outline.arcs.appendGoal')} disabled={$taskRunning}></textarea>
               <div class="flex justify-end gap-2">
@@ -438,7 +438,7 @@
             {#each arcs as arc, i (arc.id)}
               {@const counts = arcChapterCounts(arc)}
               <div class="bg-base-300 rounded-lg p-2.5">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 max-lg:flex-wrap">
                   <span class="text-sm font-bold text-base-content/40 shrink-0">{$t('outline.arcs.volLabel', { n: i + 1 })}</span>
                   <span class="text-sm font-medium flex-1 min-w-0 truncate">{arc.title}</span>
                   <span class="text-xs text-base-content/40 shrink-0">{$t('outline.arcs.range', { start: arc.start_ch, end: arc.end_ch })}</span>
@@ -467,7 +467,7 @@
     <!-- 章节大纲列表 -->
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4 gap-2">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between max-lg:flex-wrap max-lg:gap-2">
           <h4 class="text-sm font-semibold text-base-content/60">{$t('outline.chapterList')} <span class="font-normal text-base-content/35">{$t('outline.chapterList.summary', { total: chapters.length, suffix: pendingCount ? $t('outline.chapterList.pendingSuffix', { n: pendingCount }) : '' })}</span></h4>
           <span class="text-xs text-base-content/35">{$t('outline.chapterList.editHint')}</span>
         </div>
@@ -475,14 +475,14 @@
           {#each chapters as ch (ch.num)}
             {#if editingNum === ch.num}
               <div data-outline-chapter={ch.num} class="bg-base-300 rounded-lg p-3 space-y-2 ring-1 ring-primary/50">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 max-lg:flex-wrap">
                   <span class="text-sm font-bold text-base-content/50 shrink-0">{$t('outline.chapter.chapterLabel', { num: ch.num })}</span>
-                  <input type="text" class="input input-sm flex-1" bind:value={editTitle} placeholder={$t('outline.chapter.titlePlaceholder')} disabled={$taskRunning} />
+                  <input type="text" class="input input-sm flex-1 max-lg:basis-full" bind:value={editTitle} placeholder={$t('outline.chapter.titlePlaceholder')} disabled={$taskRunning} />
                 </div>
                 <textarea class="textarea textarea-sm w-full h-24 text-sm" bind:value={editOutline} placeholder={$t('outline.chapter.outlinePlaceholder')} disabled={$taskRunning}></textarea>
                 <div>
-                  <label class="text-xs text-base-content/50 mb-1 block">{$t('outline.chapter.castLabel')}</label>
-                  <textarea class="textarea textarea-sm w-full h-16 text-sm font-mono" bind:value={editCharactersText} placeholder={$t('outline.chapter.castPlaceholder')} disabled={$taskRunning}></textarea>
+                  <label for="outline-edit-characters" class="text-xs text-base-content/50 mb-1 block">{$t('outline.chapter.castLabel')}</label>
+                  <textarea id="outline-edit-characters" class="textarea textarea-sm w-full h-16 text-sm font-mono" bind:value={editCharactersText} placeholder={$t('outline.chapter.castPlaceholder')} disabled={$taskRunning}></textarea>
                   <p class="text-[11px] text-base-content/35 mt-0.5">{$t('outline.chapter.castHint')}</p>
                 </div>
                 <div class="flex justify-end gap-2">
@@ -498,16 +498,16 @@
                 class="bg-base-300 rounded-lg p-2.5 group {isOutlineEditable(ch.status) && !$taskRunning ? 'cursor-pointer hover:ring-1 hover:ring-primary/40' : ''} transition-shadow"
                 on:click={() => isOutlineEditable(ch.status) && !$taskRunning && startEdit(ch)}
               >
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 max-lg:flex-wrap">
                   <span class="text-sm font-bold text-base-content/40 w-12 shrink-0">{ch.num}</span>
                   <span class="text-sm font-medium flex-1 min-w-0 truncate">{ch.title}</span>
                   <span class="badge badge-xs {statusMeta[ch.status]?.cls || 'badge-ghost'}">{statusMeta[ch.status]?.label || ch.status}</span>
                   {#if isOutlineEditable(ch.status)}
-                    <span class="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">{$t('outline.chapter.editTag')}</span>
+                    <span class="text-xs text-primary opacity-0 group-hover:opacity-100 max-lg:opacity-100 transition-opacity shrink-0">{$t('outline.chapter.editTag')}</span>
                   {/if}
                 </div>
                 {#if ch.characters?.length}
-                  <div class="flex flex-wrap gap-1 mt-1.5 ml-14">
+                  <div class="flex flex-wrap gap-1 mt-1.5 ml-14 max-lg:ml-0">
                     {#each ch.characters as c}
                       <span class="badge badge-ghost badge-xs gap-0.5" title={c.note || ''}>
                         {c.name}{#if c.first_appearance}<span class="text-warning">*</span>{/if}
@@ -515,7 +515,7 @@
                     {/each}
                   </div>
                 {/if}
-                <p class="text-xs text-base-content/50 mt-1 ml-14 line-clamp-2">{ch.outline}</p>
+                <p class="text-xs text-base-content/50 mt-1 ml-14 max-lg:ml-0 line-clamp-2">{ch.outline}</p>
               </div>
             {/if}
           {/each}
