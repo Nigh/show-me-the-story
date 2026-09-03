@@ -131,7 +131,7 @@ func (h *Handlers) switchProject(name string) error {
 		return fmt.Errorf("加载项目设定失败: %w", err)
 	}
 
-	skills := story.LoadAllSkills(cfg, projectDir)
+	skills := story.LoadAllSkills(cfg, h.progDir, projectDir)
 
 	postprocessPath := filepath.Join(projectDir, "postprocess.json")
 	postprocess, err := story.LoadPostProcess(postprocessPath)
@@ -671,7 +671,7 @@ func (h *Handlers) PostChapterBlockRevise(w http.ResponseWriter, r *http.Request
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("block_revision")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeChapterRevise, true)
 
 		h.logger.InfoKey("log.block_revising", num, id)
 		err := story.ReviseBlockAction(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, num, id, body.Feedback, h.settings, h.logger)
@@ -781,7 +781,7 @@ func (h *Handlers) PostOutlineGenerate(w http.ResponseWriter, r *http.Request) {
 			h.logger.InfoKey("log.outline_cleared_pending")
 		}
 		h.logger.TaskStart("outline_generation")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
 
 		h.logger.InfoKey("log.outline_generating")
 		err := story.GenerateOutlineAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.cfgPath, h.logger)
@@ -848,7 +848,7 @@ func (h *Handlers) PostOutlineRevise(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("outline_revision")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineRevise, true)
 
 		h.logger.InfoKey("log.outline_revising")
 		err := story.ReviseOutlineAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.cfgPath, body.Feedback, h.logger)
@@ -943,7 +943,7 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("chapter_generation")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeChapterGenerate, true)
 
 		for {
 			chIdx := h.state.CurrentChapterIndex
@@ -953,7 +953,7 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 			}
 
 			h.logger.InfoKey("log.chapter_writing", chIdx+1)
-			err := story.GenerateChapterAction(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, h.settings, h.logger)
+			err := story.GenerateChapterAction(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, h.settings, h.skills, h.logger)
 
 			if err != nil {
 				if ctx.Err() != nil {
@@ -1077,7 +1077,7 @@ func (h *Handlers) PostForeshadowOutlineCheck(w http.ResponseWriter, r *http.Req
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("foreshadow_outline_check")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeForeshadowPlan, true)
 		story.RunForeshadowOutlineCheckAndSave(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
 		h.logger.TaskEnd("foreshadow_outline_check", true)
 		h.broadcastProgress()
@@ -1173,7 +1173,7 @@ func (h *Handlers) PostChapterRevise(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("chapter_revision")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeChapterRevise, true)
 
 		h.logger.InfoKey("log.chapter_revising")
 		err := story.ReviseChapterAction(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, body.Feedback, h.settings, h.logger)
@@ -1224,7 +1224,7 @@ func (h *Handlers) PostChapterReviseSpecific(w http.ResponseWriter, r *http.Requ
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("chapter_revision")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeChapterRevise, true)
 
 		h.logger.InfoKey("log.chapter_specific_revising", num)
 		err := story.ReviseSpecificChapterAction(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, num, body.Feedback, h.settings, h.logger)
@@ -1273,7 +1273,7 @@ func (h *Handlers) PostChaptersSmoothTransitions(w http.ResponseWriter, r *http.
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("smooth_transitions")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeChapterRevise, true)
 
 		err := story.SmoothTransitionsAction(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
 		if err != nil {
@@ -1585,7 +1585,7 @@ func (h *Handlers) PostForeshadowsSuggest(w http.ResponseWriter, r *http.Request
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("foreshadow_suggest")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeForeshadowPlan, true)
 
 		h.logger.InfoKey("log.foreshadow_suggesting")
 		suggestions, err := story.SuggestForeshadows(ctx, h.apiCfg, h.cfg, h.state, h.logger)
@@ -1826,7 +1826,7 @@ func (h *Handlers) PostImportStart(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("import_pipeline")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeImportAnalyze, true)
 		err := story.ImportStartAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, body.Content, h.progressPath, h.cfgPath, story.ImportStatePath(h.projectDir()), h.logger)
 		h.finishImportTask(ctx, err)
 	}()
@@ -1849,7 +1849,7 @@ func (h *Handlers) PostImportResume(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("import_pipeline")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeImportAnalyze, true)
 		err := story.ImportResumeAction(ctx, h.apiCfg, h.cfg, h.state, story.ImportStatePath(h.projectDir()), h.progressPath, h.cfgPath, h.logger)
 		h.finishImportTask(ctx, err)
 	}()
@@ -1912,7 +1912,7 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("continuation_outline")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
 
 		h.logger.InfoKey("log.continuation_outline_generating")
 		err := story.GenerateContinuationOutline(ctx, h.apiCfg, h.cfg, h.state, h.settings, body.ChapterCount, h.progressPath, h.logger)
@@ -2360,7 +2360,7 @@ func (h *Handlers) PostChapterPolish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	polishSkills := story.GetEnabledSkillsByCategory(h.skills, h.cfg.SkillConfig, "polish")
+	polishSkills := story.ResolveSkills(h.skills, h.cfg.SkillConfig, story.SkillScopeChapterPolish, h.cfg.Language)
 	if len(polishSkills) == 0 {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "need_polish_skill")
 		return
@@ -2412,7 +2412,7 @@ func (h *Handlers) PostChapterPolish(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("chapter_polish")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeChapterPolish, false)
 
 		err := story.PolishChapterAction(ctx, h.apiCfg, h.cfg, h.state, idx, polishSkills, h.progressPath, h.logger)
 		if err != nil {
@@ -2524,7 +2524,7 @@ func (h *Handlers) PostPostProcessDiagnose(w http.ResponseWriter, r *http.Reques
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("postprocess_diagnose")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeBookDiagnose, true)
 
 		err := story.FullPostProcessAnalyzeAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.postprocess, h.postprocessPath, h.logger)
 		if err != nil {
@@ -2561,7 +2561,7 @@ func (h *Handlers) PostPostProcessConsistency(w http.ResponseWriter, r *http.Req
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("postprocess_consistency")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeBookDiagnose, true)
 
 		report, err := story.ConsistencyCheckBookAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.logger)
 		if err != nil {
@@ -2602,7 +2602,7 @@ func (h *Handlers) PostPostProcessRoadmap(w http.ResponseWriter, r *http.Request
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("postprocess_roadmap")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeBookRoadmap, true)
 
 		roadmap, err := story.BuildRoadmapAction(ctx, h.apiCfg, h.cfg, h.postprocess.DiagnosisReport, h.postprocess.ConsistencyReport, h.postprocess.AuthorRequirements, h.logger)
 		if err != nil {
@@ -2676,7 +2676,7 @@ func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("postprocess_execute")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeBookExecute, true)
 
 		err := story.ExecuteRoadmapAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.postprocess, h.progressPath, h.postprocessPath, h.skills, h.logger)
 		if err != nil {
@@ -2700,21 +2700,7 @@ func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handlers) GetSkills(w http.ResponseWriter, r *http.Request) {
-	type SkillView struct {
-		Skill   story.Skill `json:"skill"`
-		Enabled bool        `json:"enabled"`
-	}
-
-	var views []SkillView
-	for _, s := range h.skills {
-		enabled := false
-		if h.cfg.SkillConfig != nil && h.cfg.SkillConfig.EnabledSkills != nil {
-			enabled = h.cfg.SkillConfig.EnabledSkills[s.ID]
-		}
-		views = append(views, SkillView{Skill: s, Enabled: enabled})
-	}
-
-	h.writeJSON(w, http.StatusOK, views)
+	h.writeJSON(w, http.StatusOK, h.skillViews())
 }
 
 func (h *Handlers) PutSkillToggle(w http.ResponseWriter, r *http.Request) {
@@ -2734,6 +2720,11 @@ func (h *Handlers) PutSkillToggle(w http.ResponseWriter, r *http.Request) {
 	found := false
 	for _, s := range h.skills {
 		if s.ID == id {
+			status := validationStatus(s)
+			if req.Enabled && (status == "failed" || status == "needs_optimization" || status == "validating") {
+				h.writeErrorReq(w, r, http.StatusConflict, "skill_cannot_enable", status)
+				return
+			}
 			found = true
 			break
 		}
@@ -2881,7 +2872,7 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 		// defer 确保任何错误路径都会释放任务锁，否则后续所有任务将永久 409
 		defer h.endTask()
 		h.logger.TaskStart("chat_message")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeAssistantChat, false)
 
 		var history []agent.AgentStep
 		for _, m := range session.Messages {
@@ -2923,7 +2914,7 @@ func (h *Handlers) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 					h.logger.WarnKey("log.child_task_start_failed", taskName)
 					return
 				}
-				childCtx := h.taskCtx
+				childCtx := h.activateSkills(h.taskCtx, skillScopeForTask(taskName), true)
 				go func() {
 					defer h.endTask()
 					h.logger.TaskStart(taskName)
@@ -3030,7 +3021,7 @@ func (h *Handlers) PostArcSkeleton(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("arc_skeleton")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
 		h.logger.InfoKey("log.arc_skeleton_generating")
 		err := story.GenerateArcSkeletonAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.cfgPath, h.logger)
 		if err != nil {
@@ -3073,7 +3064,7 @@ func (h *Handlers) PostArcOutline(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("arc_outline")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
 		ai := story.ArcIndexByID(h.state, arcID)
 		h.logger.InfoKey("log.arc_outline_generating", ai+1)
 		err := story.GenerateArcOutlineAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, arcID, body.Requirements, h.progressPath, h.logger)
@@ -3113,7 +3104,7 @@ func (h *Handlers) PostArcAppend(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("arc_append")
-		ctx := h.taskCtx
+		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
 		err := story.AppendArcAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, body.Title, body.Goal, body.ChapterCount, h.progressPath, h.logger)
 		if err != nil {
 			if ctx.Err() != nil {

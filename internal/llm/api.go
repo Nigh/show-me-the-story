@@ -186,6 +186,7 @@ func CallAPI(ctx context.Context, apiCfg *config.APIConfig, system, user string)
 // CallAPIMessages 以完整的多轮消息数组调用 API。
 // 内部优先走流式并缓冲全文，使 token 计数在等待期间也能更新；流式不可用时回退同步请求。
 func CallAPIMessages(ctx context.Context, apiCfg *config.APIConfig, messages []Message) (string, error) {
+	messages = applyPromptAddon(ctx, messages)
 	result, err := CallAPIStreamMessages(ctx, apiCfg, messages, nil)
 	if err == nil && result.Content != "" {
 		return result.Content, nil

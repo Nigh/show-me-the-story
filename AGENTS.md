@@ -102,7 +102,9 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/story/reconcile.go` | `ReconcileSettingsAction`（保持用户提交的 `newSettings`，AI 调整差异写入 pending 提案）、`regeneratePendingOutlines`、设定协调逻辑 |
 | `internal/story/config_guard.go` | `ConfigFieldChange`/`PendingConfigChanges` 结构体，`CollectStoryConfigConflicts`、`applyStoryConfigMerge`、`applyOutlineMetaWithGuard`、`Load/SavePendingConfigChanges`（`pending_config_changes.json`）、`ApplySelectedPendingChanges`、`SyncProgressMetaFromStory` |
 | `internal/story/settings.go` | `Character`、`WorldviewEntry`、`Organization`、`Relation`、`ProjectSettings` 结构体（含 `NextCharacterID` 等 ID 分配），`LoadProjectSettings`、`SaveProjectSettings` |
-| `internal/story/skills.go` | `Skill`（含 `Lang` 字段）结构体（`SkillConfig` 在 `internal/config`），`LoadBuiltinSkills`、`LoadProjectSkills`、`MergeSkills`、`GetEnabledSkills`、`GetEnabledSkillsByCategory`、`FilterSkillsByLang(skills, projectLang)`、`FormatSkillsContent`（按 skill 语言选择双语 header）、`//go:embed embeds/skills` |
+| `internal/story/skills.go` | `Skill`（语言、`applies_to` 作用域、内容哈希、AI 校验报告）与作用域常量；加载内置/旧项目 Skill、同 ID 覆盖合并、语言过滤、`ResolveSkills` 按任务解析并安全包装提示词；`//go:embed embeds/skills` |
+| `internal/story/skill_registry.go` | 程序级全局 Skill Registry：`skill.json + SKILL.md` 标准包、Markdown 兼容转换、ZIP/目录安全校验、原子安装、删除、SHA-256 内容哈希、校验报告持久化与优化副本 ID 分配；只接受 `.md/.txt/.json` 文本文件 |
+| `internal/httpapi/skill_handlers.go` | Skill 库 API：四种安装方式、详情/删除/热重载、按作用域激活并记录日志、异步 AI 校验与 AI 优化副本复检；非内置 Skill 的 `unvalidated/validating/passed/needs_optimization/failed` 状态机 |
 | `internal/story/editing.go` | `EditChapterContent` 章节正文局部编辑（`replace_lines`/`replace_text`/`insert_after_line`/`append`），`EditChapterContentRequest` 结构体，`EditOp` 常量，`FindChapterIdx` 辅助函数 |
 | `internal/story/chat.go` | `ChatSession`、`ChatMessage`（含 `tool_result_key`/`tool_result_args`）、`ToolCall`、`ChatSessionIndex` 结构体，Load/Save/Delete、`ChatSessionsDir`/`GenerateSessionID`/`GenerateChatTitle` |
 | `internal/story/postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体（含 `author_requirements` 全书优化补充要求）、`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`（注入 `{{.AuthorRequirements}}`）、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`planExecuteBatches`（有补充要求时覆盖全书各章并与勾选工单合并为一次修订；否则仅勾选工单）、`ExecuteRoadmapAction`（可选前置衔接优化 + 按批定向修订/润色 + diff 节选）、`IsBookFullyAccepted` |
@@ -148,7 +150,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `src/lib/forceGraphLayout.js` | 图谱布局纯函数：`layoutParams(n)`（√N 间距/斥力）、`fitTransform`（包围盒适配视口）、`kineticEnergy`；`forceGraphLayout.check.js` 自检 |
 | `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph），无画布硬夹边、α 冷却后 fit-to-view、按节点数 √N 调间距；拖拽唤醒仿真；滚轮缩放 0.15x–3x（以光标为中心）；hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
 | `src/pages/Assistant.svelte` | 助理页：聊天会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
-| `src/pages/Skills.svelte` | 技能页：技能表格 + toggle 开关 |
+| `src/pages/Skills.svelte` | 技能库页：粘贴 Markdown/单文件/ZIP/浏览器文件夹四种安装、作用域与来源、内容详情、校验状态、AI 校验/优化、删除及项目级 toggle |
 | `src/components/ChatPanel.svelte` | 右侧聊天面板；任务日志走 `formatLogEntry`；工具结果走 `formatToolResult`；其余同前 |
 | `src/components/ConfirmModal.svelte` | 全局确认弹窗组件（替代浏览器 confirm） |
 | `src/components/StorageErrorModal.svelte` | 全局存储失败诊断弹窗：区分原文件安全/恢复失败，提供环境自查步骤、备份路径、可展开并复制的诊断信息 |

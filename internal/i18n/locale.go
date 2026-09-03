@@ -383,6 +383,11 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "技能不存在",
 		LangEN: "Skill not found",
 	},
+	"skill_install_failed":  {LangZH: "Skill 安装失败：%s", LangEN: "Failed to install skill: %s"},
+	"skill_delete_failed":   {LangZH: "Skill 删除失败：%s", LangEN: "Failed to delete skill: %s"},
+	"skill_cannot_enable":   {LangZH: "当前校验状态禁止启用 Skill：%s", LangEN: "Skill cannot be enabled in validation state: %s"},
+	"skill_not_optimizable": {LangZH: "该 Skill 当前不可进行 AI 优化", LangEN: "This skill cannot currently be AI-optimized"},
+	"invalid_request":       {LangZH: "无效请求：%s", LangEN: "Invalid request: %s"},
 	"settings_ai_generate_moved": {
 		LangZH: "此功能已移至 LLM 对话中，请通过聊天让 AI 帮你生成设定",
 		LangEN: "This action has moved into the LLM chat; ask the assistant to generate settings for you",

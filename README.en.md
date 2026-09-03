@@ -118,7 +118,11 @@ On the Skills page you can enable built-in skills:
 | Story de-slop audit | Polish | 6-gate AI-fingerprint detection workflow with human-writer baselines |
 | Writing craft | Writing | Chapter opening / closing hooks, payoff density, pacing |
 
-All skills are disabled by default; the writing prompt is not affected unless you turn them on. When a polish-type skill is enabled, the "De-AI polish" button on the writing page becomes useful per chapter, and the full-book optimisation step can attach the polish on top of every revision. Custom skill files in the project directory are also picked up.
+All skills are disabled by default. Enabled skills are injected only into their declared scopes (chapter generation, polish, outline, book processing, and so on), and the live log lists the skills actually activated for each task.
+
+The Skills page can install pasted Markdown, one `.md` file, a ZIP, or a browser-selected folder. User skills live in the global `skills/<id>/` library and can be enabled independently per novel project. A standard package contains `skill.json`, `SKILL.md`, and optional text resources under `references/`, `templates/`, or `assets/`; scripts and binaries are never executed. Legacy `skills/*.md` files inside a project remain available read-only.
+
+Non-built-in skills show an AI validation state. An unvalidated skill displays `!` and may still be enabled; skills marked as needing optimization or failed cannot be enabled. AI Optimize creates a separate copy and immediately revalidates it. Any content change invalidates the previous report.
 
 English projects ship with English equivalents (`humanizer-en`, `story-deslop-en`, `writing-craft-en`); the skill list is filtered by project language automatically.
 
