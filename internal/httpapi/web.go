@@ -132,6 +132,12 @@ func StartWebServer(apiCfg *config.APIConfig, apiCfgPath string, logger *sse.Log
 
 	mux.HandleFunc("GET /api/skills", h.GetSkills)
 	mux.HandleFunc("PUT /api/skills/{id}/toggle", h.PutSkillToggle)
+	mux.HandleFunc("GET /api/skill-library", h.GetSkillLibrary)
+	mux.HandleFunc("POST /api/skill-library/install", h.PostSkillInstall)
+	mux.HandleFunc("GET /api/skill-library/{id}", h.GetSkillLibraryItem)
+	mux.HandleFunc("DELETE /api/skill-library/{id}", h.DeleteSkillLibraryItem)
+	mux.HandleFunc("POST /api/skill-library/{id}/validate", h.PostSkillValidate)
+	mux.HandleFunc("POST /api/skill-library/{id}/optimize", h.PostSkillOptimize)
 
 	mux.HandleFunc("GET /api/chat/sessions", h.GetChatSessions)
 	mux.HandleFunc("POST /api/chat/sessions", h.PostChatSession)

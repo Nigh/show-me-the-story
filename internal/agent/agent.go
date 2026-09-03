@@ -362,7 +362,7 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 
 	sb.WriteString("\n")
 
-	enabledSkills := story.GetEnabledSkills(ctx.Skills, ctx.Config.SkillConfig)
+	enabledSkills := story.ResolveSkills(ctx.Skills, ctx.Config.SkillConfig, story.SkillScopeAssistantChat, ctx.Config.Language)
 	if len(enabledSkills) > 0 {
 		sb.WriteString("## 已启用技能\n")
 		sb.WriteString(story.FormatSkillsContent(enabledSkills))
@@ -468,7 +468,7 @@ func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 
 	sb.WriteString("\n")
 
-	enabledSkills := story.GetEnabledSkills(ctx.Skills, ctx.Config.SkillConfig)
+	enabledSkills := story.ResolveSkills(ctx.Skills, ctx.Config.SkillConfig, story.SkillScopeAssistantChat, ctx.Config.Language)
 	if len(enabledSkills) > 0 {
 		sb.WriteString("## Enabled skills\n")
 		sb.WriteString(story.FormatSkillsContent(enabledSkills))
@@ -1451,7 +1451,7 @@ func getBuiltinTools() []Tool {
 				}
 				chIdx := ctx.State.CurrentChapterIndex
 				ctx.StartAsync("chapter_generation", func(goCtx context.Context) error {
-					err := story.GenerateChapterAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, ctx.Settings, ctx.Logger)
+					err := story.GenerateChapterAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, ctx.Settings, ctx.Skills, ctx.Logger)
 					if err != nil {
 						ctx.Logger.Error(fmt.Sprintf("章节创作失败: %v", err))
 					}

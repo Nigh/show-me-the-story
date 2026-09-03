@@ -114,7 +114,7 @@ func formatExtraWritingConstraintsBlock(constraints, lang string) string {
 	return "【补充写作约束（事实核查冲突调和）】\n" + constraints
 }
 
-func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, progressPath string, settings *ProjectSettings, logger *sse.LogBroadcaster) error {
+func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, progressPath string, settings *ProjectSettings, skills []Skill, logger *sse.LogBroadcaster) error {
 	if err := llm.ValidateConfig(apiCfg); err != nil {
 		return err
 	}
@@ -167,6 +167,15 @@ func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *c
 	}
 
 	maxFactCheckRetries := 3
+	factSkills := ResolveSkills(skills, cfg.SkillConfig, SkillScopeChapterFactCheck, cfg.Language)
+	factCtx := llm.WithPromptAddon(ctx, FormatSkillsContent(factSkills))
+	if len(factSkills) > 0 {
+		names := make([]string, len(factSkills))
+		for i, s := range factSkills {
+			names[i] = s.Name
+		}
+		logger.InfoKey("log.skills_activated", strings.Join(names, ", "))
+	}
 	extraConstraints := ""
 	var accumulatedIssues []string
 
@@ -195,7 +204,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *c
 
 		logger.StepInfo(4, 6, "正在对本章进行事实核查...")
 		historySummary := buildHistorySummary(state, i)
-		factCheckResult := generateChapterFactCheckWithRetryLog(ctx, apiCfg, cfg, state, i, content, historySummary, logger)
+		factCheckResult := generateChapterFactCheckWithRetryLog(factCtx, apiCfg, cfg, state, i, content, historySummary, logger)
 
 		failed, issues := parseFactCheckResult(factCheckResult)
 		if failed {
@@ -229,7 +238,7 @@ func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *c
 					return fmt.Errorf("摘要提炼失败或被取消")
 				}
 				ch.Summary = summary
-				factCheckResult = generateChapterFactCheckWithRetryLog(ctx, apiCfg, cfg, state, i, content, historySummary, logger)
+				factCheckResult = generateChapterFactCheckWithRetryLog(factCtx, apiCfg, cfg, state, i, content, historySummary, logger)
 				failed, issues = parseFactCheckResult(factCheckResult)
 				if failed {
 					accumulatedIssues = mergeUniqueIssues(accumulatedIssues, splitFactCheckIssues(issues))

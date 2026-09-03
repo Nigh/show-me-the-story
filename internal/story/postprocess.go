@@ -737,7 +737,12 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		}
 	}
 
-	polishSkills := GetEnabledSkillsByCategory(skills, cfg.SkillConfig, "polish")
+	var polishSkills []Skill
+	for _, skill := range ResolveSkills(skills, cfg.SkillConfig, SkillScopeBookExecute, cfg.Language) {
+		if skill.Category == "polish" {
+			polishSkills = append(polishSkills, skill)
+		}
+	}
 	hasPolishSkills := len(polishSkills) > 0
 
 	batches := planExecuteBatches(state.Chapters, pp.Roadmap, pp.AuthorRequirements)
@@ -810,7 +815,7 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 			if !hasPolishSkills {
 				execErr = fmt.Errorf("没有启用的润色技能")
 			} else {
-				execErr = PolishChapterAction(ctx, apiCfg, cfg, state, chapterIdx, polishSkills, progressPath, logger)
+				execErr = PolishChapterAction(llm.WithPromptAddon(ctx, ""), apiCfg, cfg, state, chapterIdx, polishSkills, progressPath, logger)
 			}
 		} else {
 			execErr = ReviseSpecificChapterAction(ctx, apiCfg, cfg, state, progressPath, batch.ChapterNum, mergedFeedback, settings, logger)
