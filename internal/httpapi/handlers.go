@@ -2483,7 +2483,7 @@ func (h *Handlers) PutPostProcessRoadmap(w http.ResponseWriter, r *http.Request)
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
-	h.logger.PostProcessUpdate(h.postprocess)
+	h.logger.PostProcessUpdate(h.postProcessResponse())
 	h.writeJSON(w, http.StatusOK, h.postProcessResponse())
 }
 
@@ -2503,7 +2503,7 @@ func (h *Handlers) DeletePostProcess(w http.ResponseWriter, r *http.Request) {
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "clear_postprocess_failed", err.Error())
 		return
 	}
-	h.logger.PostProcessUpdate(h.postprocess)
+	h.logger.PostProcessUpdate(h.postProcessResponse())
 	h.writeJSON(w, http.StatusOK, h.postProcessResponse())
 }
 
@@ -2537,7 +2537,7 @@ func (h *Handlers) PostPostProcessDiagnose(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
-		h.logger.PostProcessUpdate(h.postprocess)
+		h.logger.PostProcessUpdate(h.postProcessResponse())
 		h.logger.TaskEnd("postprocess_diagnose", true)
 	}()
 
@@ -2578,7 +2578,7 @@ func (h *Handlers) PostPostProcessConsistency(w http.ResponseWriter, r *http.Req
 		h.postprocess.ConsistencyAt = time.Now().Format(time.RFC3339)
 		_ = story.SavePostProcess(h.postprocessPath, h.postprocess)
 		h.logger.PostProcessReport("consistency", report)
-		h.logger.PostProcessUpdate(h.postprocess)
+		h.logger.PostProcessUpdate(h.postProcessResponse())
 		h.logger.TaskEnd("postprocess_consistency", true)
 	}()
 
@@ -2619,7 +2619,7 @@ func (h *Handlers) PostPostProcessRoadmap(w http.ResponseWriter, r *http.Request
 		h.postprocess.RoadmapAt = time.Now().Format(time.RFC3339)
 		_ = story.SavePostProcess(h.postprocessPath, h.postprocess)
 		h.logger.PostProcessRoadmap(h.postprocess)
-		h.logger.PostProcessUpdate(h.postprocess)
+		h.logger.PostProcessUpdate(h.postProcessResponse())
 		h.logger.TaskEnd("postprocess_roadmap", true)
 	}()
 
@@ -2687,13 +2687,13 @@ func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request
 			}
 			h.logger.TaskEnd("postprocess_execute", false)
 			h.broadcastProgress()
-			h.logger.PostProcessUpdate(h.postprocess)
+			h.logger.PostProcessUpdate(h.postProcessResponse())
 			return
 		}
 
 		h.logger.TaskEnd("postprocess_execute", true)
 		h.broadcastProgress()
-		h.logger.PostProcessUpdate(h.postprocess)
+		h.logger.PostProcessUpdate(h.postProcessResponse())
 	}()
 
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
