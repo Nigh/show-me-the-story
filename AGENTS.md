@@ -135,7 +135,8 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、postprocess、taskRunning、taskTokenUsage、autoConfirm、lastFailedTask、`projectLanguage`、`pendingConfigChanges`/`showConfigChangePanel`、`apiTestResult` LLM 连接测试结果持久化 等）+ toast/log 管理 |
 | `src/lib/proseUnits.js` | `countProseUnits`：与后端 `prose_units.go` 同口径，供写作页章节/全书字数展示 |
 | `src/lib/tokenPoll.js` | `TOKEN_POLL_INTERVAL_MS`：token poll 间隔与 TaskTokenBadge 数字线性动画时长共用 |
-| `src/lib/sse.js` | `connectSSE()` — EventSource `?locale=`；`open` 时恢复任务 UI；处理日志/工具结果/流式内容；收到后台 `storage_error` 时打开全局存储错误弹窗 |
+| `src/lib/sse.js` | `connectSSE()` — EventSource `?locale=`；`open` 时恢复任务 UI；处理日志/工具结果/流式内容；收到后台 `storage_error` 时打开全局存储错误弹窗；`postprocess_update` 经 `normalizePostProcessPayload` 兼容裸 `PostProcessState` 与 `{book_complete,state}` |
+| `src/lib/postprocessEvent.js` | `normalizePostProcessPayload`：把全书优化 SSE/API 负载归一成 `{book_complete, state}`；`postprocessEvent.check.js` 自检 |
 | `src/lib/i18n/index.js` | `uiLocale`、`t`/`translate`（`{name}`）、`formatKeyedMessage`/`formatLogEntry`/`formatToolResult`（服务端 key + `{0}`）、`translateServerMessage` legacy 兜底 |
 | `src/lib/i18n/zh.js`, `en.js` | 扁平 key 字典；新增可见文案必须同时在两个文件加 key |
 | `src/pages/Projects.svelte` | 项目选择页：新建项目（名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`）+ 项目列表（每项显示语言 badge，可选择/删除）；选中项目后 `setLocale(project.language)` |
@@ -146,7 +147,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `src/components/TaskTokenBadge.svelte` | 任务 token 展示（`↑ prompt ↓ completion tokens`）；对 `taskTokenUsage` 更新做线性 rAF 插值，动画时长 = `TOKEN_POLL_INTERVAL_MS`；目标值低于当前显示值时该维度从 0 重新向上插值（新一段统计或估算修正）；供 ChatPanel / App 顶栏 / Writing 页复用 |
 | `src/pages/Foreshadows.svelte` | 伏笔页：统计概览 + AI 设计伏笔 + 手动 CRUD（`<dialog class="modal">` 创建/编辑表单，DaisyUI 5 字段标签用 `text-xs … block` + `w-full`，不用已移除的 `form-control`/`label-text`）+ AI 建议确认面板（SSE `foreshadow_suggestions`）+ 伏笔-大纲冲突报告卡片（`last_foreshadow_outline_report`）+ 列表/章节时间线/路线图文档三视图 + 复制/下载 `Foreshadows.md` |
 | `src/pages/Memory.svelte` | 叙事记忆页（只读）：从 `progress.memory_entries` 展示统计（条数/覆盖章节/token 上限/内容字数）+ 列表/按章节时间线两视图 + 分类/章节筛选 + 原文片段预览（v3：片段由后端在 `snippet` 字段解析下发）+ 刷新/复制；分类 badge 用 `badge-sm whitespace-nowrap`（DaisyUI 5 固定高度无 nowrap 时窄列会竖排） |
-| `src/components/PostProcessPanel.svelte` | 全书优化面板：可选「补充要求」textarea（`author_requirements`；有内容时执行覆盖全书各章并与勾选工单合并）+ 开始全书分析（诊断+核查+路线图）/ 重新核查 / 重新生成路线图 / 清空；诊断与核查报告 Markdown 展示；优化工单表格（勾选、编辑意见、执行选项、diff 对比弹窗）；执行选项 checkbox 本地编辑时 `!dirty` 才从服务端回填，并用 `checkbox-primary` 保证勾选可见 |
+| `src/components/PostProcessPanel.svelte` | 全书优化面板：可选「补充要求」textarea（`author_requirements`；有内容时执行覆盖全书各章并与勾选工单合并）+ 开始全书分析（诊断+核查+路线图）/ 重新核查 / 重新生成路线图 / 清空；诊断与核查报告 Markdown 展示；优化工单表格（勾选、编辑意见、执行选项、diff 对比弹窗）；执行选项 checkbox 本地编辑时 `!dirty` 才从服务端回填，并用 `checkbox-primary` 保证勾选可见；只有已启用且 `applies_to` 含 `book.execute` 的 polish 类 Skill 才允许全书润色 |
 | `src/lib/forceGraphLayout.js` | 图谱布局纯函数：`layoutParams(n)`（√N 间距/斥力）、`fitTransform`（包围盒适配视口）、`kineticEnergy`；`forceGraphLayout.check.js` 自检 |
 | `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph），无画布硬夹边、α 冷却后 fit-to-view、按节点数 √N 调间距；拖拽唤醒仿真；滚轮缩放 0.15x–3x（以光标为中心）；hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
 | `src/pages/Assistant.svelte` | 助理页：聊天会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
@@ -249,12 +250,12 @@ API 配置（`APIConfig`）与故事配置（`Config`）完全分离，分别保
 
 ### Skill 可选性设计
 
-所有 skill 默认 `enabled: false`，配置存储在 `config.json` 的 `skill_config` 中。功能性 AI（大纲/章节/核查）默认不注入任何 skill。作者在前端 Skill 管理页手动 toggle 启用。
+所有 Skill 默认禁用，启用状态存储在 `config.json` 的 `skill_config` 中。启用后仍须由 `ResolveSkills` 按项目语言与 `applies_to` 作用域匹配当前动作；用户安装 Skill 的内容会以安全边界包装后注入。
 
 注入规则：
-- 大纲生成/章节写作/修订/事实核查/AI设定生成：不注入任何 skill（除非作者显式启用）
-- 去AI味（`POST /api/chapter/polish`）：加载所有 enabled 的 `polish` 类 skill；全书优化执行时可选附加去 AI 味
-- 全局助理：加载所有 enabled 的 skill 作为参考
+- 大纲生成、章节生成/修订/事实核查、伏笔规划、全书诊断/路线图/执行、导入分析和全局助理分别使用对应作用域。
+- 去 AI 味（`POST /api/chapter/polish`）使用 `chapter.polish`；全书优化中的 polish 工单或 `include_polish` 使用 `book.execute`，且要求 Skill 类别为 `polish`。
+- 前端全书优化面板按与后端一致的 `enabled + category=polish + applies_to=book.execute` 条件启用润色选项。
 
 ### 用户已填配置保护（无字段锁）
 
@@ -729,7 +730,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 7. **异步任务互斥**：同一时间只能有一个 AI 任务运行（`tryStartTask`/`endTask`）
 8. **原子写入**：配置和进度文件使用 `fsutil.WriteFileAtomic`（先写 `.tmp` 再 rename）
 9. **双语界面**：UI 文案走 `$t('key', {name})`；后端日志/Agent 状态走 `messageCatalog` key + `InfoKey`/`agentMsg`；API 错误走 `writeErrorReq` + `errorCatalog`；新增 key 须同步 `internal/i18n/messages.go`（或 `errorCatalog`）与 `zh.js`/`en.js`
-10. **Skill 可选性**：所有 skill 默认禁用，功能性 AI 不注入任何 skill，除非作者显式启用
+10. **Skill 可选性**：所有 Skill 默认禁用；启用后仍须按项目语言和 `applies_to` 作用域匹配当前动作；全书润色还要求 `category=polish` 与 `book.execute` 作用域
 11. **多语言一致**：新增 prompt 模板必须同时在 `internal/config/prompts.go`（`DefaultPromptsZH`）和 `prompts_en.go`（`DefaultPromptsEN`）补齐；新增注入块文本必须在 `internal/story/inject.go` 处理两种语言；新增内联 system prompt 必须挂到 `internal/i18n/locale.go` 的 `systemPrompts` map
 
 ## 修改检查清单

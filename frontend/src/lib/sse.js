@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { addLog, addToast, config, progress, skills, taskRunning, streamingContent, streamingChapterIdx, taskTokenUsage, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions, outlineCharacterSuggestions, outlineCharacterShowSuggestions, pendingConfigChanges, showConfigChangePanel, storageError } from './stores.js';
+import { normalizePostProcessPayload } from './postprocessEvent.js';
 import { api } from './api.js';
 import { getLocale, translate, formatLogEntry, formatToolResult } from './i18n/index.js';
 import { TOKEN_POLL_INTERVAL_MS } from './tokenPoll.js';
@@ -304,7 +305,9 @@ export function connectSSE() {
 
   eventSource.addEventListener('postprocess_update', e => {
     const d = JSON.parse(e.data);
-    postprocess.set(d);
+    // Bare PostProcessState must be wrapped; otherwise $postprocess.state is undefined,
+    // execute-option checkboxes snap/clear, and postprocess_item_done cannot patch roadmap.
+    postprocess.update(pp => normalizePostProcessPayload(d, pp));
   });
 
   eventSource.addEventListener('postprocess_roadmap', e => {

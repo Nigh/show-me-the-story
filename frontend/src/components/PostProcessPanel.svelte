@@ -39,13 +39,31 @@
     failed: 'badge-error', skipped: 'badge-ghost',
   };
 
+  let hasPolishSkills = false;
+
   async function loadPostprocess() {
     try {
       postprocess.set(await api('GET', '/api/postprocess'));
     } catch (e) { /* ignore */ }
   }
 
-  onMount(loadPostprocess);
+  async function loadPolishSkills() {
+    try {
+      const sk = await api('GET', '/api/skills');
+      hasPolishSkills = (sk || []).some(s =>
+        s.enabled &&
+        s.skill?.category === 'polish' &&
+        (s.skill?.applies_to || []).includes('book.execute')
+      );
+    } catch (e) {
+      hasPolishSkills = false;
+    }
+  }
+
+  onMount(() => {
+    loadPostprocess();
+    loadPolishSkills();
+  });
 
   $: if (pp?.roadmap && !dirty) {
     roadmapLocal = pp.roadmap.map(r => ({ ...r }));
@@ -57,8 +75,9 @@
       include_polish: !!pp.execute_options.include_polish,
     };
   }
-  $: if (!dirty) {
-    authorReqLocal = pp?.author_requirements || '';
+  // Don't clear local fields when pp is briefly undefined (bad SSE shape).
+  $: if (pp && !dirty) {
+    authorReqLocal = pp.author_requirements || '';
   }
 
   function markDirty() { dirty = true; }
@@ -146,6 +165,11 @@
     const chapterCount = hasAuthorReq ? allChapters : ticketChapters;
     if (pending.length === 0 && !hasAuthorReq) {
       addToast($t('pp.toast.pickRequired'), 'error');
+      return;
+    }
+    const polishPending = pending.filter(r => r.type === 'polish').length;
+    if (!hasPolishSkills && (optsLocal.include_polish || polishPending > 0)) {
+      addToast($t('pp.toast.needPolishSkill'), 'error');
       return;
     }
     let mergeHint = '';
@@ -269,18 +293,26 @@
               class="checkbox checkbox-sm checkbox-primary"
               checked={optsLocal.run_smooth_transitions_first}
               on:change={e => setOpt('run_smooth_transitions_first', e.currentTarget.checked)}
+              disabled={$taskRunning}
             />
             {$t('pp.opts.smoothFirst')}
           </label>
-          <label class="flex items-center gap-1.5 cursor-pointer">
+          <label
+            class="flex items-center gap-1.5 {!hasPolishSkills ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}"
+            title={!hasPolishSkills ? $t('pp.opts.includePolish.needSkill') : ''}
+          >
             <input
               type="checkbox"
               class="checkbox checkbox-sm checkbox-primary"
-              checked={optsLocal.include_polish}
+              checked={optsLocal.include_polish && hasPolishSkills}
               on:change={e => setOpt('include_polish', e.currentTarget.checked)}
+              disabled={$taskRunning || !hasPolishSkills}
             />
             {$t('pp.opts.includePolish')}
           </label>
+          {#if !hasPolishSkills}
+            <span class="text-base-content/40">{$t('pp.opts.includePolish.needSkill')}</span>
+          {/if}
           <div class="flex-1"></div>
           {#if roadmapLocal.length > 0}
             <button class="btn btn-ghost btn-xs" on:click={() => selectAllPending(true)} disabled={$taskRunning}>{$t('pp.btn.selectAll')}</button>
