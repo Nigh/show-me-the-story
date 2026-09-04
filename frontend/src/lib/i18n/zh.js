@@ -75,7 +75,8 @@ export default {
   'projects.current': '当前',
   'projects.incompatible.badge': '旧版不兼容',
   'projects.incompatible.hint': '请使用原版本程序继续操作',
-  'projects.incompatible.message': '此项目与 v3 不兼容，为保护数据无法打开。',
+  'projects.incompatible.unknown': '无法识别项目格式。请先备份项目文件，再检查 config.json 和 progress.json。',
+  'projects.incompatible.message': '该项目格式为 {format}，请使用 {line} 打开（推荐 {version}）；当前程序不会修改该项目。',
   'projects.confirm.delete': '确认删除项目「{name}」？此操作不可恢复！',
   'projects.bookTitle': '《{title}》',
   'projects.toast.switched': '已切换到项目: {name}',
@@ -464,6 +465,10 @@ export default {
   'config.rel.memberEdge': '成员',
 
   // ---- Outline page ----
+  'outline.dynamic.review': 'AI 复盘',
+  'outline.dynamic.reviewStarted': 'AI 阶段复盘已开始',
+  'outline.dynamic.requirements': '本批剧情要求（生成新批次时替换全部未写章纲）',
+  'outline.dynamic.direction': '可选长期方向或结局设想',
   'outline.empty.title': '尚未生成大纲',
   'outline.empty.hint': '请先在「配置」页完善故事设定，然后点击下方按钮',
   'outline.btn.generate': '✨ 生成大纲',
@@ -545,6 +550,11 @@ export default {
   'outline.toasts.arcAppendStarted': '追加新卷任务已启动',
 
   // ---- Writing page ----
+  'writing.book.complete': '标记完结',
+  'writing.book.resume': '恢复连载',
+  'writing.book.completed': '作品已标记完结',
+  'writing.book.resumed': '作品已恢复连载',
+  'writing.book.foreshadowConfirm': '仍有 {n} 条伏笔未回收，仍要标记完结吗？',
   'writing.notReady.title': '尚未进入写作阶段',
   'writing.notReady.hint': '请先在「大纲」页生成并确认大纲',
   'writing.notReady.goto': '前往大纲页',

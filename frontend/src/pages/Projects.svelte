@@ -28,7 +28,10 @@
   async function selectProject(name) {
     const project = $projects.find((item) => item.name === name);
     if (project?.compatibility !== 'supported') {
-      addToast($t('projects.incompatible.message'), 'error');
+      const message = project.compatible_app_line
+        ? $t('projects.incompatible.message', { format: project.project_format, line: project.compatible_app_line, version: project.recommended_app_version })
+        : $t('projects.incompatible.unknown');
+      showConfirm(message, () => {});
       return;
     }
     try {

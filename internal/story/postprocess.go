@@ -117,7 +117,7 @@ func SavePostProcess(path string, pp *PostProcessState) error {
 }
 
 func IsBookFullyAccepted(state *Progress) bool {
-	if state == nil || len(state.Chapters) == 0 {
+	if state == nil || state.BookStatus != BookStatusCompleted || len(state.Chapters) == 0 {
 		return false
 	}
 	for _, ch := range state.Chapters {

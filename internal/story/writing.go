@@ -507,6 +507,16 @@ func ConfirmChapterAction(state *Progress, progressPath string) error {
 
 	ch.Status = StatusAccepted
 	state.CurrentChapterIndex = chapterIdx + 1
+	if state.CurrentChapterIndex%20 == 0 {
+		var summary strings.Builder
+		for i := state.CurrentChapterIndex - 20; i < state.CurrentChapterIndex; i++ {
+			fmt.Fprintf(&summary, "[%d] %s\n", state.Chapters[i].Num, state.Chapters[i].Summary)
+		}
+		state.NarrativeCheckpoints = append(state.NarrativeCheckpoints, NarrativeCheckpoint{
+			StartChapter: state.Chapters[state.CurrentChapterIndex-20].Num,
+			EndChapter:   ch.Num, Summary: strings.TrimSpace(summary.String()),
+		})
+	}
 	return SaveProgress(progressPath, state)
 }
 

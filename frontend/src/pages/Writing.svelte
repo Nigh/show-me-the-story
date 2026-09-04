@@ -384,6 +384,21 @@
       },
     });
   }
+  async function setBookCompleted(completed) {
+    const active = foreshadows.filter(f => f.status !== "resolved" && f.status !== "abandoned").length;
+    const run = async () => {
+      try {
+        const suffix = completed && active ? "?confirm_foreshadows=true" : "";
+        progress.set(await api("POST", completed ? "/api/story/complete" + suffix : "/api/story/resume"));
+        addToast($t(completed ? "writing.book.completed" : "writing.book.resumed"), "success");
+      } catch (e) { addToast(e.message, "error"); }
+    };
+    if (completed && active) {
+      confirmModal.set({ message: $t("writing.book.foreshadowConfirm", { n: active }), onConfirm: run });
+    } else {
+      await run();
+    }
+  }
 </script>
 
 {#if !inWriting}
@@ -409,6 +424,11 @@
             <button class="btn btn-ghost btn-xs" on:click={smoothTransitions} disabled={$taskRunning} title={$t('writing.btn.smoothTransitions.tip')}>{$t('writing.btn.smoothTransitions')}</button>
           {/if}
           <button class="btn btn-ghost btn-xs" on:click={exportBook}>{$t('writing.btn.exportTxt')}</button>
+			{#if p.book_status === 'completed'}
+				<button class="btn btn-warning btn-xs" on:click={() => setBookCompleted(false)} disabled={$taskRunning}>{$t('writing.book.resume')}</button>
+			{:else}
+				<button class="btn btn-success btn-xs" on:click={() => setBookCompleted(true)} disabled={$taskRunning}>{$t('writing.book.complete')}</button>
+			{/if}
         </div>
         <progress class="progress progress-primary w-full" value={pct} max="100"></progress>
         <div class="text-sm text-base-content/50">{$t('writing.progress.acceptedSummary', { pct, accepted, total })}</div>

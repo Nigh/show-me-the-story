@@ -15,8 +15,7 @@
   $: displayTitle = $config?.story?.title || p?.title || '';
   $: displaySynopsis = $config?.story?.story_synopsis || p?.story_synopsis || '';
   $: chapters = p?.chapters || [];
-  $: arcs = p?.arcs || [];
-  $: hasOutline = chapters.length > 0 || arcs.length > 0;
+    $: hasOutline = chapters.length > 0;
   $: hasAccepted = chapters.some(c => c.status === 'accepted');
   $: inOutlinePhase = p?.phase === 'outline';
   $: pendingCount = chapters.filter(c => c.status === 'pending').length;
@@ -82,6 +81,8 @@
   let importPreview = null; // [{num,title,word_count,preview}]
   let importStatus = null;  // {active,total,cursor} 断点状态
   let continuationCount = 5;
+  let planningRequirements = "";
+  let longTermDirection = "";
 
   onMount(refreshImportStatus);
   $: if (!$taskRunning) refreshImportStatus();
@@ -198,7 +199,7 @@
 
   async function generateContinuation() {
     try {
-      await api('POST', '/api/outline/generate-continuation', { chapter_count: Number(continuationCount) || 5 });
+      await api('POST', '/api/outline/generate-continuation', { chapter_count: Number(continuationCount) || 5, requirements: planningRequirements.trim(), long_term_direction: longTermDirection.trim() });
       addToast($t('outline.toasts.continuationStarted'), 'info');
     } catch (e) { addToast(e.message, 'error'); }
   }
@@ -273,6 +274,12 @@
     outlineCharacterSuggestions.set([]);
     outlineCharacterShowSuggestions.set(false);
   }
+  async function reviewStory() {
+    try {
+      await api("POST", "/api/story/review");
+      addToast($t("outline.dynamic.reviewStarted"), "info");
+    } catch (e) { addToast(e.message, "error"); }
+  }
 </script>
 
 <div class="space-y-3">
@@ -282,9 +289,13 @@
       <div class="text-5xl mb-3">📝</div>
       <p class="text-base mb-1">{$t('outline.empty.title')}</p>
       <p class="text-sm text-base-content/35 mb-6">{$t('outline.empty.hint')}</p>
+      <div class="max-w-xl mx-auto space-y-2 mb-3">
+        <textarea class="textarea textarea-sm w-full" bind:value={planningRequirements} placeholder={("outline.dynamic.requirements")}></textarea>
+        <textarea class="textarea textarea-sm w-full" bind:value={longTermDirection} placeholder={("outline.dynamic.direction")}></textarea>
+      </div>
       <div class="flex justify-center gap-2">
-        <button class="btn btn-primary btn-sm" on:click={generateOutline} disabled={$taskRunning}>{$t('outline.btn.generate')}</button>
-        <button class="btn btn-secondary btn-sm" on:click={generateSkeleton} disabled={$taskRunning}>{$t('outline.btn.skeleton')}</button>
+        <input type="number" min="1" max="36" class="input input-sm w-20" bind:value={continuationCount} disabled={$taskRunning} />
+        <button class="btn btn-primary btn-sm" on:click={generateContinuation} disabled={$taskRunning}>{$t('outline.btn.continuation')}</button>
         <button class="btn btn-ghost btn-sm" on:click={() => showImport = !showImport} disabled={$taskRunning}>{$t('outline.btn.import')}</button>
       </div>
       <p class="text-xs text-base-content/35 mt-2">{$t('outline.empty.arcHint')}</p>
@@ -369,10 +380,11 @@
           {#if inOutlinePhase}
             <button class="btn btn-success btn-xs" on:click={confirmOutline} disabled={$taskRunning || chapters.length === 0}>{$t('outline.btn.confirm')}</button>
           {/if}
+          <button class="btn btn-secondary btn-xs" on:click={reviewStory} disabled={$taskRunning || !hasAccepted}>{$t('outline.dynamic.review')}</button>
           <button class="btn btn-ghost btn-xs" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('outline.btn.revise')}</button>
           {#if hasAccepted}
             <div class="join">
-              <input type="number" min="1" max="50" class="input input-xs join-item w-14" bind:value={continuationCount} disabled={$taskRunning} />
+              <input type="number" min="1" max="36" class="input input-xs join-item w-14" bind:value={continuationCount} disabled={$taskRunning} />
               <button class="btn btn-primary btn-xs join-item" on:click={generateContinuation} disabled={$taskRunning}>{$t('outline.btn.continuation')}</button>
             </div>
           {:else if inOutlinePhase}
@@ -396,6 +408,10 @@
           </div>
         {/if}
 
+		{#if p.latest_planning_review}
+			<div class="bg-secondary/10 border border-secondary/30 rounded p-3 text-sm whitespace-pre-wrap">{p.latest_planning_review.content}</div>
+		{/if}
+
         {#if p.core_prompt}
           <div>
             <span class="text-xs text-base-content/50">{$t('outline.corePrompt')}</span>
@@ -410,59 +426,6 @@
         {/if}
       </div>
     </div>
-
-    <!-- 卷结构（层级大纲） -->
-    {#if arcs.length > 0}
-      <div class="card bg-base-200 shadow-sm">
-        <div class="card-body p-4 gap-2">
-          <div class="flex items-center justify-between">
-            <h4 class="text-sm font-semibold text-base-content/60">{$t('outline.arcs.title')} <span class="font-normal text-base-content/35">({arcs.length})</span></h4>
-            <button class="btn btn-ghost btn-xs" on:click={() => showAppendArc = !showAppendArc} disabled={$taskRunning}>{$t('outline.arcs.append')}</button>
-          </div>
-
-          {#if showAppendArc}
-            <div class="bg-base-300 rounded-lg p-3 space-y-2">
-              <div class="flex gap-2">
-                <input type="text" class="input input-sm flex-1" bind:value={appendArcTitle} placeholder={$t('outline.arcs.appendTitle')} disabled={$taskRunning} />
-                <input type="number" min="1" max="100" class="input input-sm w-20" bind:value={appendArcCount} disabled={$taskRunning} title={$t('outline.arcs.appendCount')} />
-              </div>
-              <textarea class="textarea textarea-sm w-full h-16 text-sm" bind:value={appendArcGoal} placeholder={$t('outline.arcs.appendGoal')} disabled={$taskRunning}></textarea>
-              <div class="flex justify-end gap-2">
-                <button class="btn btn-ghost btn-xs" on:click={() => showAppendArc = false}>{$t('common.cancel')}</button>
-                <button class="btn btn-primary btn-xs" on:click={appendArc} disabled={$taskRunning}>{$t('outline.arcs.appendSubmit')}</button>
-              </div>
-            </div>
-          {/if}
-
-          <div class="space-y-1.5">
-            {#each arcs as arc, i (arc.id)}
-              {@const counts = arcChapterCounts(arc)}
-              <div class="bg-base-300 rounded-lg p-2.5">
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-bold text-base-content/40 shrink-0">{$t('outline.arcs.volLabel', { n: i + 1 })}</span>
-                  <span class="text-sm font-medium flex-1 min-w-0 truncate">{arc.title}</span>
-                  <span class="text-xs text-base-content/40 shrink-0">{$t('outline.arcs.range', { start: arc.start_ch, end: arc.end_ch })}</span>
-                  <span class="badge badge-xs {counts.outlined >= counts.total ? 'badge-success' : 'badge-ghost'}">{$t('outline.arcs.outlined', { n: counts.outlined, total: counts.total })}</span>
-                  {#if arc.summary}
-                    <span class="badge badge-xs badge-info">{$t('outline.arcs.summaryDone')}</span>
-                  {/if}
-                  <button class="btn btn-primary btn-xs shrink-0" on:click={() => generateArcOutline(arc)} disabled={$taskRunning}>
-                    {counts.outlined > 0 ? $t('outline.arcs.regenOutline') : $t('outline.arcs.genOutline')}
-                  </button>
-                  <button class="btn btn-ghost btn-xs shrink-0" on:click={() => { arcReqOpenId = arcReqOpenId === arc.id ? -1 : arc.id; arcRequirements = ''; }} disabled={$taskRunning}>+</button>
-                </div>
-                {#if arc.goal}
-                  <p class="text-xs text-base-content/50 mt-1 line-clamp-2">{arc.goal}</p>
-                {/if}
-                {#if arcReqOpenId === arc.id}
-                  <textarea class="textarea textarea-sm w-full h-14 text-sm mt-2" bind:value={arcRequirements} placeholder={$t('outline.arcs.reqPlaceholder')} disabled={$taskRunning}></textarea>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        </div>
-      </div>
-    {/if}
 
     <!-- 章节大纲列表 -->
     <div class="card bg-base-200 shadow-sm">

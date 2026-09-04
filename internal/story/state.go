@@ -52,7 +52,8 @@ type Foreshadow struct {
 	Name          string            `json:"name"`
 	Description   string            `json:"description"`
 	PlantChapter  int               `json:"plant_chapter"`
-	TargetChapter int               `json:"target_chapter"`
+	TargetChapter int               `json:"target_chapter,omitempty"`
+	TargetHorizon string            `json:"target_horizon,omitempty"`
 	Status        ForeshadowStatus  `json:"status"`
 	Events        []ForeshadowEvent `json:"events"`
 	Resolution    string            `json:"resolution"`
@@ -129,6 +130,27 @@ type Progress struct {
 	PendingWritingConflict      *WritingConflict         `json:"pending_writing_conflict,omitempty"`
 	MemoryEntries               []MemoryEntry            `json:"memory_entries,omitempty"`
 	MemoryMaxTokens             int                      `json:"memory_max_tokens,omitempty"`
+	BookStatus                  string                   `json:"book_status,omitempty"`
+	LongTermDirection           string                   `json:"long_term_direction,omitempty"`
+	LatestPlanningReview        *PlanningReview          `json:"latest_planning_review,omitempty"`
+	NarrativeCheckpoints        []NarrativeCheckpoint    `json:"narrative_checkpoints,omitempty"`
+}
+
+const (
+	BookStatusActive    = "active"
+	BookStatusCompleted = "completed"
+)
+
+type PlanningReview struct {
+	ThroughChapter int    `json:"through_chapter"`
+	Content        string `json:"content"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type NarrativeCheckpoint struct {
+	StartChapter int    `json:"start_chapter"`
+	EndChapter   int    `json:"end_chapter"`
+	Summary      string `json:"summary"`
 }
 
 const (

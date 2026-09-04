@@ -66,7 +66,7 @@ func NewHandlers(apiCfg *config.APIConfig, apiCfgPath string, logger *sse.LogBro
 		version:    version,
 		progDir:    progDir,
 		cfg:        config.DefaultConfig(),
-		state:      &story.Progress{Phase: "outline"},
+		state:      &story.Progress{Phase: "writing", BookStatus: story.BookStatusActive},
 		settings:   &story.ProjectSettings{},
 		postprocess: &story.PostProcessState{
 			ExecuteOptions: &story.PostProcessExecuteOptions{RunSmoothTransitionsFirst: true},
@@ -123,7 +123,7 @@ func (h *Handlers) switchProject(name string) error {
 		return fmt.Errorf("加载项目进度失败: %w", err)
 	}
 	if state == nil {
-		state = &story.Progress{Phase: "outline"}
+		state = &story.Progress{Phase: "writing", BookStatus: story.BookStatusActive}
 	}
 
 	settings, err := story.LoadProjectSettings(settingsPath)
@@ -407,9 +407,6 @@ func (h *Handlers) PutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if newCfg.Story.ChapterCount <= 0 {
-		newCfg.Story.ChapterCount = 30
-	}
 	if newCfg.Story.TargetWordsPerChapter <= 0 {
 		newCfg.Story.TargetWordsPerChapter = 2500
 	}
@@ -417,6 +414,9 @@ func (h *Handlers) PutConfig(w http.ResponseWriter, r *http.Request) {
 	if newCfg.Language == "" {
 		newCfg.Language = h.cfg.Language
 	}
+	newCfg.ProjectFormatVersion = config.ProjectFormatVersion
+	newCfg.CompatibleAppLine = config.CompatibleAppLine
+	newCfg.CreatedWithVersion = h.cfg.CreatedWithVersion
 	newCfg.Prompts.ApplyDefaults(newCfg.Language)
 
 	data, err := json.MarshalIndent(newCfg, "", "  ")
@@ -1618,6 +1618,7 @@ func (h *Handlers) PostForeshadow(w http.ResponseWriter, r *http.Request) {
 		Description   string `json:"description"`
 		PlantChapter  int    `json:"plant_chapter"`
 		TargetChapter int    `json:"target_chapter"`
+		TargetHorizon string `json:"target_horizon"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
@@ -1638,6 +1639,7 @@ func (h *Handlers) PostForeshadow(w http.ResponseWriter, r *http.Request) {
 		Description:   req.Description,
 		PlantChapter:  req.PlantChapter,
 		TargetChapter: req.TargetChapter,
+		TargetHorizon: req.TargetHorizon,
 		Status:        story.ForeshadowPlanted,
 		Events:        []story.ForeshadowEvent{},
 	}
@@ -1669,6 +1671,7 @@ func (h *Handlers) PutForeshadow(w http.ResponseWriter, r *http.Request) {
 		Description   string                 `json:"description"`
 		PlantChapter  int                    `json:"plant_chapter"`
 		TargetChapter int                    `json:"target_chapter"`
+		TargetHorizon string                 `json:"target_horizon"`
 		Status        story.ForeshadowStatus `json:"status"`
 		Resolution    string                 `json:"resolution"`
 	}
@@ -1701,6 +1704,10 @@ func (h *Handlers) PutForeshadow(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.TargetChapter > 0 {
 		fs.TargetChapter = req.TargetChapter
+	}
+	if req.TargetHorizon != "" {
+		fs.TargetHorizon = req.TargetHorizon
+		fs.TargetChapter = 0
 	}
 	if req.Status != "" {
 		fs.Status = req.Status
@@ -1894,19 +1901,25 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 	// sequels land in writing). Reject empty projects — use generate outline first.
 	if !story.ContinuationOutlineAllowed(h.state.Phase, len(h.state.Chapters)) {
 		h.endTask()
-		if len(h.state.Chapters) == 0 {
-			h.writeErrorReq(w, r, http.StatusBadRequest, "outline_empty")
-		} else {
-			h.writeErrorReq(w, r, http.StatusBadRequest, "phase_not_outline")
-		}
+		h.writeErrorReq(w, r, http.StatusBadRequest, "phase_not_outline")
 		return
 	}
 
 	var body struct {
-		ChapterCount int `json:"chapter_count"`
+		ChapterCount      int    `json:"chapter_count"`
+		Requirements      string `json:"requirements"`
+		LongTermDirection string `json:"long_term_direction"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ChapterCount <= 0 {
-		body.ChapterCount = 5
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ChapterCount < 1 || body.ChapterCount > 36 {
+		h.endTask()
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_request_body")
+		return
+	}
+	h.state.LongTermDirection = strings.TrimSpace(body.LongTermDirection)
+	h.cfg.Story.LongTermDirection = h.state.LongTermDirection
+	h.state.CorePrompt = strings.TrimSpace(body.Requirements)
+	if h.state.LongTermDirection != "" {
+		h.state.CorePrompt = strings.TrimSpace(h.state.CorePrompt + "\n\n长期方向：" + h.state.LongTermDirection)
 	}
 
 	go func() {
@@ -1928,18 +1941,9 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 			return
 		}
 
-		// Keep config.chapter_count in sync with appended chapters (same as arc append).
-		if n := len(h.state.Chapters); n > h.cfg.Story.ChapterCount {
-			h.cfg.Story.ChapterCount = n
-			if h.state.StoryConfigSnapshot != nil {
-				snapshot := h.cfg.Story
-				h.state.StoryConfigSnapshot = &snapshot
-			}
-			if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
-				h.logger.ErrorKey("log.continuation_outline_failed", err)
-			} else if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-				h.logger.ErrorKey("log.continuation_outline_failed", err)
-			}
+		h.cfg.Story.ChapterCount = 0
+		if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
+			h.logger.ErrorKey("log.continuation_outline_failed", err)
 		}
 
 		h.logger.SuccessKey("log.continuation_outline_done")

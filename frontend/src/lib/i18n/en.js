@@ -74,7 +74,8 @@ export default {
   'projects.current': 'Current',
   'projects.incompatible.badge': 'Legacy incompatible',
   'projects.incompatible.hint': 'Use the original application version to continue',
-  'projects.incompatible.message': 'This project is incompatible with v3 and cannot be opened to protect its data.',
+  'projects.incompatible.unknown': 'The project format cannot be identified. Back it up, then inspect config.json and progress.json.',
+  'projects.incompatible.message': 'This project uses format {format}. Open it with {line} (recommended: {version}); this app will not modify it.',
   'projects.confirm.delete': 'Really delete project "{name}"? This cannot be undone.',
   'projects.bookTitle': '"{title}"',
   'projects.toast.switched': 'Switched to project: {name}',
@@ -460,6 +461,10 @@ export default {
   'config.rel.memberEdge': 'member of',
 
   // ---- Outline page ----
+  'outline.dynamic.review': 'AI review',
+  'outline.dynamic.reviewStarted': 'Story review started',
+  'outline.dynamic.requirements': 'Requirements for this batch (replaces all unwritten outlines)',
+  'outline.dynamic.direction': 'Optional long-term direction or ending',
   'outline.empty.title': 'No outline yet',
   'outline.empty.hint': 'Fill in the story settings on the Config page first, then click below',
   'outline.btn.generate': '✨ Generate outline',
@@ -541,6 +546,11 @@ export default {
   'outline.toasts.arcAppendStarted': 'Append arc task started',
 
   // ---- Writing page ----
+  'writing.book.complete': 'Mark complete',
+  'writing.book.resume': 'Resume serialization',
+  'writing.book.completed': 'Book marked complete',
+  'writing.book.resumed': 'Serialization resumed',
+  'writing.book.foreshadowConfirm': '{n} foreshadows are still active. Mark the book complete anyway?',
   'writing.notReady.title': 'Writing phase not started',
   'writing.notReady.hint': 'Generate and confirm the outline first on the Outline page',
   'writing.notReady.goto': 'Go to outline',

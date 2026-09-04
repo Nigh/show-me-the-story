@@ -16,9 +16,9 @@ func TestDetectProjectCompatibility(t *testing.T) {
 	if got := config.DefaultConfig().ProjectFormatVersion; got != config.ProjectFormatVersion {
 		t.Fatalf("new config format version = %d, want %d", got, config.ProjectFormatVersion)
 	}
-	writeProjectFile(t, root, "marked/config.json", `{"project_format_version":3}`)
+	writeProjectFile(t, root, "marked/config.json", `{"project_format_version":4}`)
 	if got, err := detectProjectCompatibility(filepath.Join(root, "marked")); err != nil || got != projectCompatibilitySupported {
-		t.Fatalf("marked project = %q, %v; want supported, nil", got, err)
+		t.Fatalf("marked project = %q, %v; want v3 incompatible, nil", got, err)
 	}
 
 	legacyConfig := `{"language":"zh"}`
@@ -36,7 +36,7 @@ func TestDetectProjectCompatibility(t *testing.T) {
 	writeProjectFile(t, root, "unmarked-v3/config.json", `{"language":"zh"}`)
 	writeProjectFile(t, root, "unmarked-v3/progress.json", `{"chapters":[{"num":1}]}`)
 	writeProjectFile(t, root, "unmarked-v3/chapters/000001.json", `{"num":1,"content":"正文"}`)
-	if got, err := detectProjectCompatibility(filepath.Join(root, "unmarked-v3")); err != nil || got != projectCompatibilitySupported {
+	if got, err := detectProjectCompatibility(filepath.Join(root, "unmarked-v3")); err != nil || got != projectCompatibilityV3 {
 		t.Fatalf("unmarked v3 project = %q, %v; want supported, nil", got, err)
 	}
 

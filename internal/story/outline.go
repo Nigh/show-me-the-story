@@ -391,13 +391,29 @@ func EditChapterOutline(state *Progress, chapterNum int, title, outline string, 
 // ContinuationOutlineAllowed gates POST /api/outline/generate-continuation.
 // Append-only: allowed in outline or writing once chapters exist (phase stays unchanged).
 func ContinuationOutlineAllowed(phase string, chapterCount int) bool {
-	if chapterCount <= 0 {
-		return false
-	}
-	return phase == "outline" || phase == "writing"
+	return phase == "" || phase == "outline" || phase == "writing"
 }
 
 func GenerateContinuationOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, newChapterCount int, progressPath string, logger *sse.LogBroadcaster) error {
+	if newChapterCount < 1 || newChapterCount > 36 {
+		return fmt.Errorf("每批章节数必须为 1 到 36")
+	}
+	if state.BookStatus == BookStatusCompleted {
+		return fmt.Errorf("作品已完结，请先恢复连载")
+	}
+	for _, ch := range state.Chapters {
+		if ch.Status == StatusWriting || ch.Status == StatusReview {
+			return fmt.Errorf("当前章节尚未处理完成，无法重新规划后续")
+		}
+	}
+	originalChapters := append([]ChapterState(nil), state.Chapters...)
+	kept := state.Chapters[:0]
+	for _, ch := range state.Chapters {
+		if ch.Status != StatusPending {
+			kept = append(kept, ch)
+		}
+	}
+	state.Chapters = kept
 	logger.StepInfo(1, 2, "正在构建已有章节上下文...")
 
 	lang := cfg.Language
@@ -423,17 +439,20 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *config.APIConfig, 
 	startNum := len(state.Chapters) + 1
 
 	chapters, err := generateOutlineChaptersOnly(ctx, apiCfg, cfg, settings, cfg.Prompts.ContinuationOutlineGeneration, map[string]string{
-		"Title":           state.Title,
-		"StoryType":       snapshot.Type,
-		"CorePrompt":      state.CorePrompt,
-		"StorySynopsis":   state.StorySynopsis,
-		"WritingStyle":    snapshot.WritingStyle,
-		"WritingPOV":      snapshot.WritingPOV,
-		"ExistingOutline": existingOutline,
-		"NewChapterCount": fmt.Sprintf("%d", newChapterCount),
-		"StartNum":        fmt.Sprintf("%d", startNum),
+		"Title":             state.Title,
+		"StoryType":         snapshot.Type,
+		"CorePrompt":        state.CorePrompt,
+		"StorySynopsis":     state.StorySynopsis,
+		"WritingStyle":      snapshot.WritingStyle,
+		"WritingPOV":        snapshot.WritingPOV,
+		"ExistingOutline":   existingOutline,
+		"NewChapterCount":   fmt.Sprintf("%d", newChapterCount),
+		"StartNum":          fmt.Sprintf("%d", startNum),
+		"UserRequirements":  state.CorePrompt,
+		"LongTermDirection": state.LongTermDirection,
 	}, logger)
 	if err != nil {
+		state.Chapters = originalChapters
 		return err
 	}
 
@@ -443,7 +462,10 @@ func GenerateContinuationOutline(ctx context.Context, apiCfg *config.APIConfig, 
 		state.Chapters = append(state.Chapters, chapterStateFromOutline(ch, StatusPending))
 	}
 
+	state.Phase = "writing"
+	state.BookStatus = BookStatusActive
 	if err := SaveProgress(progressPath, state); err != nil {
+		state.Chapters = originalChapters
 		return fmt.Errorf("保存进度失败: %w", err)
 	}
 

@@ -143,7 +143,6 @@
     const prev = $config?.story || {};
     const story = {
       ...localStoryCfg,
-      chapter_count: Number(localStoryCfg.chapter_count) || 30,
       target_words_per_chapter: Number(localStoryCfg.target_words_per_chapter) || 2500,
     };
     const settingsChanged =
@@ -527,10 +526,6 @@
           <div>
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.titleField')}</span>
             <input type="text" class="input input-sm w-full" bind:value={localStoryCfg.title} placeholder={$t('config.story.title.placeholder')} disabled={$taskRunning} />
-          </div>
-          <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.chapterCount')}</span>
-            <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.chapter_count} disabled={$taskRunning} />
           </div>
           <div>
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.targetWords')}</span>
