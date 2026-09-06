@@ -2,6 +2,19 @@
 
 > **重要**：当对项目进行任何修改（代码、配置、前端、提示词等）后，必须同步更新本文件，确保文档与项目实际情况完全一致。
 
+## 批次大纲（当前交互与接口）
+
+- 配置页不再提供全书梗概编辑；旧 `config.story.story_synopsis` / `progress.story_synopsis` 保留兼容读取和保存。标题栏显示已保存的小说标题，空白为“无题”/“Untitled”。
+- 大纲页统一表单：本批章节数（1–36）、必填“大纲梗概”、可选长期方向，预览章节范围。首次生成与后续追加均使用 `POST /api/outline/generate-continuation`。
+- 请求为 `OutlineBatchRequest{chapter_count, outline_synopsis, long_term_direction, mode, batch_id}`，默认 `mode=append` 接在最大章号后，保留已有未写章纲；`replace_last` 仅允许末尾完整且全部 pending、无正文批次，页面二次确认，Agent 需 `confirm=true`。写作中/审核中或已完结时禁止生成。
+- `internal/story/outline_batches.go`：批次校验、上下文组装、生成与数量/编号检查（最多 3 次范围校验尝试，复用每次章纲长度校验）、复制状态后保存，失败不提交内存状态。`Progress.OutlineBatches` 存 `id/revision/start_ch/end_ch/synopsis`，修订号用于区分相同梗概的重建成功，API 的 `ProgressView` 保留这些字段。
+- `internal/story/inject.go`：`BatchSynopses` / `BookSynopsis` / `ChapterSynopsis` / `batchScopeTemplate` 处理双语批次注入。正文按章节取所属批次梗概；大纲修订、协调、伏笔和全书分析使用带范围的梗概集合。旧章节无批次时正文回退到旧全书梗概。本批输入不会覆盖 `CorePrompt` 或旧全书梗概。
+- 页面按批次展示梗概和章纲；历史/导入章节单独分组，不将旧全书梗概冒充某批梗概。生成失败保留表单，成功通过批次修订号确认后清空本批输入。旧“先生成卷骨架”提示已移除；卷结构存储与批次独立。
+- 助理 `generate_outline` 使用同一批次流程；`read_outline` 返回带 ID 和范围的批次梗概；配置工具不再宣传全书梗概或配置章数驱动大纲。大纲删除同步清空批次。
+- 存储孤儿章节文件清理改在进度元数据原子提交成功后进行，防止保存失败时提前删除旧文件。
+- `internal/httpapi/outline_batches_test.go`：HTTP 输入校验、拒绝请求后释放任务锁且不修改核心提示词或长期方向。
+- `internal/story/outline_batches_test.go`：中英默认及自定义模板注入、12+24 追加、末批重建、修订号、持久化、非法输入、错误模型数量/编号、取消、保存失败和旧章节回退测试。
+
 ## 项目概述
 
 单二进制 Go Web 应用，Go 后端零外部依赖（仅标准库），通过 OpenAI 兼容 API 自动生成长篇小说。前端使用 Vite + Svelte 4 + DaisyUI 5 构建，产物通过 `embed.FS` 内嵌到二进制中。
@@ -87,10 +100,10 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/llm/tokens.go` | `TaskTokenUsage` 任务级 token 累计器（context 挂载）、`WithTaskTokens`/`TaskTokensFromContext`、`EstimateTokensFromRunes`（rune×1.5 估算）、throttled SSE 推送 |
 | `internal/llm/api_url_test.go` | `resolveChatCompletionsURL` 表驱动测试（z.ai v4、strict、DeepSeek、完整 URL） |
 | `internal/story/state.go` | v4 `Progress`：动态章节队列、`book_status`、可选长期方向、规划复盘与内部叙事检查点；章节正文仍分文件保存；伏笔支持绝对目标章与相对软期限。 |
-| `internal/story/storage.go` | **v4 存储层**：章节正文按章存 `chapters/NNNNNN.json`，`progress.json` 只存元数据（不含正文）；`saveChapterFiles`（fnv 内容哈希 `HashContent` 脏检查，仅重写变更章节 + 清理孤儿文件）、`loadChapterContents`、`ResetProgressFiles`（重置进度含章节目录）、`ProgressView`（API 响应视图：剥离正文、附 `word_count`/`content_rev`、解析记忆 `snippet`） |
+| `internal/story/storage.go` | **v4 存储层**：章节正文按章存 `chapters/NNNNNN.json`，`progress.json` 只存元数据（不含正文）；`saveChapterFiles`（fnv 内容哈希 `HashContent` 脏检查，仅重写变更章节；元数据提交后 `cleanupChapterFiles` 清理孤儿文件）、`loadChapterContents`、`ResetProgressFiles`（重置进度含章节目录）、`ProgressView`（API 响应视图：剥离正文、附 `word_count`/`content_rev`、解析记忆 `snippet`） |
 | `internal/story/blocks.go` | **v4 Block 模型**：`Block{ID,Type,Text}`（type: paragraph/dialogue/scene_break 仅展示提示）；`SyncChapterBlocks`（从 Content 派生 blocks，未变段落 ID 稳定，`\n\n` 分段、无空行退化 `\n`，sep 存 `BlockSep`）、`rebuildContentFromBlocks`、`UpdateBlock`/`DeleteBlock`/`InsertBlockAfter`（块编辑后重建 Content）、`ReviseBlockAction`（复用 `ChapterSegmentRevision` prompt 对单 block AI 修订）。内存中 Content 仍是唯一事实源，AI 流程不感知 blocks |
 | `internal/story/arcs.go` | v3 遗留卷实现，仅保留源码兼容测试；v4 不注册卷 API，也不在前端暴露。 |
-| `internal/story/outline.go` | `OutlineChapterCharacter`（`name`/`first_appearance`/`note`）、`generateOutline`（注入 settings 角色列表 + 按 `target_words_per_chapter` 计算大纲字数下限，不足时自动重试）、`reviseOutline`、`GenerateOutlineAction`（存在已确认章节时拒绝整体重新生成；完成后 `runOutlinePostProcessChecks`）、`ReviseOutlineAction`、`ConfirmOutlineAction`、`EditChapterOutline`（`pending`/`writing`/`review` 可编辑，`accepted` 拒绝；可选 `characters` 更新结构化出场）、`cleanJSONResponse`、`ContinuationOutlineAllowed`（`outline`/`writing` 且已有章节时可追加）、`GenerateContinuationOutline`（生成后续大纲，append-only，不改 phase） |
+| `internal/story/outline.go` | `OutlineChapterCharacter`（`name`/`first_appearance`/`note`）、`generateOutline`（注入 settings 角色列表 + 按 `target_words_per_chapter` 计算大纲字数下限，不足时自动重试）、`reviseOutline`、`GenerateOutlineAction`（存在已确认章节时拒绝整体重新生成；完成后 `runOutlinePostProcessChecks`）、`ReviseOutlineAction`、`ConfirmOutlineAction`、`EditChapterOutline`（`pending`/`writing`/`review` 可编辑，`accepted` 拒绝；可选 `characters` 更新结构化出场）、`cleanJSONResponse`、`ContinuationOutlineAllowed`（空项目或 `outline`/`writing` 阶段可规划批次）、`GenerateOutlineBatch`（按批次必填梗概生成，默认追加；显式末批替换） |
 | `internal/story/outline_helpers.go` | `calcOutlineLengthRange`、`formatCharacterListForOutline`、`validateOutlineChapterLengths`、`characterStubsForChapter`（优先 `characters` 结构化出场，缺省回退「首次登场」散文扫描）、`buildOutlineDerivedCharacterContext`（写作时注入未登记大纲人物 stub） |
 | `internal/story/outline_character.go` | `CheckOutlineCharacterConsistency`、`RunOutlineCharacterCheckAndSave`、`runOutlinePostProcessChecks`（伏笔-大纲 + 大纲人物双检查） |
 | `internal/story/writing.go` | `GenerateChapterAction`（开头懒调用 `EnsureArcSummaries`；含写前大纲一致性检查，共 6 步；第 2 步经 `generateChapterContentWithLengthControl` 控字数；第 5 步更新伏笔并落盘 `Foreshadows.md`；第 6 步维护叙事记忆）、`ReviseChapterAction`/`ReviseSpecificChapterAction`（修订后同步更新伏笔与记忆；修改意见含 `> ` 引用行时经 `extractQuotedSentences`/`findParagraphsContaining`/`reviseChapterSegment` 只改匹配自然段，失败回退整章修订）、`ConfirmChapterAction`、`PolishChapterAction`、`SmoothTransitionsAction`（批量优化已确认章节衔接）、`parseFactCheckResult`（JSON 优先 + 字符串 fallback）、`checkOutlineConsistency`（写前检查本章大纲与已写剧情冲突）、`stripChapterMetaProse`、`appendIfMissingPlaceholder`（老项目旧模板缺新占位符时兜底追加）、`splitChapterOpening`、`syncMemoryAfterChapter`、`calcMemoryMaxTokens` |
@@ -128,7 +141,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `index.html` | 入口 HTML，`data-theme="xianii"` |
 | `src/main.js` | Svelte 应用挂载点 |
 | `src/app.css` | 全局样式：Tailwind 指令 + 自定义滚动条/toast 动画 |
-| `src/App.svelte` | 根组件：Header（项目badge + 项目语言 badge ZH/EN + 版本号badge + 更新提示 + 项目切换 + 阶段/章节/任务状态 + UI 语言切换）+ 左侧导航 + 中间页面 + 右侧 ChatPanel + Toast；挂载全局 `StorageErrorModal`；初始加载若有当前项目则 `setLocale(project.language)` |
+| `src/App.svelte` | 根组件：Header（小说标题 badge（空白为无题）+ 项目语言 badge ZH/EN + 版本号badge + 更新提示 + 项目切换 + 阶段/章节/任务状态 + UI 语言切换）+ 左侧导航 + 中间页面 + 右侧 ChatPanel + Toast；挂载全局 `StorageErrorModal`；初始加载若有当前项目则 `setLocale(project.language)` |
 | `src/lib/apiUrl.js` | `resolveChatCompletionsURL`：与后端 `api.go` 同逻辑的 URL 预览（配置页展示实际请求地址） |
 | `src/lib/api.js` | `api(method, url, body)` — fetch 封装，自动带语言头，错误消息走 `translateServerMessage`；收到 `storage_save_failed` 时写入全局结构化存储错误 store |
 | `src/lib/router.js` | `currentPage` store + hash 路由监听 |
@@ -141,7 +154,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `src/lib/i18n/zh.js`, `en.js` | 扁平 key 字典；新增可见文案必须同时在两个文件加 key |
 | `src/pages/Projects.svelte` | 项目选择页：新建项目（名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`）+ 项目列表（每项显示语言 badge，可选择/删除）；选中项目后 `setLocale(project.language)` |
 | `src/pages/Config.svelte` | 配置页：API 配置（含 `url_strict` 严格 URL 模式、解析后 endpoint 预览、上下文预算 tokens、连接测试结果持久化展示——结果存 `apiTestResult` store 切页不丢失，成功/失败以文字+着色卡片与按钮描边展示，修改任一影响连接的字段后自动清除）、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、写作风格与叙述视角、AI 配置变更确认面板（`ConfigChangePanel`）、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；四处设定 CRUD 新建前若表单 dirty 则 ConfirmModal 警告（确认丢弃并新建 / 取消后可先保存）；任务运行时所有输入控件禁用 |
-| `src/pages/Outline.svelte` | 动态规划页：从空项目或任意已确认章节后生成 1–36 章；新批次替换全部未写章纲；支持本批要求、可选长期方向、导入和单章章纲编辑；无卷 UI。 |
+| `src/pages/Outline.svelte` | 批次生成表单（必填大纲梗概、1–36 章、可选长期方向与范围预览）、默认追加、末尾全 pending 批次确认重建；按批次展示梗概/章纲，历史与导入章节独立分组；保留导入断点、内联章纲/出场人物编辑、修订意见、设定提案和人物建议面板 |
 | `src/components/ConfigChangePanel.svelte` | AI 配置变更确认面板：展示 pending 提案（当前 vs 建议）、勾选采纳 / 全部忽略；SSE `config_change_proposal` 触发 |
 | `src/pages/Writing.svelte` | 逐章写作与审核；自动确认只运行到当前规划末尾；支持显式标记完结/恢复连载，未回收伏笔需二次确认，完结后开放全书优化。 |
 | `src/components/TaskTokenBadge.svelte` | 任务 token 展示（`↑ prompt ↓ completion tokens`）；对 `taskTokenUsage` 更新做线性 rAF 插值，动画时长 = `TOKEN_POLL_INTERVAL_MS`；目标值低于当前显示值时该维度从 0 重新向上插值（新一段统计或估算修正）；供 ChatPanel / App 顶栏 / Writing 页复用 |
@@ -692,7 +705,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 - [`frontend/src/lib/api.js`](frontend/src/lib/api.js)：所有请求带 `X-UI-Locale`；`writeErrorReq` 已按请求语言返回错误，``translateServerMessage`` 仅 legacy 兜底
 - [`frontend/src/lib/sse.js`](frontend/src/lib/sse.js)：`formatLogEntry` / `formatToolResult`
 - [`frontend/src/lib/stores.js`](frontend/src/lib/stores.js)：新增 `projectLanguage` writable
-- [`frontend/src/App.svelte`](frontend/src/App.svelte)：Header 显示项目语言 badge（ZH/EN）+ 版本号badge + 新版本更新提示（非dev版本检查GitHub releases，点击跳转最新release页面）+ UI 语言切换按钮（中 / EN）；选择/创建项目后自动 `setLocale(project.language)`
+- [`frontend/src/App.svelte`](frontend/src/App.svelte)：Header 显示小说标题 badge（空白为无题）和项目语言 badge（ZH/EN）+ 版本号badge + 新版本更新提示（非dev版本检查GitHub releases，点击跳转最新release页面）+ UI 语言切换按钮（中 / EN）；选择/创建项目后自动 `setLocale(project.language)`
 - [`frontend/src/pages/Projects.svelte`](frontend/src/pages/Projects.svelte)：新建项目表单名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`；列表项显示语言 badge
 
 ### 老项目兼容

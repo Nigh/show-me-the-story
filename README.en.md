@@ -67,8 +67,8 @@ API configuration is shared across all projects.
 
 ### 4. Start writing
 
-1. **Configure the story**: on the Config page set genre, chapter count, target words per chapter, writing style, etc. Characters / world / organizations / relations can be added manually, or generated in one click with "AI generate settings".
-2. **Generate the outline**: on the Outline page, click generate. The AI outputs the full chapter outline. You can ask for revisions globally, or edit individual chapters inline; confirm when satisfied.
+1. **Configure the story**: on the Config page set genre, novel title, target words per chapter, writing style, etc. Characters / world / organizations / relations can be added manually, or generated in one click with "AI generate settings".
+2. **Generate batch outlines**: on the Outline page, enter a required batch synopsis and a chapter count (1–36), optionally adding a long-term direction. New batches append to existing outlines. Generating 12 chapters, then 24, creates batches for chapters 1–12 and 13–36, each with its own synopsis. Prose generation uses the synopsis of the chapter’s batch.
 3. **Write chapter by chapter**: on the Writing page, click generate. The AI streams the prose → produces a summary → fact-checks → waits for your review. Confirm to move on, or leave feedback to have the AI revise (select a passage and click **Quote** to revise only the matching paragraph; falls back to full-chapter revision if localization fails).
 4. **Want it hands-free?** Toggle "Auto-confirm": the AI will keep writing chapter after chapter until done. You can toggle it off at any time.
 
@@ -87,7 +87,15 @@ The project language is fixed at creation time. The UI language defaults to the 
 
 ### Continue an existing novel
 
-On the Outline page (when the project is empty) click "Import existing content" and paste the text you already have. The AI extracts the title, synopsis, per-chapter outlines, and per-chapter summaries; after you confirm the import, the existing chapters are marked as confirmed and "Generate continuation outline" lets you proceed. After the book is finished (still in the writing phase), you can keep using "Generate continuation outline" on the Outline page to append more chapters.
+On the empty Outline page, import existing text. Imported chapters appear under “Legacy / imported chapters”. Enter a new batch synopsis and chapter count to continue. Resume a completed book before adding new batches.
+
+### Batch planning and replanning
+
+The Config page no longer edits a whole-book synopsis. Each batch has a required synopsis and its own chapter range. New batches append even when earlier outlines are still unwritten.
+
+Only the last entirely unwritten batch can be replanned. Choose “Replan this batch”, edit its synopsis and count, then confirm replacement; earlier batches remain intact. Failed generation preserves the old batch and form input. Legacy synopsis data is retained for compatibility and is not assigned to a batch automatically. The header displays the saved novel title, or “Untitled”.
+
+The assistant’s `generate_outline` accepts `chapter_count` and `outline_synopsis` directly; it appends by default. Replanning uses `mode=replace_last`, the batch ID from `read_outline`, and explicit confirmation.
 
 ### Foreshadow system
 
@@ -146,7 +154,7 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 |----------|----------|
 | **Read** | "What's the current outline?", "Show chapter 3", "List all characters" |
 | **Settings** | Create / edit / delete characters, world entries, organizations, relations |
-| **Config** | Change genre, chapter count, words per chapter, writing style, synopsis, etc. |
+| **Config** | Change genre, novel title, words per chapter, writing style and POV; synopsis and count belong to each outline batch |
 | **Outline** | Generate outline, revise by feedback (same chapter count), edit a single chapter outline (pending / writing / review), confirm outline |
 | **Writing** | Generate chapter, confirm chapter, revise a specific chapter, quote-selected paragraph revision, surgical paragraph edits |
 | **Foreshadows** | Suggest, create, update, delete foreshadows |
@@ -162,7 +170,7 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 
 #### Possible via assistant, but verify the result
 
-- **Regenerate the whole outline with a new chapter count**: e.g. "Change to 12 chapters, 3000 words each, and regenerate the full outline." The assistant should update config then generate; after it finishes, check the Outline page that you have 12 chapters numbered 1–12.
+- **Replan the last batch**: “Replan the last unwritten batch as 12 chapters, with this synopsis: …”. The assistant reads the batch ID and requests confirmation; earlier batches remain unchanged.
 - **Config changes after confirmed chapters**: saving may trigger settings reconciliation and regenerate pending outlines — can take a while.
 - **Async tasks**: outline/chapter generation and revision run in the background; watch the log panel and wait for the task to finish before sending the next message.
 
@@ -170,9 +178,8 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 
 | Task | Prefer |
 |------|--------|
-| **Change total chapter count / full outline regen** | Config page → set count & words → Outline page → Delete outline → Generate. If using the assistant, say explicitly "change to N chapters and regenerate the full outline", then verify the count. |
-| **Full outline regen after confirmed chapters** | `generate_outline` is rejected. Use "Generate continuation outline" on the Outline page, or start a new project. |
-| **Shrink chapter count** | Do not say "delete chapters 13–30" — `delete_chapters_from` only clears prose, not outline entries. To reduce count: update config + regenerate outline. |
+
+
 | **Full-book optimisation** | Use the Full-book optimisation panel on the Writing page. |
 | **Continue / import existing text** | Outline page → Import existing content. |
 | **Relationship graph layout** | Relations page (Canvas drag/zoom). |
@@ -185,7 +192,7 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 
 #### How to phrase requests
 
-- **Regen with new count**: "Change to 12 chapters, 3000 words each, regenerate the full outline" — clearer than "the outline is bad, redo it".
+- **Replan the last batch**: “Replan the last unwritten batch as 12 chapters, with this synopsis: …”. The assistant reads the batch ID and requests confirmation; earlier batches remain unchanged.
 - **Content change, same structure**: "Revise the outline: add a foreshadow in chapter 3, do not change the chapter count".
 - **Edit chapter prose**: "Revise chapter 6: …" — do not say "delete chapter 6" when you mean edit.
 - **While a task runs**: wait for the "AI thinking" badge to clear, or click Stop before sending a new command.

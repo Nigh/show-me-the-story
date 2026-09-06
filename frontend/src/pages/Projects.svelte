@@ -36,6 +36,7 @@
     }
     try {
       await api('POST', '/api/projects/select', { name });
+      config.set(null);
       currentProject.set(name);
       // Reload all project data
       try { progress.set(await api('GET', '/api/progress')); } catch (e) {}

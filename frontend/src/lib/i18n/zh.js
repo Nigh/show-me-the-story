@@ -1,6 +1,26 @@
 // Chinese UI strings. Add a key here whenever a hardcoded Chinese phrase
 // is replaced with $t('...') in a Svelte component.
 export default {
+  "batch_synopsis_required": "请填写本批大纲梗概",
+  "batch_count_invalid": "每批章节数必须为 1 到 36",
+  "batch_mode_invalid": "无效的批次生成模式",
+  "batch_book_completed": "作品已完结，请先恢复连载",
+  "batch_chapter_busy": "请先处理写作中或待审核章节",
+  "batch_replace_invalid": "只能重新规划末尾且全部未写的完整批次",
+  "batch_response_invalid": "模型返回的章节数量或编号不符合本批要求，请重试",
+
+  "app.untitled": "无题",
+  "outline.batch.generate": "生成本批大纲",
+  "outline.batch.replan": "重新规划本批",
+  "outline.batch.count": "本批章节数（1–36）",
+  "outline.batch.synopsis": "大纲梗概（必填）",
+  "outline.batch.placeholder": "描述这批章节的剧情主线、核心冲突和关键转折；仅约束本次生成的章节。",
+  "outline.batch.directionPlaceholder": "可选：描述跨批次的长期走向或结局设想。",
+  "outline.batch.hint": "将根据本次大纲梗概，生成第 {start}–{end} 章，共 {count} 章的大纲。",
+  "outline.batch.range": "第 {start}–{end} 章",
+  "outline.batch.legacy": "历史／导入章节",
+  "outline.batch.replaceConfirm": "将替换末尾整批未写章纲，使用本次梗概和章节数重新生成。是否继续？",
+
   // Header / shell
   'app.title': 'AI 小说生成器',
   'app.newVersion': '新版本',
@@ -467,7 +487,6 @@ export default {
   // ---- Outline page ----
   'outline.dynamic.review': 'AI 复盘',
   'outline.dynamic.reviewStarted': 'AI 阶段复盘已开始',
-  'outline.dynamic.requirements': '本批剧情要求（生成新批次时替换全部未写章纲）',
   'outline.dynamic.direction': '可选长期方向或结局设想',
   'outline.empty.title': '尚未生成大纲',
   'outline.empty.hint': '请先在「配置」页完善故事设定，然后点击下方按钮',
@@ -531,7 +550,6 @@ export default {
   'outline.charSuggestions.noneSelected': '请至少勾选一个人物',
   'outline.charSuggestions.adopted': '已登记 {n} 个角色',
   'outline.btn.skeleton': '📚 生成卷骨架（超长篇）',
-  'outline.empty.arcHint': '超长篇（数百章以上）建议先生成卷骨架，再按卷分批生成章纲',
   'outline.arcs.title': '卷结构',
   'outline.arcs.append': '＋追加新卷',
   'outline.arcs.appendTitle': '卷名（可选，留空自动命名）',

@@ -304,7 +304,7 @@ var DefaultPromptsZH = PromptsConfig{
 【小说标题】{{.Title}}
 【故事类型】{{.StoryType}}
 【核心写作提示词】{{.CorePrompt}}
-【故事梗概】{{.StorySynopsis}}
+【本批大纲梗概】{{.StorySynopsis}}
 【写作风格】{{.WritingStyle}}
 【叙述视角】{{.WritingPOV}}
 

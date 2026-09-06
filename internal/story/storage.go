@@ -76,11 +76,9 @@ func saveChapterFiles(progressPath string, p *Progress) error {
 	}
 
 	cache := cacheFor(progressPath)
-	live := make(map[int]bool, len(p.Chapters))
 
 	for i := range p.Chapters {
 		ch := &p.Chapters[i]
-		live[ch.Num] = true
 		h := HashContent(ch.Content)
 		contentHashCache.Lock()
 		prev, seen := cache[ch.Num]
@@ -105,10 +103,22 @@ func saveChapterFiles(progressPath string, p *Progress) error {
 		contentHashCache.Unlock()
 	}
 
+	return nil
+}
+
+// Prune only after metadata commits, so failed saves retain old chapter files.
+func cleanupChapterFiles(progressPath string, p *Progress) {
+	dir := chaptersDir(progressPath)
+	cache := cacheFor(progressPath)
+	live := make(map[int]bool, len(p.Chapters))
+	for _, ch := range p.Chapters {
+		live[ch.Num] = true
+	}
+
 	// Remove orphaned chapter files (e.g. outline regenerated with fewer chapters).
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil
+		return
 	}
 	for _, e := range entries {
 		name := e.Name()
@@ -126,7 +136,6 @@ func saveChapterFiles(progressPath string, p *Progress) error {
 			contentHashCache.Unlock()
 		}
 	}
-	return nil
 }
 
 // loadChapterContents fills Content for each chapter from its chapter file

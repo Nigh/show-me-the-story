@@ -116,6 +116,7 @@ type Arc struct {
 }
 
 type Progress struct {
+	OutlineBatches              []OutlineBatch           `json:"outline_batches,omitempty"`
 	Phase                       string                   `json:"phase"`
 	Title                       string                   `json:"title"`
 	CorePrompt                  string                   `json:"core_prompt"`
@@ -204,6 +205,7 @@ func SaveProgress(path string, p *Progress) error {
 	if err := fsutil.WriteFileAtomic(path, data); err != nil {
 		return fmt.Errorf("保存进度文件失败: %w", err)
 	}
+	cleanupChapterFiles(path, p)
 	return nil
 }
 

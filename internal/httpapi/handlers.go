@@ -775,6 +775,7 @@ func (h *Handlers) PostOutlineGenerate(w http.ResponseWriter, r *http.Request) {
 				h.state.Title = ""
 				h.state.CorePrompt = ""
 				h.state.StorySynopsis = ""
+				h.state.OutlineBatches = nil
 				h.state.StoryConfigSnapshot = nil
 				h.state.CurrentChapterIndex = 0
 			}
@@ -1340,6 +1341,7 @@ func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
 	h.state.Title = ""
 	h.state.CorePrompt = ""
 	h.state.StorySynopsis = ""
+	h.state.OutlineBatches = nil
 	h.state.Chapters = nil
 	h.state.Arcs = nil
 	h.state.StoryConfigSnapshot = nil
@@ -1897,29 +1899,23 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Continuation is append-only: allow both outline and writing (book-complete
-	// sequels land in writing). Reject empty projects — use generate outline first.
+	// The same batch endpoint handles initial planning, append and explicit last-batch replacement.
 	if !story.ContinuationOutlineAllowed(h.state.Phase, len(h.state.Chapters)) {
 		h.endTask()
 		h.writeErrorReq(w, r, http.StatusBadRequest, "phase_not_outline")
 		return
 	}
 
-	var body struct {
-		ChapterCount      int    `json:"chapter_count"`
-		Requirements      string `json:"requirements"`
-		LongTermDirection string `json:"long_term_direction"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ChapterCount < 1 || body.ChapterCount > 36 {
+	var body story.OutlineBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		h.endTask()
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_request_body")
 		return
 	}
-	h.state.LongTermDirection = strings.TrimSpace(body.LongTermDirection)
-	h.cfg.Story.LongTermDirection = h.state.LongTermDirection
-	h.state.CorePrompt = strings.TrimSpace(body.Requirements)
-	if h.state.LongTermDirection != "" {
-		h.state.CorePrompt = strings.TrimSpace(h.state.CorePrompt + "\n\n长期方向：" + h.state.LongTermDirection)
+	if err := story.ValidateOutlineBatch(h.state, body, i18n.FromRequest(r)); err != nil {
+		h.endTask()
+		h.writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 
 	go func() {
@@ -1928,7 +1924,7 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
 
 		h.logger.InfoKey("log.continuation_outline_generating")
-		err := story.GenerateContinuationOutline(ctx, h.apiCfg, h.cfg, h.state, h.settings, body.ChapterCount, h.progressPath, h.logger)
+		err := story.GenerateOutlineBatch(ctx, h.apiCfg, h.cfg, h.state, h.settings, body, h.progressPath, h.logger)
 
 		if err != nil {
 			if ctx.Err() != nil {
@@ -1939,11 +1935,6 @@ func (h *Handlers) PostOutlineGenerateContinuation(w http.ResponseWriter, r *htt
 				h.logger.TaskEnd("continuation_outline", false)
 			}
 			return
-		}
-
-		h.cfg.Story.ChapterCount = 0
-		if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
-			h.logger.ErrorKey("log.continuation_outline_failed", err)
 		}
 
 		h.logger.SuccessKey("log.continuation_outline_done")

@@ -43,6 +43,14 @@ func FromRequest(r *http.Request) string {
 // errorCatalog maps a stable error key to its zh/en messages.
 // Messages may contain %s for args.
 var errorCatalog = map[string]map[string]string{
+	"batch_synopsis_required": {LangZH: "请填写本批大纲梗概", LangEN: "An outline synopsis is required for this batch"},
+	"batch_count_invalid":     {LangZH: "每批章节数必须为 1 到 36", LangEN: "Each batch must contain 1 to 36 chapters"},
+	"batch_mode_invalid":      {LangZH: "无效的批次生成模式", LangEN: "Invalid batch generation mode"},
+	"batch_book_completed":    {LangZH: "作品已完结，请先恢复连载", LangEN: "Resume the completed book before generating a batch"},
+	"batch_chapter_busy":      {LangZH: "请先处理写作中或待审核章节", LangEN: "Finish the chapter being written or reviewed first"},
+	"batch_replace_invalid":   {LangZH: "只能重新规划末尾且全部未写的完整批次", LangEN: "Only the last entirely unwritten batch can be replanned"},
+	"batch_response_invalid":  {LangZH: "模型返回的章节数量或编号不符合本批要求，请重试", LangEN: "The model returned incorrect chapter numbers or count; please retry"},
+
 	"missing_project_name": {
 		LangZH: "缺少项目名称",
 		LangEN: "Project name is required",

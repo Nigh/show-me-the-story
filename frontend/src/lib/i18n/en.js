@@ -1,5 +1,25 @@
 // English UI strings. Mirror of zh.js. Missing keys fall back to zh.
 export default {
+  "batch_synopsis_required": "An outline synopsis is required for this batch",
+  "batch_count_invalid": "Each batch must contain 1 to 36 chapters",
+  "batch_mode_invalid": "Invalid batch generation mode",
+  "batch_book_completed": "Resume the completed book before generating a batch",
+  "batch_chapter_busy": "Finish the chapter being written or reviewed first",
+  "batch_replace_invalid": "Only the last entirely unwritten batch can be replanned",
+  "batch_response_invalid": "The model returned incorrect chapter numbers or count; please retry",
+
+  "app.untitled": "Untitled",
+  "outline.batch.generate": "Generate batch outlines",
+  "outline.batch.replan": "Replan this batch",
+  "outline.batch.count": "Chapters in this batch (1–36)",
+  "outline.batch.synopsis": "Batch synopsis (required)",
+  "outline.batch.placeholder": "Describe the plot, central conflict and key turns for this batch of chapters.",
+  "outline.batch.directionPlaceholder": "Optional: describe the longer-term direction or ending across batches.",
+  "outline.batch.hint": "This synopsis will guide chapters {start}–{end}, a total of {count} chapter outlines.",
+  "outline.batch.range": "Chapters {start}–{end}",
+  "outline.batch.legacy": "Legacy / imported chapters",
+  "outline.batch.replaceConfirm": "Replace the last unwritten batch using this synopsis and chapter count?",
+
   // Header / shell
   'app.title': 'AI Novel Generator',
   'app.newVersion': 'New version',
@@ -463,7 +483,6 @@ export default {
   // ---- Outline page ----
   'outline.dynamic.review': 'AI review',
   'outline.dynamic.reviewStarted': 'Story review started',
-  'outline.dynamic.requirements': 'Requirements for this batch (replaces all unwritten outlines)',
   'outline.dynamic.direction': 'Optional long-term direction or ending',
   'outline.empty.title': 'No outline yet',
   'outline.empty.hint': 'Fill in the story settings on the Config page first, then click below',
@@ -527,7 +546,6 @@ export default {
   'outline.charSuggestions.noneSelected': 'Select at least one character',
   'outline.charSuggestions.adopted': '{n} character(s) added',
   'outline.btn.skeleton': '📚 Generate arc skeleton (very long books)',
-  'outline.empty.arcHint': 'For very long books (hundreds of chapters), generate the arc skeleton first, then chapter outlines arc by arc',
   'outline.arcs.title': 'Arc structure',
   'outline.arcs.append': '+ Append arc',
   'outline.arcs.appendTitle': 'Arc title (optional, auto-named if empty)',

@@ -168,7 +168,7 @@ func buildAllSettingsText(cfg *config.Config, settings *ProjectSettings, state *
 	if cfg.Story.WritingPOV != "" {
 		sb.WriteString(fmt.Sprintf("叙述视角：%s\n", cfg.Story.WritingPOV))
 	}
-	synopsis := preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
+	synopsis := BookSynopsis(cfg, state)
 	sb.WriteString(fmt.Sprintf("梗概：%s\n", synopsis))
 	if state.CorePrompt != "" {
 		sb.WriteString(fmt.Sprintf("核心提示词：%s\n", state.CorePrompt))

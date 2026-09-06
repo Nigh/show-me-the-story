@@ -13,9 +13,8 @@
 
   $: p = $progress;
   $: displayTitle = $config?.story?.title || p?.title || '';
-  $: displaySynopsis = $config?.story?.story_synopsis || p?.story_synopsis || '';
   $: chapters = p?.chapters || [];
-    $: hasOutline = chapters.length > 0;
+  $: hasOutline = chapters.length > 0;
   $: hasAccepted = chapters.some(c => c.status === 'accepted');
   $: inOutlinePhase = p?.phase === 'outline';
   $: pendingCount = chapters.filter(c => c.status === 'pending').length;
@@ -83,6 +82,29 @@
   let continuationCount = 5;
   let planningRequirements = "";
   let longTermDirection = "";
+  let directionLoaded = false;
+  $: if (p && !directionLoaded) { longTermDirection = p.long_term_direction || ''; directionLoaded = true; }
+  let replacingBatch = null;
+  let submittedBatch = null;
+  $: batches = p?.outline_batches || [];
+  $: groups = [
+    { id: 0, chapters: chapters.filter(ch => !batches.some(b => ch.num >= b.start_ch && ch.num <= b.end_ch)) },
+    ...batches.map(b => ({ ...b, chapters: chapters.filter(ch => ch.num >= b.start_ch && ch.num <= b.end_ch) }))
+  ].filter(g => g.chapters.length);
+  $: batchStart = replacingBatch ? replacingBatch.start_ch : Math.max(0, ...chapters.map(ch => ch.num)) + 1;
+  $: validCount = Number.isInteger(Number(continuationCount)) && continuationCount >= 1 && continuationCount <= 36;
+  $: batchBlocked = $taskRunning || p?.book_status === 'completed' || chapters.some(ch => ch.status === 'writing' || ch.status === 'review');
+  $: if (submittedBatch && batches.some(b => b.start_ch === submittedBatch.start && b.end_ch === submittedBatch.end && b.synopsis === submittedBatch.synopsis && b.revision === submittedBatch.revision)) {
+    planningRequirements = ''; replacingBatch = null; submittedBatch = null;
+  }
+  function canReplan(b) {
+    return b.id && batches[batches.length - 1]?.id === b.id && b.end_ch === Math.max(0, ...chapters.map(ch => ch.num)) && b.chapters.every(ch => ch.status === 'pending');
+  }
+  function replan(b) {
+    replacingBatch = b; planningRequirements = b.synopsis; continuationCount = b.end_ch - b.start_ch + 1;
+    document.getElementById('batch-planning')?.scrollIntoView({ behavior: 'smooth' });
+  }
+
 
   onMount(refreshImportStatus);
   $: if (!$taskRunning) refreshImportStatus();
@@ -113,56 +135,6 @@
       const st = await api('GET', '/api/import/status');
       importStatus = st?.active ? st : null;
     } catch { importStatus = null; }
-  }
-
-  async function generateOutline() {
-    try {
-      await api('POST', '/api/outline/generate');
-      addToast($t('outline.toasts.outlineStarted'), 'info');
-    } catch (e) { addToast(e.message, 'error'); }
-  }
-
-  // 卷（arc）操作
-  let arcReqOpenId = -1;
-  let arcRequirements = '';
-  let showAppendArc = false;
-  let appendArcTitle = '';
-  let appendArcGoal = '';
-  let appendArcCount = 20;
-
-  function arcChapterCounts(arc) {
-    const inRange = chapters.filter(c => c.num >= arc.start_ch && c.num <= arc.end_ch);
-    return { outlined: inRange.length, total: arc.end_ch - arc.start_ch + 1 };
-  }
-
-  async function generateSkeleton() {
-    try {
-      await api('POST', '/api/arcs/skeleton');
-      addToast($t('outline.toasts.skeletonStarted'), 'info');
-    } catch (e) { addToast(e.message, 'error'); }
-  }
-
-  async function generateArcOutline(arc) {
-    try {
-      await api('POST', `/api/arcs/${arc.id}/outline`, { requirements: arcReqOpenId === arc.id ? arcRequirements.trim() : '' });
-      addToast($t('outline.toasts.arcOutlineStarted'), 'info');
-      arcReqOpenId = -1;
-      arcRequirements = '';
-    } catch (e) { addToast(e.message, 'error'); }
-  }
-
-  async function appendArc() {
-    try {
-      await api('POST', '/api/arcs/append', {
-        title: appendArcTitle.trim(),
-        goal: appendArcGoal.trim(),
-        chapter_count: Number(appendArcCount) || 20,
-      });
-      addToast($t('outline.toasts.arcAppendStarted'), 'info');
-      showAppendArc = false;
-      appendArcTitle = '';
-      appendArcGoal = '';
-    } catch (e) { addToast(e.message, 'error'); }
   }
 
   async function confirmOutline() {
@@ -198,10 +170,18 @@
   }
 
   async function generateContinuation() {
-    try {
-      await api('POST', '/api/outline/generate-continuation', { chapter_count: Number(continuationCount) || 5, requirements: planningRequirements.trim(), long_term_direction: longTermDirection.trim() });
-      addToast($t('outline.toasts.continuationStarted'), 'info');
-    } catch (e) { addToast(e.message, 'error'); }
+    if (!planningRequirements.trim() || !validCount || batchBlocked) return;
+    const body = { chapter_count: Number(continuationCount), outline_synopsis: planningRequirements.trim(), long_term_direction: longTermDirection.trim(), mode: replacingBatch ? 'replace_last' : 'append', batch_id: replacingBatch?.id || 0 };
+    const submitted = { revision: replacingBatch ? (replacingBatch.revision || 0) + 1 : 1, start: batchStart, end: batchStart + body.chapter_count - 1, synopsis: body.outline_synopsis };
+    const run = async () => {
+      try {
+        await api('POST', '/api/outline/generate-continuation', body);
+        submittedBatch = submitted;
+        addToast($t('outline.toasts.continuationStarted'), 'info');
+      } catch (e) { addToast(e.message, 'error'); }
+    };
+    if (replacingBatch) showConfirm($t('outline.batch.replaceConfirm'), run);
+    else await run();
   }
 
   function startEdit(ch) {
@@ -283,22 +263,29 @@
 </script>
 
 <div class="space-y-3">
+  <div id="batch-planning" class="card bg-base-200 shadow-sm">
+    <div class="card-body p-4 gap-3">
+      <h3 class="card-title text-base">{$t(replacingBatch ? 'outline.batch.replan' : 'outline.batch.generate')}</h3>
+      <label class="block text-sm" for="batch-count">{$t('outline.batch.count')}</label>
+      <input id="batch-count" type="number" min="1" max="36" step="1" class="input input-sm w-24" bind:value={continuationCount} disabled={batchBlocked} />
+      <label class="block text-sm" for="batch-synopsis">{$t('outline.batch.synopsis')}</label>
+      <textarea id="batch-synopsis" class="textarea w-full h-36" bind:value={planningRequirements} placeholder={$t('outline.batch.placeholder')} disabled={batchBlocked}></textarea>
+      <label class="block text-sm" for="batch-direction">{$t('outline.dynamic.direction')}</label>
+      <textarea id="batch-direction" class="textarea textarea-sm w-full h-20" bind:value={longTermDirection} placeholder={$t('outline.batch.directionPlaceholder')} disabled={batchBlocked}></textarea>
+      <p class="text-xs text-base-content/60">{$t('outline.batch.hint', { start: batchStart, end: batchStart + (Number(continuationCount) || 0) - 1, count: continuationCount })}</p>
+      <div class="flex justify-end gap-2">
+        {#if replacingBatch}<button class="btn btn-ghost btn-sm" disabled={$taskRunning} on:click={() => { replacingBatch = null; planningRequirements = ''; }}>{$t('common.cancel')}</button>{/if}
+        <button class="btn btn-primary btn-sm" on:click={generateContinuation} disabled={batchBlocked || !validCount || !planningRequirements.trim()}>{$t(replacingBatch ? 'outline.batch.replan' : 'outline.batch.generate')}</button>
+      </div>
+    </div>
+  </div>
   {#if !hasOutline}
     <!-- 空状态 -->
     <div class="text-center py-14 text-base-content/50">
       <div class="text-5xl mb-3">📝</div>
       <p class="text-base mb-1">{$t('outline.empty.title')}</p>
       <p class="text-sm text-base-content/35 mb-6">{$t('outline.empty.hint')}</p>
-      <div class="max-w-xl mx-auto space-y-2 mb-3">
-        <textarea class="textarea textarea-sm w-full" bind:value={planningRequirements} placeholder={("outline.dynamic.requirements")}></textarea>
-        <textarea class="textarea textarea-sm w-full" bind:value={longTermDirection} placeholder={("outline.dynamic.direction")}></textarea>
-      </div>
-      <div class="flex justify-center gap-2">
-        <input type="number" min="1" max="36" class="input input-sm w-20" bind:value={continuationCount} disabled={$taskRunning} />
-        <button class="btn btn-primary btn-sm" on:click={generateContinuation} disabled={$taskRunning}>{$t('outline.btn.continuation')}</button>
-        <button class="btn btn-ghost btn-sm" on:click={() => showImport = !showImport} disabled={$taskRunning}>{$t('outline.btn.import')}</button>
-      </div>
-      <p class="text-xs text-base-content/35 mt-2">{$t('outline.empty.arcHint')}</p>
+      <button class="btn btn-ghost btn-sm" on:click={() => showImport = !showImport} disabled={$taskRunning}>{$t('outline.btn.import')}</button>
     </div>
 
     {#if showImport}
@@ -382,14 +369,6 @@
           {/if}
           <button class="btn btn-secondary btn-xs" on:click={reviewStory} disabled={$taskRunning || !hasAccepted}>{$t('outline.dynamic.review')}</button>
           <button class="btn btn-ghost btn-xs" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('outline.btn.revise')}</button>
-          {#if hasAccepted}
-            <div class="join">
-              <input type="number" min="1" max="36" class="input input-xs join-item w-14" bind:value={continuationCount} disabled={$taskRunning} />
-              <button class="btn btn-primary btn-xs join-item" on:click={generateContinuation} disabled={$taskRunning}>{$t('outline.btn.continuation')}</button>
-            </div>
-          {:else if inOutlinePhase}
-            <button class="btn btn-ghost btn-xs" on:click={generateOutline} disabled={$taskRunning}>{$t('outline.btn.regenerate')}</button>
-          {/if}
           {#if !hasAccepted}
             <button class="btn btn-ghost btn-xs text-error" on:click={deleteOutline} disabled={$taskRunning}>{$t('outline.btn.deleteOutline')}</button>
           {/if}
@@ -418,12 +397,7 @@
             <div class="bg-base-300 rounded p-2 text-sm mt-0.5 max-h-24 overflow-y-auto">{p.core_prompt}</div>
           </div>
         {/if}
-        {#if displaySynopsis}
-          <div>
-            <span class="text-xs text-base-content/50">{$t('outline.synopsis')}</span>
-            <div class="bg-base-300 rounded p-2 text-sm mt-0.5 max-h-24 overflow-y-auto">{displaySynopsis}</div>
-          </div>
-        {/if}
+
       </div>
     </div>
 
@@ -435,7 +409,14 @@
           <span class="text-xs text-base-content/35">{$t('outline.chapterList.editHint')}</span>
         </div>
         <div class="space-y-1.5">
-          {#each chapters as ch (ch.num)}
+          {#each groups as group (group.id)}
+            <section class="border border-base-content/10 rounded-lg p-3 space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="font-semibold text-sm">{group.id ? $t('outline.batch.range', { start: group.start_ch, end: group.end_ch }) : $t('outline.batch.legacy')}</h4>
+                {#if canReplan(group)}<button class="btn btn-ghost btn-xs" disabled={batchBlocked} on:click={() => replan(group)}>{$t('outline.batch.replan')}</button>{/if}
+              </div>
+              {#if group.synopsis}<p class="whitespace-pre-wrap text-sm text-base-content/70 mb-3">{group.synopsis}</p>{/if}
+          {#each group.chapters as ch (ch.num)}
             {#if editingNum === ch.num}
               <div data-outline-chapter={ch.num} class="bg-base-300 rounded-lg p-3 space-y-2 ring-1 ring-primary/50">
                 <div class="flex items-center gap-2">
@@ -444,8 +425,8 @@
                 </div>
                 <textarea class="textarea textarea-sm w-full h-24 text-sm" bind:value={editOutline} placeholder={$t('outline.chapter.outlinePlaceholder')} disabled={$taskRunning}></textarea>
                 <div>
-                  <label class="text-xs text-base-content/50 mb-1 block">{$t('outline.chapter.castLabel')}</label>
-                  <textarea class="textarea textarea-sm w-full h-16 text-sm font-mono" bind:value={editCharactersText} placeholder={$t('outline.chapter.castPlaceholder')} disabled={$taskRunning}></textarea>
+                  <label for="chapter-cast" class="text-xs text-base-content/50 mb-1 block">{$t('outline.chapter.castLabel')}</label>
+                  <textarea id="chapter-cast" class="textarea textarea-sm w-full h-16 text-sm font-mono" bind:value={editCharactersText} placeholder={$t('outline.chapter.castPlaceholder')} disabled={$taskRunning}></textarea>
                   <p class="text-[11px] text-base-content/35 mt-0.5">{$t('outline.chapter.castHint')}</p>
                 </div>
                 <div class="flex justify-end gap-2">
@@ -481,6 +462,8 @@
                 <p class="text-xs text-base-content/50 mt-1 ml-14 line-clamp-2">{ch.outline}</p>
               </div>
             {/if}
+          {/each}
+            </section>
           {/each}
         </div>
 

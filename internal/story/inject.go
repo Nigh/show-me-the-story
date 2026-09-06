@@ -2,6 +2,7 @@ package story
 
 import (
 	"fmt"
+	"showmethestory/internal/config"
 	"showmethestory/internal/i18n"
 	"strings"
 )
@@ -465,4 +466,43 @@ func formatForeshadowsForPromptLang(foreshadows []Foreshadow, lang string) strin
 	}
 
 	return sb.String()
+}
+
+func BatchSynopses(state *Progress, lang string) string {
+	var out strings.Builder
+	for _, b := range state.OutlineBatches {
+		if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+			fmt.Fprintf(&out, "[Batch %d, chapters %d–%d]\n%s\n\n", b.ID, b.StartCh, b.EndCh, b.Synopsis)
+		} else {
+			fmt.Fprintf(&out, "【批次 %d，第 %d–%d 章大纲梗概】\n%s\n\n", b.ID, b.StartCh, b.EndCh, b.Synopsis)
+		}
+	}
+	return out.String()
+}
+
+func BookSynopsis(cfg *config.Config, state *Progress) string {
+	if len(state.OutlineBatches) > 0 {
+		return BatchSynopses(state, cfg.Language)
+	}
+	return preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
+}
+
+func ChapterSynopsis(cfg *config.Config, state *Progress, num int) string {
+	for _, b := range state.OutlineBatches {
+		if num >= b.StartCh && num <= b.EndCh {
+			if i18n.NormalizeLanguage(cfg.Language) == i18n.LangEN {
+				return fmt.Sprintf("[Batch synopsis, chapters %d–%d; follow this chapter's outline without advancing later events]\n%s", b.StartCh, b.EndCh, b.Synopsis)
+			}
+			return fmt.Sprintf("【第 %d–%d 章大纲梗概；仅按本章章纲推进，不得提前展开后续情节】\n%s", b.StartCh, b.EndCh, b.Synopsis)
+		}
+	}
+	return preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
+}
+
+func batchScopeTemplate(lang string) string {
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		return "\n[Required batch synopsis: chapters {{.StartNum}}–{{.EndNum}}]\n{{.OutlineSynopsis}}\n[Long-term direction, optional]\n{{.LongTermDirection}}\nGenerate exactly {{.NewChapterCount}} consecutive chapters in this range, constrained by this batch synopsis. Start the story when there are no existing chapters; otherwise continue the existing plot. Do not treat this batch as the whole book."
+	} else {
+		return "\n【本批大纲梗概：第 {{.StartNum}}–{{.EndNum}} 章，必须遵循】\n{{.OutlineSynopsis}}\n【长期方向（可选）】\n{{.LongTermDirection}}\n严格生成上述范围内连续的 {{.NewChapterCount}} 章，由本批梗概约束。没有已有章节时从故事开篇开始，否则承接已有剧情。不得把本批梗概当成全书计划。"
+	}
 }
