@@ -6,10 +6,12 @@
   export let chapterNum = 0;
   export let facts = [];
   export let activeFact = null;
+  export let expanded = false;
   const dispatch = createEventDispatcher();
   let pending = [];
   let changes = [];
   let request = 0;
+  $: if (activeFact) expanded = true;
   function changedFields(change) {
     return [...new Set([...Object.keys(change.before || {}), ...Object.keys(change.after || {})])].filter(k => k !== 'id' && JSON.stringify(change.before?.[k]) !== JSON.stringify(change.after?.[k]));
   }
@@ -43,9 +45,14 @@
   }
 </script>
 
-<div class="card bg-base-200 shadow-sm">
-  <div class="card-body p-4 gap-3 text-sm">
-    <h3 class="card-title text-base">{$t('facts.title')}</h3>
+<details class="bg-base-300 rounded" open={expanded} on:toggle={e => expanded = e.currentTarget.open}>
+  <summary class="p-2 text-xs text-base-content/60 cursor-pointer select-none flex items-center gap-2">
+    <span class="flex-1">{$t('facts.title')}</span>
+    <span class="badge badge-ghost badge-sm">{$t('facts.count', {count: facts.length})}</span>
+    {#if pending.length}<span class="badge badge-warning badge-sm">{$t('facts.pendingCount', {count: pending.length})}</span>{/if}
+    {#if changes.length}<span class="badge badge-warning badge-outline badge-sm">{$t('facts.changeCount', {count: changes.length})}</span>{/if}
+  </summary>
+  <div class="border-t border-base-content/10 p-3 space-y-3 text-sm">
     {#if pending.length}
       <div class="flex flex-wrap items-center gap-2 text-warning">{$t('facts.pending', {chapters: pending.join(', ')})}
         <button class="btn btn-xs" disabled={$taskRunning} on:click={retry}>{$t('facts.retry')}</button>
@@ -93,4 +100,4 @@
       </details>
     {/if}
   </div>
-</div>
+</details>
