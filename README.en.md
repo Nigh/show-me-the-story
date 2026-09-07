@@ -16,9 +16,9 @@ The program ships with no story content of its own — the genre, world, charact
 
 - **Single executable**: one binary plus a browser, no database or other dependencies
 - **Multi-project**: each novel lives in its own project; switch / create / delete freely
-- **Dynamic batch planning**: plan 1–36 chapters at a time, write and review them, then freely replace the unwritten future; a long-term direction is optional
+- **Dynamic batch planning**: plan 1–36 chapters at a time and replan the last entirely unwritten batch; a long-term direction is optional
 - **Chapter review**: after each chapter, confirm or request revisions; the AI does targeted, minimal edits without disturbing other chapters
-- **Auto-confirm mode**: optional toggle that lets the AI confirm each chapter and continue automatically; can be flipped on or off at any time
+- **Auto-confirm mode**: optional toggle that lets the AI confirm each chapter and continue automatically to the end of the current plan; it can be flipped on or off at any time
 - **Structured settings**: characters, world, organizations and relationships are managed separately and injected into the writing prompt as needed; AI can also generate the initial set in one click
 - **Relationship graph**: visualize the network of characters, organizations, and world entries
 - **Foreshadow system**: AI plans foreshadows, injects active ones during writing, then tracks planted → progressing → resolved automatically; warns when a foreshadow is overdue
@@ -27,7 +27,7 @@ The program ships with no story content of its own — the genre, world, charact
 - **Continue an existing novel**: paste your existing text, the AI extracts settings and chapter summaries, and continues from where you left off
 - **De-AI polish**: built-in polish skills (forbidden AI clichés, colloquial rewriting, etc.); one-click polish per chapter from the writing page
 - **Full-book optimisation**: once finished, run diagnosis → consistency check → roadmap of fixes → automatic per-chapter revision (supports large-context models, segmented checking, diff preview)
-- **Skill system**: built-in writing / polish skills can be toggled on; custom project-level skills are also supported
+- **Skill system**: built-in writing / polish skills can be toggled on; custom skills can be reused across projects
 - **AI assistant**: a built-in chat assistant can read and modify settings, outlines, and chapters via conversation (with multiple guards on destructive operations)
 - **Streaming output**: generation streams token by token, with a log panel and progress indicator
 - **Resumable**: progress is persisted on every step; close and reopen the program to pick up where you left off
@@ -70,7 +70,7 @@ API configuration is shared across all projects.
 1. **Configure the story**: on the Config page set genre, novel title, target words per chapter, writing style, etc. Characters / world / organizations / relations can be added manually, or generated in one click with "AI generate settings".
 2. **Generate batch outlines**: on the Outline page, enter a required batch synopsis and a chapter count (1–36), optionally adding a long-term direction. New batches append to existing outlines. Generating 12 chapters, then 24, creates batches for chapters 1–12 and 13–36, each with its own synopsis. Prose generation uses the synopsis of the chapter’s batch.
 3. **Write chapter by chapter**: on the Writing page, click generate. The AI streams the prose → produces a summary → fact-checks → waits for your review. Confirm to move on, or leave feedback to have the AI revise (select a passage and click **Quote** to revise only the matching paragraph; falls back to full-chapter revision if localization fails).
-4. **Want it hands-free?** Toggle "Auto-confirm": the AI will keep writing chapter after chapter until done. You can toggle it off at any time.
+4. **Want it hands-free?** Toggle "Auto-confirm": the AI will keep writing chapter after chapter to the end of the current plan. You can toggle it off at any time.
 
 ### Choosing the project language
 
@@ -167,7 +167,7 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 | **Read** | "What's the current outline?", "Show chapter 3", "List all characters" |
 | **Settings** | Create / edit / delete characters, world entries, organizations, relations |
 | **Config** | Change genre, novel title, words per chapter, writing style and POV; synopsis and count belong to each outline batch |
-| **Outline** | Generate outline, revise by feedback (same chapter count), edit a single chapter outline (pending / writing / review), confirm outline |
+| **Dynamic planning** | Plan 1–36 chapters at a time or replan the last entirely unwritten batch; written prose remains unchanged; long-term direction is optional |
 | **Writing** | Generate chapter, confirm chapter, revise a specific chapter, quote-selected paragraph revision, surgical paragraph edits |
 | **Foreshadows** | Suggest, create, update, delete foreshadows |
 | **Skills** | List skills, toggle skills on/off |
@@ -190,8 +190,6 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 
 | Task | Prefer |
 |------|--------|
-
-
 | **Full-book optimisation** | Use the Full-book optimisation panel on the Writing page. |
 | **Continue / import existing text** | Outline page → Import existing content. |
 | **Relationship graph layout** | Relations page (Canvas drag/zoom). |
@@ -226,10 +224,12 @@ Everything is local plain text / JSON:
 └── storys/
     └── <project name>/
         ├── config.json      # story configuration + prompts + skill flags
-        ├── progress.json    # progress, outline, chapters, foreshadows
+        ├── progress.json    # progress, outline, chapter metadata, foreshadows
+        ├── chapters/        # chapter prose (NNNNNN.json)
         ├── settings.json    # characters / world / organizations / relations
         ├── sessions/        # assistant chat history
-        └── Chapter_XX.md    # per-chapter Markdown
+        ├── Chapter_XX.md    # Markdown copy of each chapter
+        └── Foreshadows.md   # foreshadow roadmap
 ```
 
 To back up or migrate, copy the data directory.
@@ -270,7 +270,7 @@ The recommended chapter limit is primarily determined by the **token window** (o
 > **On context information and model capability**:
 > - **Settings and outlines are identical for all models**: character/world/organisation settings are injected fresh every chapter, all previous chapter outlines are injected in full, and the foreshadow system tracks cross-chapter threads independently. None of this varies by model.
 > - **The 5-chapter detail window is a fixed tool design**: the system keeps detailed summaries for the last 5 chapters (~250 words each, covering character dynamics, psychological arcs, key details) and injects ~800 words of the previous chapter's ending. Full prose from 6+ chapters ago is not visible, but key narrative details are preserved by the narrative memory system.
-> - **Narrative memory bridges the long-term gap**: after each chapter, the AI extracts key narrative details not in the outline (character speech tics, specific promises, prop details, etc.) and stores them in a cross-chapter memory bank injected into subsequent writing prompts. The memory token budget scales automatically with book size (2000–20000 tokens), trimming the least important entries when full. When a chapter is revised, its old memories are automatically deleted and re-extracted.
+> - **Narrative memory bridges the long-term gap**: after each chapter, the AI extracts key narrative details not in the outline (character speech tics, specific promises, prop details, etc.) and stores them in a cross-chapter memory bank injected into subsequent writing prompts within the available budget. Facts are not deleted to meet prompt budgets; chapter revisions mark old references stale and add new references after a successful sync.
 > - **Summaries remain the foundation for recent chapters**: the memory system focuses on preserving cross-chapter key details, while the last 5 chapters' detailed summaries provide full plot progression, character states, and emotional tone. The two complement each other to maintain narrative coherence.
 > - **Models differ in writing quality, not consistency span**: flagship models (GPT-5.5, Claude Opus 4.8) produce more fluent prose, follow instructions more faithfully, and are less likely to invent outline-absent plot points. Cheaper models may need more manual editing. But the context injected is the same for all models.
 > - Local open-source models (like Qwen3) depend on hardware and quantisation; the table assumes full-precision inference. Quantised deployments will see some quality loss.

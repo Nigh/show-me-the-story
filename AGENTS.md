@@ -239,7 +239,7 @@ func (h *Handlers) PostXxxAction(w http.ResponseWriter, r *http.Request) {
 
 ### 自动确认模式
 
-`Handlers.autoConfirm`（`taskMu` 保护）为运行时开关，不持久化。`GET/PUT /api/autoconfirm` 读取/切换，任务运行期间也可随时开关。开启后 `PostChapterGenerate` 的任务 goroutine 进入循环：生成章节 → 若开关仍开启则 `ConfirmChapterAction` 自动确认 → 继续生成下一章，直到全部完成、开关被关闭（当前章生成完后停在 review 状态）、任务被取消或出错。整个循环在同一个任务锁内执行，期间仍受任务互斥保护。`GET /api/status` 返回 `auto_confirm`、任务运行中的 `token_usage`，以及 `current_task` / `active_work`（供刷新后恢复 UI）。前端开关位于写作页进度卡片（toggle），开启时流式输出自动跟随正在生成的章节。
+`Handlers.autoConfirm`（`taskMu` 保护）为运行时开关，不持久化。`GET/PUT /api/autoconfirm` 读取/切换，任务运行期间也可随时开关。开启后 `PostChapterGenerate` 的任务 goroutine 进入循环：生成章节 → 若开关仍开启则 `ConfirmChapterAction` 自动确认 → 继续生成下一章，直到当前规划末尾、开关被关闭（当前章生成完后停在 review 状态）、任务被取消或出错。整个循环在同一个任务锁内执行，期间仍受任务互斥保护。`GET /api/status` 返回 `auto_confirm`、任务运行中的 `token_usage`，以及 `current_task` / `active_work`（供刷新后恢复 UI）。前端开关位于写作页进度卡片（toggle），开启时流式输出自动跟随正在生成的章节。
 
 ### 开发日志（dev.log）
 
@@ -516,7 +516,7 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | GET | `/api/status` | 同步 | 获取状态摘要（含 `is_task_running`；运行中附 `current_task`/`active_work`/`token_usage`） |
 | POST | `/api/outline/generate` | 异步 | 生成大纲（存在已确认章节时返回 409 拒绝） |
 | POST | `/api/outline/revise` | 异步 | 修订大纲 |
-| POST | `/api/outline/generate-continuation` | 异步 | 动态规划 1–36 章；替换全部未写章纲，支持本批要求与长期方向 |
+| POST | `/api/outline/generate-continuation` | 异步 | 动态规划 1–36 章；默认追加，仅可重建末尾整批未写章纲，支持本批要求与长期方向 |
 | POST | `/api/story/review` | 异步 | AI 阶段复盘 |
 | POST | `/api/story/complete` | 同步 | 显式标记完结（活跃伏笔需确认） |
 | POST | `/api/story/resume` | 同步 | 恢复连载 |
