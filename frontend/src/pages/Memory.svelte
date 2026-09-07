@@ -121,7 +121,7 @@
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body py-4 gap-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="tabs tabs-boxed tabs-sm">
+          <div class="tabs tabs-box tabs-sm">
             <button class="tab {viewMode === 'list' ? 'tab-active' : ''}" on:click={() => viewMode = 'list'}>
               {$t('memory.tabs.list')}
             </button>

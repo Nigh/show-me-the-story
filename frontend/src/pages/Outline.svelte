@@ -94,6 +94,7 @@
     { id: 0, chapters: chapters.filter(ch => !batches.some(b => ch.num >= b.start_ch && ch.num <= b.end_ch)) },
     ...batches.map(b => ({ ...b, chapters: chapters.filter(ch => ch.num >= b.start_ch && ch.num <= b.end_ch) }))
   ].filter(g => g.chapters.length);
+  $: batchActionKey = replacingBatch ? 'outline.batch.replan' : hasOutline ? 'outline.batch.generate' : 'outline.batch.first';
   $: batchStart = replacingBatch ? replacingBatch.start_ch : Math.max(0, ...chapters.map(ch => ch.num)) + 1;
   $: validCount = Number.isInteger(Number(continuationCount)) && continuationCount >= 1 && continuationCount <= 36;
   $: batchBlocked = $taskRunning || p?.book_status === 'completed' || chapters.some(ch => ch.status === 'writing' || ch.status === 'review');
@@ -273,9 +274,19 @@
 <div class="space-y-3">
   <div id="batch-planning" class="card bg-base-200 shadow-sm">
     <div class="card-body p-4 gap-3">
-      <h3 class="card-title text-base">{$t(replacingBatch ? 'outline.batch.replan' : 'outline.batch.generate')}</h3>
+      <h3 class="card-title text-base">{$t(batchActionKey)}</h3>
       <label class="block text-sm" for="batch-count">{$t('outline.batch.count')}</label>
-      <input id="batch-count" type="number" min="1" max="36" step="1" class="input input-sm w-24" bind:value={continuationCount} disabled={batchBlocked} />
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <input id="batch-count" type="number" min="1" max="36" step="1" class="input input-sm w-24" bind:value={continuationCount} disabled={batchBlocked} aria-describedby="batch-range" />
+        <p id="batch-range" class="text-sm text-base-content/70" aria-live="polite">
+          {#if validCount}
+            {$t(replacingBatch
+              ? (Number(continuationCount) === 1 ? 'outline.batch.regenerateSingle' : 'outline.batch.regenerateRange')
+              : (Number(continuationCount) === 1 ? 'outline.batch.generateSingle' : 'outline.batch.generateRange'),
+              { start: batchStart, end: batchStart + Number(continuationCount) - 1 })}
+          {/if}
+        </p>
+      </div>
       <label class="block text-sm" for="batch-synopsis">{$t('outline.batch.synopsis')}</label>
       <textarea id="batch-synopsis" class="textarea w-full h-36" bind:value={planningRequirements} placeholder={$t('outline.batch.placeholder')} disabled={batchBlocked}></textarea>
       <label class="block text-sm" for="batch-direction">{$t('ending.direction')}</label>
@@ -294,10 +305,9 @@
         <label class="block text-sm" for="ending-requirements">{$t('ending.requirements')}</label>
         <textarea id="ending-requirements" class="textarea textarea-sm w-full" bind:value={endingRequirements} required={endingStyle === 'custom'} disabled={batchBlocked}></textarea>
       {/if}
-      <p class="text-xs text-base-content/60">{$t('outline.batch.hint', { start: batchStart, end: batchStart + (Number(continuationCount) || 0) - 1, count: continuationCount })}</p>
       <div class="flex justify-end gap-2">
         {#if replacingBatch}<button class="btn btn-ghost btn-sm" disabled={$taskRunning} on:click={() => { replacingBatch = null; planningRequirements = ''; }}>{$t('common.cancel')}</button>{/if}
-        <button class="btn btn-primary btn-sm" on:click={generateContinuation} disabled={batchBlocked || !validCount || !planningRequirements.trim() || (endingIntent !== 'serial' && endingStyle === 'custom' && !endingRequirements.trim())}>{$t(replacingBatch ? 'outline.batch.replan' : 'outline.batch.generate')}</button>
+        <button class="btn btn-primary btn-sm" on:click={generateContinuation} disabled={batchBlocked || !validCount || !planningRequirements.trim() || (endingIntent !== 'serial' && endingStyle === 'custom' && !endingRequirements.trim())}>{$t(batchActionKey)}</button>
       </div>
     </div>
   </div>
@@ -450,7 +460,7 @@
                 <div>
                   <label for="chapter-cast" class="text-xs text-base-content/50 mb-1 block">{$t('outline.chapter.castLabel')}</label>
                   <textarea id="chapter-cast" class="textarea textarea-sm w-full h-16 text-sm font-mono" bind:value={editCharactersText} placeholder={$t('outline.chapter.castPlaceholder')} disabled={$taskRunning}></textarea>
-                  <p class="text-[11px] text-base-content/35 mt-0.5">{$t('outline.chapter.castHint')}</p>
+                  <p class="text-xs text-base-content/35 mt-0.5">{$t('outline.chapter.castHint')}</p>
                 </div>
                 <div class="flex justify-end gap-2">
                   <button class="btn btn-ghost btn-xs" on:click={cancelEdit}>{$t('common.cancel')}</button>

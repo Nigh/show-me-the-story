@@ -330,7 +330,7 @@
   {/if}
 
   <!-- 视图切换 -->
-  <div class="tabs tabs-boxed bg-base-200 w-fit">
+  <div class="tabs tabs-box bg-base-200 w-fit">
     <button class="tab tab-sm" class:tab-active={viewMode === 'list'} on:click={() => viewMode = 'list'}>{$t('fs.tabs.list')}</button>
     <button class="tab tab-sm" class:tab-active={viewMode === 'timeline'} on:click={() => viewMode = 'timeline'}>{$t('fs.tabs.timeline')}</button>
     <button class="tab tab-sm" class:tab-active={viewMode === 'markdown'} on:click={() => switchView('markdown')}>{$t('fs.tabs.markdown')}</button>

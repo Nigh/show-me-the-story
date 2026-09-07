@@ -37,6 +37,8 @@
 }
 
 @theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.5;
   --font-sans: "Inter", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   --font-serif: "Noto Serif", "Noto Serif SC", ui-serif, Georgia, serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "Cascadia Code", monospace;
@@ -50,6 +52,7 @@ html, body, #app {
 body {
   font-family: var(--font-sans);
   font-size: 15px;
+  line-height: 1.6;
 }
 
 /* Toast animation */

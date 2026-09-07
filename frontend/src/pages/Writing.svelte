@@ -443,14 +443,6 @@
   }
 </script>
 
-{#if inWriting}
-  <KnowledgePanel chapterNum={ch?.num || 0} bind:facts bind:activeFact on:jump={e => jumpToFact(e.detail)} />
-  {#if returnRef}<button class="btn btn-xs my-2" on:click={() => jumpToFact(returnRef, true)}>{$t('facts.return')}</button>{/if}
-  {#if p.book_status !== 'completed' && (p.outline_batches || []).some(b => b.planned_final && chapters.find(c => c.num === b.end_ch)?.status === 'accepted')}
-    <p class="alert alert-info my-2">{$t('ending.completeHint')}</p>
-  {/if}
-{/if}
-
 {#if !inWriting}
   <div class="text-center py-16 text-base-content/50">
     <div class="text-5xl mb-4">✍️</div>
@@ -459,7 +451,13 @@
     <button class="btn btn-primary btn-sm" on:click={() => window.location.hash = '#outline'}>{$t('writing.notReady.goto')}</button>
   </div>
 {:else}
-  <div class="space-y-3">
+  <div class="space-y-4">
+    <KnowledgePanel chapterNum={ch?.num || 0} bind:facts bind:activeFact on:jump={e => jumpToFact(e.detail)} />
+    {#if returnRef}<button class="btn btn-xs" on:click={() => jumpToFact(returnRef, true)}>{$t('facts.return')}</button>{/if}
+    {#if p.book_status !== 'completed' && (p.outline_batches || []).some(b => b.planned_final && chapters.find(c => c.num === b.end_ch)?.status === 'accepted')}
+      <p class="alert alert-info">{$t('ending.completeHint')}</p>
+    {/if}
+
     <!-- 进度 -->
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4 gap-2">
@@ -567,7 +565,7 @@
     <PostProcessPanel />
 
     <!-- 章节区 -->
-    <div class="grid grid-cols-[230px_1fr] gap-3" style="min-height:400px">
+    <div class="grid grid-cols-[345px_minmax(0,1fr)] gap-3" style="min-height:400px">
       <!-- 章节列表 -->
       <div class="card bg-base-200 shadow-sm overflow-y-auto max-h-[calc(100vh-280px)]">
         <ul class="menu menu-sm p-0 w-full">
