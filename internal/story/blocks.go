@@ -194,12 +194,13 @@ func ReviseBlockAction(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 		"WritingStyle":     cfg.Story.WritingStyle,
 		"WritingPOV":       cfg.Story.WritingPOV,
 		"CharacterContext": buildCharacterContextForLang(settings, *ch, lang),
-		"WorldviewContext": buildWorldviewContextForLang(settings, ch.Outline, lang),
+		"WorldviewContext": chapterWorldview(settings, *ch, lang),
 		"QuotedText":       original,
 		"SegmentOriginal":  original,
 		"UserFeedback":     feedbackForAI,
 	})
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterSegmentRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
+	userPrompt += factProtection(state, ch.Num, lang)
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
@@ -217,6 +218,7 @@ func ReviseBlockAction(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 	}
 
 	ch.Blocks[bi].Text = newText
+	ch.KnowledgeTracked = true
 	rebuildContentFromBlocks(ch)
 	SyncChapterBlocks(ch)
 

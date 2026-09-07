@@ -2,11 +2,25 @@
 
 > **重要**：当对项目进行任何修改（代码、配置、前端、提示词等）后，必须同步更新本文件，确保文档与项目实际情况完全一致。
 
+## 结尾控制与事实／设定同步
+
+- 批次请求及元数据增加 `ending_intent`（serial/final/sequel）、`ending_style`（closed/open/custom）、`ending_requirements`，元数据另存 `planned_final`。缺省继续连载，自定义结尾必填要求；向预定完结批次后追加需 `confirm_continue=true`，仅生成保存成功后取消旧标记。正式完结仍是用户手动操作。
+- `internal/story/endings.go` 校验结尾，`inject.go` 双语结尾块控制批次规划、正文写作、事实核查和修订；章末通用钩子服从明确收尾要求。大纲页“全书长期走向”解释跨批次作用并提供示例，成功保存、下次回填。
+- `internal/story/facts.go`：稳定事实 ID（`Progress.NextMemoryID`）、`MemoryReference{chapter,block_id,quote,content_rev,stale}` 多段落引用、版本与影响确认、章后关联提取；只在结果有效且保存成功后提交新事实。旧引用可标为失效，不因提示词预算删除事实。
+- `ChapterState.knowledge_tracked/memory_revision` 标记参与同步的章节与已分析版本。新生成、确认、手动编辑、AI 修订、润色和衔接优化进入同步；不扫描补齐旧项目未处理章节。审核／已确认正文在任务结束时补同步，失败的 writing 草稿不提取正式记忆。
+- `internal/story/settings_sync.go`：只从 accepted 正文提取人物、世界观、组织及关系，自动补充无冲突事实、应用明确演变；已有作者设定冲突或含糊推断进入建议。临时 `$ID` 按输出顺序解析为永久 ID，关联实体必须存在。设定及来源记录、已同步正文版本一起原子保存到 settings.json；`settings_updated` 复用现有图谱刷新。
+- `ProjectSettings.story_changes/story_synced` 保存前后实体值、来源段落、同步版本与状态。已确认正文改动或删章后，失效自动来源可安全撤回；被用户或后续实体依赖的值保留并产生核对建议。按章节、按字段回溯自动设定，保留不相关的作者修改；实体解码使用新对象，确保撤回的可选字段不残留，防止未来关系与世界观倒灌早期修订。
+- `internal/httpapi/knowledge_handlers.go`：`GET /api/knowledge?chapter=N` 或 `?fact=ID` 按需返回关联及待同步章节；`POST /api/knowledge/sync` 只重试已跟踪章节；`POST /api/settings/story-changes` 接受 `{id,accept}` 采纳或忽略建议。
+- Block PUT/DELETE/AI revise 使用 `X-Content-Rev` 与 `X-Confirm-Fact-Impact`；通用正文编辑请求使用 `content_rev/confirm_fact_impact`，Agent 共用校验。影响关联事实需确认，过期版本返回 409。AI 默认保留关键事实，确认不代表自动消除了跨章矛盾。
+- `endTask` 在最后工作单元释放互斥前同步本任务改变的已跟踪正文；手动编辑／确认／删除显式启动同一流程，纯读取与被拒绝请求不触发旧任务。自动连写每次确认后先同步，失败停止连写；写作页显示待同步章节与重试入口。
+- `KnowledgePanel.svelte` 提供事实列表、全部已识别关联段落、失效标记、跨章跳转及返回原段落、设定差异采纳；`Writing.svelte` 显示段落事实标记和编辑确认。关联由 AI 识别，不承诺没有遗漏；无关联不代表无风险。重试状态统一跟随 SSE，避免快速失败后界面停留在忙碌状态。
+- 回归测试：`internal/story/knowledge_test.go`（结尾、事实关联／版本／失败、设定演变／来源／重试、旧正文不补齐）、`internal/httpapi/knowledge_test.go`（编辑确认、版本冲突、拒绝请求不启动同步、按需查询）。
+
 ## 批次大纲（当前交互与接口）
 
 - 配置页不再提供全书梗概编辑；旧 `config.story.story_synopsis` / `progress.story_synopsis` 保留兼容读取和保存。标题栏显示已保存的小说标题，空白为“无题”/“Untitled”。
 - 大纲页统一表单：本批章节数（1–36）、必填“大纲梗概”、可选长期方向，预览章节范围。首次生成与后续追加均使用 `POST /api/outline/generate-continuation`。
-- 请求为 `OutlineBatchRequest{chapter_count, outline_synopsis, long_term_direction, mode, batch_id}`，默认 `mode=append` 接在最大章号后，保留已有未写章纲；`replace_last` 仅允许末尾完整且全部 pending、无正文批次，页面二次确认，Agent 需 `confirm=true`。写作中/审核中或已完结时禁止生成。
+- 请求为 `OutlineBatchRequest{chapter_count, outline_synopsis, long_term_direction, mode, batch_id, ending_intent, ending_style, ending_requirements, confirm_continue}`，默认 `mode=append` 接在最大章号后，保留已有未写章纲；`replace_last` 仅允许末尾完整且全部 pending、无正文批次，页面二次确认，Agent 需 `confirm=true`。写作中/审核中或已完结时禁止生成。
 - `internal/story/outline_batches.go`：批次校验、上下文组装、生成与数量/编号检查（最多 3 次范围校验尝试，复用每次章纲长度校验）、复制状态后保存，失败不提交内存状态。`Progress.OutlineBatches` 存 `id/revision/start_ch/end_ch/synopsis`，修订号用于区分相同梗概的重建成功，API 的 `ProgressView` 保留这些字段。
 - `internal/story/inject.go`：`BatchSynopses` / `BookSynopsis` / `ChapterSynopsis` / `batchScopeTemplate` 处理双语批次注入。正文按章节取所属批次梗概；大纲修订、协调、伏笔和全书分析使用带范围的梗概集合。旧章节无批次时正文回退到旧全书梗概。本批输入不会覆盖 `CorePrompt` 或旧全书梗概。
 - 页面按批次展示梗概和章纲；历史/导入章节单独分组，不将旧全书梗概冒充某批梗概。生成失败保留表单，成功通过批次修订号确认后清空本批输入。旧“先生成卷骨架”提示已移除；卷结构存储与批次独立。
@@ -382,17 +396,17 @@ pending → writing → review → accepted
 
 ### 叙事记忆系统
 
-弥补历史摘要窗口（5 章）之外的叙事细节丢失。每章写作完成后（`GenerateChapterAction` 第 6 步），AI 从正文中提取大纲未体现的关键叙事细节，存入 `Progress.MemoryEntries`。
+弥补历史摘要窗口（5 章）之外的叙事细节丢失。每章写作完成后（`GenerateChapterAction` 第 6 步），AI 从正文中提取影响一致性的关键事实（包括大纲已有事实），存入 `Progress.MemoryEntries`，并关联本章所有已识别段落。
 
-**数据结构**：`MemoryEntry` 含 `ID`、`Content`（关键细节描述）、`Category`（character/location/item/event/promise/other）、`Chapter`（来源章节号）、`Position`（段落序号，用于自动截取原文片段）。
+**数据结构**：`MemoryEntry` 含 `ID`、`Content`、`Category`、兼容字段 `Chapter/Position`，以及多段落 `References`；新摘录仅来自仍有效的引用。ID 不复用；旧无引用数据保留原读取方式。
 
-**Token 上限**：`calcMemoryMaxTokens` 根据全书预估总字数自动计算（`章节数 × 每章字数 / 10`，clamp 到 2000–20000）。超限时 AI 在更新时合并或删除最不重要条目。
+**Token 上限**：`calcMemoryMaxTokens` 保持 2000–20000 的写作注入预算，按保守文本估算限制注入；不再删除持久事实及引用以满足预算。关联抽取需要已有事实，事实规模增大会增加调用上下文。
 
 **注入机制**：`buildMemoryForLang` 将记忆格式化为 `[第X章] 内容（原文："自动截取片段"）`，注入 `ChapterWriting` 和 `FactCheck` prompt 的 `{{.Memory}}` 占位符。
 
-**同步维护**：`ReviseChapterAction` / `ReviseSpecificChapterAction` 修订章节后删除该章旧记忆并重新提取。
+**同步维护**：修订后重新分析当前章，复用相同事实 ID，保留其他章节的引用；失败保留旧事实并允许重试。失效来源不再作为有效原文证据注入。
 
-前端「记忆」页（`#memory`）只读展示 `memory_entries`：统计概览、列表/按章节时间线、分类与章节筛选、原文片段预览；数据来自 `GET /api/progress`（无独立 API）。
+前端「记忆」页（`#memory`）仍从 `GET /api/progress` 展示统计、筛选与摘录；完整引用通过 `GET /api/knowledge` 按需获取，不随 progress 广播携带。
 
 ### 进度持久化（v4 分文件存储）
 

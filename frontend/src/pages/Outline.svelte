@@ -82,6 +82,9 @@
   let continuationCount = 5;
   let planningRequirements = "";
   let longTermDirection = "";
+  let endingIntent = 'serial';
+  let endingStyle = 'closed';
+  let endingRequirements = '';
   let directionLoaded = false;
   $: if (p && !directionLoaded) { longTermDirection = p.long_term_direction || ''; directionLoaded = true; }
   let replacingBatch = null;
@@ -96,11 +99,13 @@
   $: batchBlocked = $taskRunning || p?.book_status === 'completed' || chapters.some(ch => ch.status === 'writing' || ch.status === 'review');
   $: if (submittedBatch && batches.some(b => b.start_ch === submittedBatch.start && b.end_ch === submittedBatch.end && b.synopsis === submittedBatch.synopsis && b.revision === submittedBatch.revision)) {
     planningRequirements = ''; replacingBatch = null; submittedBatch = null;
+    endingIntent = 'serial'; endingStyle = 'closed'; endingRequirements = '';
   }
   function canReplan(b) {
     return b.id && batches[batches.length - 1]?.id === b.id && b.end_ch === Math.max(0, ...chapters.map(ch => ch.num)) && b.chapters.every(ch => ch.status === 'pending');
   }
   function replan(b) {
+    endingIntent = b.ending_intent || 'serial'; endingStyle = b.ending_style || 'closed'; endingRequirements = b.ending_requirements || '';
     replacingBatch = b; planningRequirements = b.synopsis; continuationCount = b.end_ch - b.start_ch + 1;
     document.getElementById('batch-planning')?.scrollIntoView({ behavior: 'smooth' });
   }
@@ -171,7 +176,9 @@
 
   async function generateContinuation() {
     if (!planningRequirements.trim() || !validCount || batchBlocked) return;
+    if (endingIntent !== 'serial' && endingStyle === 'custom' && !endingRequirements.trim()) return;
     const body = { chapter_count: Number(continuationCount), outline_synopsis: planningRequirements.trim(), long_term_direction: longTermDirection.trim(), mode: replacingBatch ? 'replace_last' : 'append', batch_id: replacingBatch?.id || 0 };
+    Object.assign(body, { ending_intent: endingIntent, ending_style: endingIntent === 'serial' ? '' : endingStyle, ending_requirements: endingRequirements.trim() });
     const submitted = { revision: replacingBatch ? (replacingBatch.revision || 0) + 1 : 1, start: batchStart, end: batchStart + body.chapter_count - 1, synopsis: body.outline_synopsis };
     const run = async () => {
       try {
@@ -181,6 +188,7 @@
       } catch (e) { addToast(e.message, 'error'); }
     };
     if (replacingBatch) showConfirm($t('outline.batch.replaceConfirm'), run);
+    else if (batches.some(b => b.planned_final)) showConfirm($t('ending.continueConfirm'), () => { body.confirm_continue = true; return run(); });
     else await run();
   }
 
@@ -270,12 +278,26 @@
       <input id="batch-count" type="number" min="1" max="36" step="1" class="input input-sm w-24" bind:value={continuationCount} disabled={batchBlocked} />
       <label class="block text-sm" for="batch-synopsis">{$t('outline.batch.synopsis')}</label>
       <textarea id="batch-synopsis" class="textarea w-full h-36" bind:value={planningRequirements} placeholder={$t('outline.batch.placeholder')} disabled={batchBlocked}></textarea>
-      <label class="block text-sm" for="batch-direction">{$t('outline.dynamic.direction')}</label>
-      <textarea id="batch-direction" class="textarea textarea-sm w-full h-20" bind:value={longTermDirection} placeholder={$t('outline.batch.directionPlaceholder')} disabled={batchBlocked}></textarea>
+      <label class="block text-sm" for="batch-direction">{$t('ending.direction')}</label>
+      <p class="text-xs text-base-content/70">{$t('ending.directionHelp')}</p>
+      <textarea id="batch-direction" class="textarea textarea-sm w-full h-20" bind:value={longTermDirection} placeholder={$t('ending.directionExample')} disabled={batchBlocked}></textarea>
+      <label class="block text-sm" for="ending-intent">{$t('ending.intent')}</label>
+      <select id="ending-intent" class="select select-sm w-full" bind:value={endingIntent} disabled={batchBlocked}>
+        <option value="serial">{$t('ending.serial')}</option><option value="final">{$t('ending.final')}</option><option value="sequel">{$t('ending.sequel')}</option>
+      </select>
+      {#if endingIntent !== 'serial'}
+        <label class="block text-sm" for="ending-style">{$t('ending.style')}</label>
+        <select id="ending-style" class="select select-sm w-full" bind:value={endingStyle} disabled={batchBlocked}>
+          <option value="closed">{$t('ending.closed')}</option><option value="open">{$t('ending.open')}</option><option value="custom">{$t('ending.custom')}</option>
+        </select>
+        <p class="text-xs text-base-content/70">{$t('ending.help')}</p>
+        <label class="block text-sm" for="ending-requirements">{$t('ending.requirements')}</label>
+        <textarea id="ending-requirements" class="textarea textarea-sm w-full" bind:value={endingRequirements} required={endingStyle === 'custom'} disabled={batchBlocked}></textarea>
+      {/if}
       <p class="text-xs text-base-content/60">{$t('outline.batch.hint', { start: batchStart, end: batchStart + (Number(continuationCount) || 0) - 1, count: continuationCount })}</p>
       <div class="flex justify-end gap-2">
         {#if replacingBatch}<button class="btn btn-ghost btn-sm" disabled={$taskRunning} on:click={() => { replacingBatch = null; planningRequirements = ''; }}>{$t('common.cancel')}</button>{/if}
-        <button class="btn btn-primary btn-sm" on:click={generateContinuation} disabled={batchBlocked || !validCount || !planningRequirements.trim()}>{$t(replacingBatch ? 'outline.batch.replan' : 'outline.batch.generate')}</button>
+        <button class="btn btn-primary btn-sm" on:click={generateContinuation} disabled={batchBlocked || !validCount || !planningRequirements.trim() || (endingIntent !== 'serial' && endingStyle === 'custom' && !endingRequirements.trim())}>{$t(replacingBatch ? 'outline.batch.replan' : 'outline.batch.generate')}</button>
       </div>
     </div>
   </div>
@@ -413,6 +435,7 @@
             <section class="border border-base-content/10 rounded-lg p-3 space-y-2">
               <div class="flex items-center justify-between gap-2">
                 <h4 class="font-semibold text-sm">{group.id ? $t('outline.batch.range', { start: group.start_ch, end: group.end_ch }) : $t('outline.batch.legacy')}</h4>
+                {#if group.planned_final}<span class="badge badge-info">{$t('ending.marker', {num: group.end_ch})}</span>{/if}
                 {#if canReplan(group)}<button class="btn btn-ghost btn-xs" disabled={batchBlocked} on:click={() => replan(group)}>{$t('outline.batch.replan')}</button>{/if}
               </div>
               {#if group.synopsis}<p class="whitespace-pre-wrap text-sm text-base-content/70 mb-3">{group.synopsis}</p>{/if}

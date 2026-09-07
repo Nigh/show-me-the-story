@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { api } from '../lib/api.js';
   import { progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
   import { navigate } from '../lib/router.js';
@@ -7,6 +7,40 @@
   import { countProseUnits } from '../lib/proseUnits.js';
   import PostProcessPanel from '../components/PostProcessPanel.svelte';
   import TaskTokenBadge from '../components/TaskTokenBadge.svelte';
+  import KnowledgePanel from '../components/KnowledgePanel.svelte';
+  let facts = [];
+  let activeFact = null;
+  let returnRef = null;
+  let highlightedBlock = null;
+  $: factsByBlock = new Map(chapterBlocks.map(b => [b.id, facts.filter(f => (f.references || []).some(r => r.chapter === ch?.num && r.block_id === b.id))]));
+  const blockFacts = id => factsByBlock.get(id) || [];
+  function confirmAction(message, action) {
+    confirmModal.set({ message, onConfirm: action });
+  }
+  async function jumpToFact(ref, returning = false) {
+    if (editingBlockId != null || revisingBlockId != null || insertAfterId != null) {
+      confirmAction($t('facts.discard'), () => { cancelBlockOps(); jumpToFact(ref, returning); });
+      return;
+    }
+    const idx = chapters.findIndex(c => c.num === ref.chapter);
+    if (idx < 0) { addToast($t('facts.stale'), 'warning'); return; }
+    if (!returning && !returnRef) returnRef = {chapter: ch?.num, block_id: highlightedBlock || chapterBlocks[0]?.id};
+    try {
+      const full = await api('GET', '/api/chapters/' + ref.chapter);
+      const block = (full.blocks || []).find(b => b.id === ref.block_id);
+      if (!block || (ref.quote && block.text !== ref.quote)) { addToast($t('facts.stale'), 'warning'); return; }
+      selectedChapter.set(idx);
+      loadedNum = ref.chapter;
+      applyChapter(ref.chapter, full);
+      highlightedBlock = ref.block_id;
+      await tick();
+      document.getElementById('story-block-' + ref.block_id)?.scrollIntoView({block: 'center', behavior: 'smooth'});
+      if (returning) returnRef = null;
+    } catch(e) { addToast(e.message, 'error'); }
+  }
+  function factHeaders(confirmed) {
+    return {'X-Content-Rev': loadedRev || '', 'X-Confirm-Fact-Impact': String(confirmed)};
+  }
 
   const OUTLINE_FOCUS_KEY = 'showmethestory.outlineFocusChapter';
 
@@ -92,12 +126,14 @@
   let insertText = '';
 
   function startBlockEdit(b) {
+    highlightedBlock = b.id;
     editingBlockId = b.id;
     editingText = b.text;
     revisingBlockId = null;
     insertAfterId = null;
   }
   function startBlockRevise(b) {
+    highlightedBlock = b.id;
     revisingBlockId = b.id;
     blockFeedback = '';
     editingBlockId = null;
@@ -115,10 +151,13 @@
     insertAfterId = null;
   }
 
-  async function saveBlockEdit() {
+  async function saveBlockEdit(confirmed = false) {
     if (editingBlockId == null || !editingText.trim() || !ch) return;
+    if (confirmed !== true && blockFacts(editingBlockId).length) {
+      confirmAction($t('facts.confirm') + '\n' + blockFacts(editingBlockId).map(f => f.content).join('\n'), () => saveBlockEdit(true)); return;
+    }
     try {
-      const full = await api('PUT', `/api/chapters/${ch.num}/blocks/${editingBlockId}`, { text: editingText });
+      const full = await api('PUT', `/api/chapters/${ch.num}/blocks/${editingBlockId}`, { text: editingText }, factHeaders(confirmed === true));
       applyChapter(ch.num, full);
       cancelBlockOps();
       addToast($t('writing.block.saved'), 'success');
@@ -128,10 +167,10 @@
   function deleteBlock(b) {
     if (!ch) return;
     confirmModal.set({
-      message: $t('writing.block.deleteConfirm'),
+      message: $t('writing.block.deleteConfirm') + (blockFacts(b.id).length ? '\n' + $t('facts.confirm') + '\n' + blockFacts(b.id).map(f => f.content).join('\n') : ''),
       onConfirm: async () => {
         try {
-          const full = await api('DELETE', `/api/chapters/${ch.num}/blocks/${b.id}`);
+          const full = await api('DELETE', `/api/chapters/${ch.num}/blocks/${b.id}`, null, factHeaders(true));
           applyChapter(ch.num, full);
           addToast($t('writing.block.deleted'), 'success');
         } catch (e) { addToast(e.message, 'error'); }
@@ -142,17 +181,20 @@
   async function saveBlockInsert() {
     if (insertAfterId == null || !insertText.trim() || !ch) return;
     try {
-      const full = await api('POST', `/api/chapters/${ch.num}/blocks`, { after_id: insertAfterId, text: insertText });
+      const full = await api('POST', `/api/chapters/${ch.num}/blocks`, { after_id: insertAfterId, text: insertText }, factHeaders(false));
       applyChapter(ch.num, full);
       cancelBlockOps();
       addToast($t('writing.block.inserted'), 'success');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function submitBlockRevise() {
+  async function submitBlockRevise(confirmed = false) {
     if (revisingBlockId == null || !blockFeedback.trim() || !ch) return;
+    if (confirmed !== true && blockFacts(revisingBlockId).length) {
+      confirmAction($t('facts.confirmAI') + '\n' + blockFacts(revisingBlockId).map(f => f.content).join('\n'), () => submitBlockRevise(true)); return;
+    }
     try {
-      await api('POST', `/api/chapters/${ch.num}/blocks/${revisingBlockId}/revise`, { feedback: blockFeedback });
+      await api('POST', `/api/chapters/${ch.num}/blocks/${revisingBlockId}/revise`, { feedback: blockFeedback }, factHeaders(confirmed === true));
       addToast($t('writing.block.reviseStarted'), 'info');
       cancelBlockOps();
     } catch (e) { addToast(e.message, 'error'); }
@@ -401,6 +443,14 @@
   }
 </script>
 
+{#if inWriting}
+  <KnowledgePanel chapterNum={ch?.num || 0} bind:facts bind:activeFact on:jump={e => jumpToFact(e.detail)} />
+  {#if returnRef}<button class="btn btn-xs my-2" on:click={() => jumpToFact(returnRef, true)}>{$t('facts.return')}</button>{/if}
+  {#if p.book_status !== 'completed' && (p.outline_batches || []).some(b => b.planned_final && chapters.find(c => c.num === b.end_ch)?.status === 'accepted')}
+    <p class="alert alert-info my-2">{$t('ending.completeHint')}</p>
+  {/if}
+{/if}
+
 {#if !inWriting}
   <div class="text-center py-16 text-base-content/50">
     <div class="text-5xl mb-4">✍️</div>
@@ -582,7 +632,8 @@
                   {:else if chapterBlocks.length > 0}
                     <div class="space-y-3">
                       {#each chapterBlocks as b (b.id)}
-                        <div class="group relative rounded hover:bg-base-100/40 -mx-2 px-2 py-0.5">
+                        <div id={'story-block-' + b.id} class="group relative rounded hover:bg-base-100/40 -mx-2 px-2 py-0.5" class:ring-2={highlightedBlock === b.id || activeFact?.references?.some(r => !r.stale && r.chapter === ch.num && r.block_id === b.id)}>
+                          {#each factsByBlock.get(b.id) || [] as fact}<button class="badge badge-warning badge-sm cursor-pointer mb-1" on:click={() => { activeFact = fact; highlightedBlock = b.id; }}>{$t('facts.marker')} #{fact.id}</button>{/each}
                           {#if editingBlockId === b.id}
                             <textarea class="textarea textarea-sm w-full text-[15px] leading-relaxed" rows={Math.max(3, Math.ceil(b.text.length / 40))} bind:value={editingText} disabled={$taskRunning}></textarea>
                             <div class="flex gap-2 justify-end mt-1">
@@ -591,7 +642,7 @@
                             </div>
                           {:else}
                             <div class="whitespace-pre-wrap {b.type === 'scene_break' ? 'text-center text-base-content/40' : ''}">{b.text}</div>
-                            <div class="absolute right-1 top-0.5 hidden group-hover:flex gap-1 bg-base-200/90 rounded shadow px-1 py-0.5">
+                            <div class="absolute right-1 top-0.5 flex sm:opacity-0 group-hover:opacity-100 focus-within:opacity-100 gap-1 bg-base-200/90 rounded shadow px-1 py-0.5">
                               <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.edit')} disabled={$taskRunning} on:click={() => startBlockEdit(b)}>✏️</button>
                               <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.revise')} disabled={$taskRunning} on:click={() => startBlockRevise(b)}>🤖</button>
                               <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.insertAfter')} disabled={$taskRunning} on:click={() => startBlockInsert(b.id)}>➕</button>

@@ -97,6 +97,18 @@ Only the last entirely unwritten batch can be replanned. Choose “Replan this b
 
 The assistant’s `generate_outline` accepts `chapter_count` and `outline_synopsis` directly; it appends by default. Replanning uses `mode=replace_last`, the batch ID from `read_outline`, and explicit confirmation.
 
+### Batch endings and long-term direction
+
+Choose continued serialization, a book ending, or a complete book with room for a sequel. Endings can be closed, open, or custom. An open ending still establishes the main outcome. After accepting the planned final chapter, review foreshadows and mark the book complete yourself. Appending beyond it requires confirmation to remove the previous planned-ending marker.
+
+Use “Long-term direction” for goals spanning multiple batches, such as “The protagonist turns from revenge to protecting others and eventually uncovers why the dynasty fell; this batch only finds the first clue.” It guides batch planning without requiring this batch to reach the ending or rewriting existing outlines or prose. It is saved after successful generation and reused next time.
+
+### Linked facts and automatic setting updates
+
+The Writing page marks passages linked to key facts. Inspect all identified passages for a fact, jump across chapters, and return to compare them. Editing or deleting a linked passage requires confirmation; a changed chapter version requires a fresh review. AI paragraph revision preserves facts by default. AI may miss links, and confirming an edit does not automatically correct other chapters.
+
+Accepted chapters automatically update characters, world entries, organizations, relationships, and the graph. Conflicts with author settings appear as before/after proposals on the Writing page. Editing or deleting source prose safely withdraws automatic changes or requests review when later dependencies exist. Failed sync preserves prose and offers a retry; automatic writing pauses. Only newly generated or actively edited chapters participate; untouched old prose is not backfilled.
+
 ### Foreshadow system
 
 Once the outline is confirmed, the AI can suggest 3–8 foreshadows (with planted chapter and expected resolution chapter), or you can create them manually. Active foreshadows are injected into the writing context, and after each chapter the AI updates their state automatically:

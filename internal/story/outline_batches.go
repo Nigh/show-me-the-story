@@ -11,23 +11,34 @@ import (
 
 // OutlineBatch binds an author's synopsis to exactly one range of chapters.
 type OutlineBatch struct {
-	ID       int    `json:"id"`
-	Revision int    `json:"revision"`
-	StartCh  int    `json:"start_ch"`
-	EndCh    int    `json:"end_ch"`
-	Synopsis string `json:"synopsis"`
+	ID                 int    `json:"id"`
+	Revision           int    `json:"revision"`
+	StartCh            int    `json:"start_ch"`
+	EndCh              int    `json:"end_ch"`
+	Synopsis           string `json:"synopsis"`
+	EndingIntent       string `json:"ending_intent,omitempty"`
+	EndingStyle        string `json:"ending_style,omitempty"`
+	EndingRequirements string `json:"ending_requirements,omitempty"`
+	PlannedFinal       bool   `json:"planned_final,omitempty"`
 }
 
 type OutlineBatchRequest struct {
-	ChapterCount      int    `json:"chapter_count"`
-	Synopsis          string `json:"outline_synopsis"`
-	LongTermDirection string `json:"long_term_direction"`
-	Mode              string `json:"mode"`
-	BatchID           int    `json:"batch_id"`
+	ChapterCount       int    `json:"chapter_count"`
+	Synopsis           string `json:"outline_synopsis"`
+	LongTermDirection  string `json:"long_term_direction"`
+	Mode               string `json:"mode"`
+	BatchID            int    `json:"batch_id"`
+	EndingIntent       string `json:"ending_intent"`
+	EndingStyle        string `json:"ending_style"`
+	EndingRequirements string `json:"ending_requirements"`
+	ConfirmContinue    bool   `json:"confirm_continue"`
 }
 
 // ValidateOutlineBatch never mutates the project. Call again inside the task.
 func ValidateOutlineBatch(state *Progress, req OutlineBatchRequest, lang string) error {
+	if err := validateEnding(state, req, lang); err != nil {
+		return err
+	}
 	key := ""
 	switch {
 	case strings.TrimSpace(req.Synopsis) == "":
@@ -114,6 +125,7 @@ func GenerateOutlineBatch(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	template := cfg.Prompts.ContinuationOutlineGeneration
 	// Always add the explicit scope, including for previously saved custom templates.
 	template += batchScopeTemplate(cfg.Language)
+	template += endingPrompt(OutlineBatch{EndCh: start + req.ChapterCount - 1, EndingIntent: req.EndingIntent, EndingStyle: req.EndingStyle, EndingRequirements: req.EndingRequirements, PlannedFinal: req.EndingIntent == "final" || req.EndingIntent == "sequel"}, 0, cfg.Language)
 	data := map[string]string{
 		"Title": preferUserValue(cfg.Story.Title, state.Title), "StoryType": cfg.Story.Type,
 		"CorePrompt": state.CorePrompt, "StorySynopsis": synopsis, "OutlineSynopsis": synopsis,
@@ -148,7 +160,10 @@ func GenerateOutlineBatch(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	for _, ch := range chapters {
 		next.Chapters = append(next.Chapters, chapterStateFromOutline(ch, StatusPending))
 	}
-	next.OutlineBatches = append(next.OutlineBatches, OutlineBatch{ID: id, Revision: revision, StartCh: start, EndCh: start + req.ChapterCount - 1, Synopsis: synopsis})
+	for i := range next.OutlineBatches {
+		next.OutlineBatches[i].PlannedFinal = false
+	}
+	next.OutlineBatches = append(next.OutlineBatches, OutlineBatch{ID: id, Revision: revision, StartCh: start, EndCh: start + req.ChapterCount - 1, Synopsis: synopsis, EndingIntent: req.EndingIntent, EndingStyle: req.EndingStyle, EndingRequirements: strings.TrimSpace(req.EndingRequirements), PlannedFinal: req.EndingIntent == "final" || req.EndingIntent == "sequel"})
 	next.Title = preferUserValue(cfg.Story.Title, state.Title)
 	next.LongTermDirection = strings.TrimSpace(req.LongTermDirection)
 	next.Phase = "writing"

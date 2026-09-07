@@ -204,6 +204,20 @@ func ProgressView(p *Progress) *Progress {
 		entries := make([]MemoryEntry, len(p.MemoryEntries))
 		for i, m := range p.MemoryEntries {
 			m.Snippet = extractSnippet(p, m.Chapter, m.Position, 100)
+			if len(m.References) > 0 {
+				m.Snippet = ""
+				for _, ref := range m.References {
+					if ReferenceLive(p, ref) {
+						r := []rune(ref.Quote)
+						if len(r) > 100 {
+							r = r[:100]
+						}
+						m.Snippet = string(r)
+						break
+					}
+				}
+			}
+			m.References = nil // Evidence is loaded on demand via the facts endpoint.
 			entries[i] = m
 		}
 		cp.MemoryEntries = entries

@@ -3,6 +3,7 @@ package i18n
 // messageCatalog holds localized UI/log/agent status strings (key → zh/en template).
 // Templates use fmt.Sprintf verbs (%s, %d, %v). Frontend mirrors keys with {0},{1},… placeholders.
 var messageCatalog = map[string]map[string]string{
+	"log.knowledge_failed":          {LangZH: "事实或设定同步未完成，可在写作页重试：%v", LangEN: "Fact or setting sync incomplete; retry from Writing: %v"},
 	"log.skills_activated":          {LangZH: "本次流程已激活 Skill：%s", LangEN: "Skills activated for this task: %s"},
 	"log.skill_validation_done":     {LangZH: "Skill「%s」AI 校验完成", LangEN: "AI validation completed for skill \"%s\""},
 	"log.skill_validation_failed":   {LangZH: "Skill AI 校验失败：%s", LangEN: "Skill AI validation failed: %s"},

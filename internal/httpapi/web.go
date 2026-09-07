@@ -50,6 +50,9 @@ func StartWebServer(apiCfg *config.APIConfig, apiCfgPath string, logger *sse.Log
 	mux.HandleFunc("POST /api/config/apply-changes", h.PostApplyConfigChanges)
 	mux.HandleFunc("DELETE /api/config/pending-changes", h.DeletePendingConfigChanges)
 	mux.HandleFunc("GET /api/progress", h.GetProgress)
+	mux.HandleFunc("GET /api/knowledge", h.GetKnowledge)
+	mux.HandleFunc("POST /api/knowledge/sync", h.PostKnowledgeSync)
+	mux.HandleFunc("POST /api/settings/story-changes", h.PostSettingChange)
 	mux.HandleFunc("DELETE /api/progress", h.DeleteProgress)
 	mux.HandleFunc("GET /api/status", h.GetStatus)
 
@@ -382,7 +385,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-UI-Locale, Accept-Language, X-Content-Rev, X-Confirm-Fact-Impact")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return

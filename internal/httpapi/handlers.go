@@ -46,13 +46,15 @@ type Handlers struct {
 	postprocessPath string
 
 	// Task management
-	taskMu      sync.Mutex
-	taskRunning bool
-	activeWork  int
-	taskCtx     context.Context
-	taskCancel  context.CancelFunc
-	taskTokens  *llm.TaskTokenUsage
-	autoConfirm bool // 自动确认模式：章节生成完成后自动确认并继续生成下一章
+	taskMu             sync.Mutex
+	taskRunning        bool
+	activeWork         int
+	taskCtx            context.Context
+	taskCancel         context.CancelFunc
+	taskTokens         *llm.TaskTokenUsage
+	knowledgeAtStart   string
+	forceKnowledgeSync bool
+	autoConfirm        bool // 自动确认模式：章节生成完成后自动确认并继续生成下一章
 
 	lastChatMessage   string             // 缓存最后发送的聊天消息，用于重试
 	lastReconcileBody config.StoryConfig // 缓存最后的设定协调请求
@@ -203,6 +205,8 @@ func (h *Handlers) tryStartTask() bool {
 		return false
 	}
 	h.taskRunning = true
+	h.knowledgeAtStart = h.knowledgeVersion()
+	h.forceKnowledgeSync = false
 	h.activeWork = 1
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx, h.taskTokens = llm.WithTaskTokens(ctx, h.logger)
@@ -217,6 +221,17 @@ func (h *Handlers) endTask() {
 	h.activeWork--
 	cancelled := false
 	if h.activeWork <= 0 {
+		h.taskMu.Unlock()
+		if h.cfg != nil && h.state != nil && h.taskCtx != nil && h.taskCtx.Err() == nil && (h.forceKnowledgeSync || h.knowledgeAtStart != h.knowledgeVersion()) {
+			h.logger.TaskStart("knowledge_sync")
+			err := story.SyncPendingKnowledge(h.taskCtx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.logger)
+			if err != nil {
+				h.logger.WarnKey("log.knowledge_failed", err)
+			}
+			h.logger.TaskEnd("knowledge_sync", err == nil)
+			h.broadcastProgress()
+		}
+		h.taskMu.Lock()
 		h.activeWork = 0
 		h.taskRunning = false
 		if h.taskCancel != nil {
@@ -550,6 +565,8 @@ func (h *Handlers) blockEditChapter(w http.ResponseWriter, r *http.Request, num 
 		return
 	}
 	ch := &h.state.Chapters[idx]
+	before := *ch
+	before.Blocks = append([]story.Block(nil), ch.Blocks...)
 	if len(ch.Blocks) == 0 && ch.Content != "" {
 		story.SyncChapterBlocks(ch)
 	}
@@ -561,7 +578,15 @@ func (h *Handlers) blockEditChapter(w http.ResponseWriter, r *http.Request, num 
 		}
 		return
 	}
+	opts := story.FactEditOptions{ContentRev: r.Header.Get("X-Content-Rev"), ConfirmFactImpact: r.Header.Get("X-Confirm-Fact-Impact") == "true"}
+	if err := story.ValidateFactEdit(h.state, before, *ch, opts, i18n.FromRequest(r)); err != nil {
+		*ch = before
+		h.writeErrorReq(w, r, http.StatusConflict, "invalid_json", err)
+		return
+	}
+	ch.KnowledgeTracked = true
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
+		*ch = before
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
@@ -573,6 +598,7 @@ func (h *Handlers) blockEditChapter(w http.ResponseWriter, r *http.Request, num 
 		resp.ContentRev = fmt.Sprintf("%x", story.HashContent(resp.Content))
 	}
 	h.writeJSON(w, http.StatusOK, resp)
+	h.startKnowledgeSync()
 }
 
 func (h *Handlers) PutChapterBlock(w http.ResponseWriter, r *http.Request) {
@@ -660,6 +686,15 @@ func (h *Handlers) PostChapterBlockRevise(w http.ResponseWriter, r *http.Request
 	}
 	if story.FindBlockIdx(&h.state.Chapters[idx], id) < 0 {
 		h.writeErrorReq(w, r, http.StatusNotFound, "block_not_found")
+		return
+	}
+	before := h.state.Chapters[idx]
+	after := before
+	after.Blocks = append([]story.Block(nil), before.Blocks...)
+	after.Blocks[story.FindBlockIdx(&after, id)].Text += "\n[revision]"
+	opts := story.FactEditOptions{ContentRev: r.Header.Get("X-Content-Rev"), ConfirmFactImpact: r.Header.Get("X-Confirm-Fact-Impact") == "true"}
+	if err := story.ValidateFactEdit(h.state, before, after, opts, i18n.FromRequest(r)); err != nil {
+		h.writeErrorReq(w, r, http.StatusConflict, "invalid_json", err)
 		return
 	}
 
@@ -983,6 +1018,11 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 				h.logger.WarnKey("log.chapter_autoconfirm_failed", err)
 				break
 			}
+			if err := story.SyncPendingKnowledge(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.logger); err != nil {
+				h.logger.WarnKey("log.knowledge_failed", err)
+				h.taskCancel()
+				break
+			}
 			h.logger.SuccessKey("log.chapter_autoconfirmed", chIdx+1, chTitle)
 			h.broadcastProgress()
 
@@ -1106,6 +1146,7 @@ func (h *Handlers) PostChapterConfirm(w http.ResponseWriter, r *http.Request) {
 	ch := h.state.Chapters[h.state.CurrentChapterIndex-1]
 	h.logger.SuccessKey("log.chapter_confirmed", ch.Num)
 	h.writeJSON(w, http.StatusOK, story.ProgressView(h.state))
+	h.startKnowledgeSync()
 }
 
 func (h *Handlers) PostChapterEdit(w http.ResponseWriter, r *http.Request) {
@@ -1139,6 +1180,7 @@ func (h *Handlers) PostChapterEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	story.SaveChapterMarkdown(h.projectDir(), h.getChapterByNum(req.ChapterNum), "")
+	h.startKnowledgeSync()
 	h.broadcastProgress()
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":     true,
@@ -1323,6 +1365,7 @@ func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.SuccessKey("log.chapter_deleted", num)
 	h.writeJSON(w, http.StatusOK, story.ProgressView(h.state))
+	h.startKnowledgeSync()
 }
 
 func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
@@ -1354,6 +1397,7 @@ func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.SuccessKey("log.outline_deleted")
 	h.writeJSON(w, http.StatusOK, story.ProgressView(h.state))
+	h.startKnowledgeSync()
 }
 
 func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
@@ -1488,6 +1532,7 @@ func (h *Handlers) DeleteChaptersFrom(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.SuccessKey("log.chapters_deleted_from", num, deletedCount)
 	h.writeJSON(w, http.StatusOK, story.ProgressView(h.state))
+	h.startKnowledgeSync()
 }
 
 func (h *Handlers) broadcastProgress() {

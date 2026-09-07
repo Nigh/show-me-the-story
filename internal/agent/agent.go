@@ -321,6 +321,7 @@ func calcSynopsisLengthRange(chapterCount, targetWordsPerChapter int) (minLen, m
 
 func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 	var sb strings.Builder
+	sb.WriteString("结尾用途 ending_intent 可选 serial/final/sequel；ending_style 可选 closed/open/custom，自定义必填 ending_requirements。预定完结后继续追加必须先征得用户同意，才传 confirm_continue=true。编辑正文前读取 read_chapter 的事实关联和 content_rev；影响关联事实须向用户列出事实及相关章节并征得同意，才传 confirm_fact_impact=true。确认章节后自动同步设定；失败可在写作页重试。\n")
 	sb.WriteString("大纲按批次规划。generate_outline 必须传 chapter_count（1–36）与 outline_synopsis；默认追加，只有末尾全部未写批次可用 replace_last 重新规划。先 read_outline 获取批次 ID；全书梗概不是配置项。\n")
 	sb.WriteString("你是一个小说创作助手，全权负责管理小说项目的一切操作，包括：生成/修订/确认大纲、生成/修订/确认章节、管理角色/世界观/组织/关系/伏笔、技能管理、项目配置等。\n\n")
 
@@ -421,6 +422,7 @@ func buildAgentSystemPromptZH(ctx *AgentContext, toolDesc string) string {
 
 func buildAgentSystemPromptEN(ctx *AgentContext, toolDesc string) string {
 	var sb strings.Builder
+	sb.WriteString("ending_intent is serial/final/sequel; ending_style is closed/open/custom, with ending_requirements required for custom. Ask the author before continuing past a planned ending and setting confirm_continue=true. Before editing prose, use read_chapter for facts and content_rev; disclose affected facts and linked chapters and obtain author consent before setting confirm_fact_impact=true. Accepted chapters automatically sync settings; failed sync can be retried from Writing.\n")
 	sb.WriteString("Plan outlines in batches. generate_outline requires chapter_count (1–36) and outline_synopsis. Default to append; replace_last can only replan the last entirely unwritten batch. Read batch IDs with read_outline. Do not store a whole-book synopsis in config.\n")
 	sb.WriteString("You are a novel-writing assistant in full charge of every operation on the project: generating/revising/confirming outlines, generating/revising/confirming chapters, managing characters/worldview/organisations/relations/foreshadows, skill management, project configuration, and so on. Reply to the user in English.\n\n")
 
@@ -869,6 +871,8 @@ func getBuiltinTools() []Tool {
 				for _, ch := range ctx.State.Chapters {
 					if ch.Num == params.Num {
 						var result strings.Builder
+						facts, _ := json.Marshal(story.FactsForChapter(ctx.State, ch.Num, 0))
+						fmt.Fprintf(&result, "content_rev: %s\nfacts: %s\n", story.ChapterRevision(ch), facts)
 						result.WriteString(fmt.Sprintf("第%d章《%s》[%s]\n\n", ch.Num, ch.Title, ch.Status))
 						if ch.Outline != "" {
 							result.WriteString(fmt.Sprintf("大纲: %s\n\n", ch.Outline))
@@ -1312,7 +1316,7 @@ func getBuiltinTools() []Tool {
 		{
 			Name:        "generate_outline",
 			Description: "按本批必填梗概生成章节大纲（异步），默认追加。chapter_count 为本批章数（1–36）；replace_last 仅替换末尾全部未写批次，需 batch_id 和 confirm=true。",
-			Parameters:  `{"chapter_count":12,"outline_synopsis":"本批剧情梗概","long_term_direction":"可选长期方向","mode":"append","batch_id":0,"confirm":false}`,
+			Parameters:  `{"chapter_count":12,"outline_synopsis":"本批剧情梗概","long_term_direction":"跨批次长期走向","mode":"append","batch_id":0,"confirm":false,"ending_intent":"serial|final|sequel","ending_style":"closed|open|custom","ending_requirements":"","confirm_continue":false}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var req story.OutlineBatchRequest
 				if err := json.Unmarshal(args, &req); err != nil {
@@ -1469,7 +1473,7 @@ func getBuiltinTools() []Tool {
 		{
 			Name:        "edit_chapter_content",
 			Description: "对章节正文进行局部编辑（同步），无需重写整章。支持 4 种操作：replace_lines（替换行范围）、replace_text（查找替换文本片段）、insert_after_line（在指定行后插入）、append（末尾追加）。适合微调个别段落、修正错误、追加场景等。",
-			Parameters:  `{"num": 1, "operation": "replace_lines|replace_text|insert_after_line|append", "start_line": 1, "end_line": 5, "old_text": "要查找的原文", "line": 10, "new_text": "新内容"}`,
+			Parameters:  `{"num": 1, "operation": "replace_lines|replace_text|insert_after_line|append", "start_line": 1, "end_line": 5, "old_text": "要查找的原文", "line": 10, "new_text": "新内容", "content_rev":"read_chapter 返回的版本", "confirm_fact_impact":false}`,
 			Execute: func(args json.RawMessage, ctx *AgentContext) (string, error) {
 				var req story.EditChapterContentRequest
 				if err := json.Unmarshal(args, &req); err != nil {

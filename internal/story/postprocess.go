@@ -823,7 +823,7 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 
 		if execErr == nil {
 			state.Chapters[chapterIdx].Status = StatusAccepted
-			_ = SaveProgress(progressPath, state)
+			execErr = SaveProgress(progressPath, state)
 		}
 
 		diffRevised := excerptForDiff(state.Chapters[chapterIdx].Content, diffExcerptRunes)
