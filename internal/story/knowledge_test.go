@@ -211,6 +211,17 @@ func TestSettingsSyncEvidenceConflictsAndHistory(t *testing.T) {
 		t.Fatal("setting provenance not persisted")
 	}
 }
+
+func TestSettingsSyncIgnoresUnknownModelFields(t *testing.T) {
+	ch := factChapter(1, "Alice arrives.")
+	s := &ProjectSettings{}
+	err := applySettingDeltas(s, ch, []settingDelta{{
+		Kind: "characters", Entity: map[string]any{"name": "Alice", "gender": "female"}, BlockID: 1,
+	}})
+	if err != nil || len(s.Characters) != 1 || s.Characters[0].Name != "Alice" {
+		t.Fatalf("safe setting fields were not applied: %v", err)
+	}
+}
 func TestKnowledgeSyncFailureAndNoLegacyBackfill(t *testing.T) {
 	calls := 0
 	cfg := config.DefaultConfigForLang("en")
