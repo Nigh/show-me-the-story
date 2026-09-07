@@ -274,6 +274,8 @@ func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *c
 
 	logger.StepInfo(6, 6, "正在维护叙事记忆...")
 	syncMemoryAfterChapter(ctx, apiCfg, cfg, state, i, progressPath, logger)
+	// Memory sync commits a copied chapter slice, so refresh the chapter reference.
+	ch = &state.Chapters[i]
 
 	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
 

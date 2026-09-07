@@ -313,3 +313,74 @@ func TestFactInvalidEvidenceAndConfirmSaveFailure(t *testing.T) {
 		t.Fatal("invalid evidence committed facts")
 	}
 }
+
+// Memory synchronization commits a copied chapter slice; completion must update that live slice.
+func TestGenerateChapterReviewAfterMemorySync(t *testing.T) {
+	for _, memoryReply := range []string{`{"new_memories":[]}`, `invalid JSON`} {
+		t.Run(memoryReply, func(t *testing.T) {
+			cfg := config.DefaultConfigForLang("en")
+			cfg.Story.TargetWordsPerChapter = 1000
+			cfg.Prompts.ChapterWriting = "TEST_PROSE"
+			cfg.Prompts.ChapterSummary = "TEST_SUMMARY"
+			cfg.Prompts.FactCheck = "TEST_FACT_CHECK"
+			cfg.Prompts.MemoryUpdate = "TEST_MEMORY"
+			content := strings.Repeat("Alice walked home. ", 350)
+			memoryCalls := 0
+			api := batchAPI(t, func(prompt string) string {
+				switch {
+				case strings.HasPrefix(prompt, "TEST_PROSE"):
+					return content
+				case strings.HasPrefix(prompt, "TEST_SUMMARY"):
+					return "Alice returned home."
+				case strings.HasPrefix(prompt, "TEST_FACT_CHECK"):
+					return `{"result":"PASS"}`
+				case strings.HasPrefix(prompt, "TEST_MEMORY"):
+					memoryCalls++
+					return memoryReply
+				default:
+					t.Errorf("unexpected model request: %.80s", prompt)
+					return `{}`
+				}
+			})
+			state := &Progress{Phase: "writing", Chapters: []ChapterState{
+				{Num: 1, Title: "Home", Status: StatusPending},
+				{Num: 2, Title: "Tomorrow", Status: StatusPending},
+			}}
+			path := filepath.Join(t.TempDir(), "progress.json")
+			if err := GenerateChapterAction(context.Background(), api, cfg, state, path, nil, nil, sse.NewLogBroadcaster()); err != nil {
+				t.Fatal(err)
+			}
+			if memoryCalls != 1 {
+				t.Fatalf("memory calls = %d, want 1", memoryCalls)
+			}
+			loaded, err := LoadProgress(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range []*Progress{state, loaded} {
+				if p.Chapters[0].Status != StatusReview {
+					t.Fatalf("completed chapter status = %s, want review", p.Chapters[0].Status)
+				}
+				if !p.Chapters[0].KnowledgeTracked || p.Chapters[0].Content != strings.TrimSpace(content) || p.Chapters[0].Summary == "" {
+					t.Fatal("completion lost prose, summary or knowledge marker")
+				}
+				if (p.Chapters[0].MemoryRevision != "") != (memoryReply != "invalid JSON") {
+					t.Fatal("incorrect memory synchronization revision")
+				}
+				if p.PendingWritingConflict != nil {
+					t.Fatal("unexpected writing conflict")
+				}
+			}
+			if err := ConfirmChapterAction(state, path); err != nil {
+				t.Fatalf("automatic confirmation failed: %v", err)
+			}
+			loaded, err = LoadProgress(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loaded.Chapters[0].Status != StatusAccepted || loaded.CurrentChapterIndex != 1 || loaded.Chapters[1].Status != StatusPending {
+				t.Fatal("confirmation did not advance to the next planned chapter")
+			}
+		})
+	}
+}
