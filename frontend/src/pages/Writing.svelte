@@ -10,6 +10,7 @@
   import KnowledgePanel from '../components/KnowledgePanel.svelte';
   let facts = [];
   let activeFact = null;
+  let knowledgeExpanded = false;
   let returnRef = null;
   let highlightedBlock = null;
   $: factsByBlock = new Map(chapterBlocks.map(b => [b.id, facts.filter(f => (f.references || []).some(r => r.chapter === ch?.num && r.block_id === b.id))]));
@@ -452,8 +453,6 @@
   </div>
 {:else}
   <div class="space-y-4">
-    <KnowledgePanel chapterNum={ch?.num || 0} bind:facts bind:activeFact on:jump={e => jumpToFact(e.detail)} />
-    {#if returnRef}<button class="btn btn-xs" on:click={() => jumpToFact(returnRef, true)}>{$t('facts.return')}</button>{/if}
     {#if p.book_status !== 'completed' && (p.outline_batches || []).some(b => b.planned_final && chapters.find(c => c.num === b.end_ch)?.status === 'accepted')}
       <p class="alert alert-info">{$t('ending.completeHint')}</p>
     {/if}
@@ -599,6 +598,9 @@
                 {/if}
               </div>
 
+              <KnowledgePanel chapterNum={ch.num} bind:facts bind:activeFact bind:expanded={knowledgeExpanded} on:jump={e => jumpToFact(e.detail)} />
+              {#if returnRef}<button class="btn btn-ghost btn-xs self-start" on:click={() => jumpToFact(returnRef, true)}>{$t('facts.return')}</button>{/if}
+
               {#if ch.outline}
                 <details class="bg-base-300 rounded">
                   <summary class="p-2 text-xs text-base-content/50 cursor-pointer select-none">{$t('writing.chapter.outline')}</summary>
@@ -631,7 +633,7 @@
                     <div class="space-y-3">
                       {#each chapterBlocks as b (b.id)}
                         <div id={'story-block-' + b.id} class="group relative rounded hover:bg-base-100/40 -mx-2 px-2 py-0.5" class:ring-2={highlightedBlock === b.id || activeFact?.references?.some(r => !r.stale && r.chapter === ch.num && r.block_id === b.id)}>
-                          {#each factsByBlock.get(b.id) || [] as fact}<button class="badge badge-warning badge-sm cursor-pointer mb-1" on:click={() => { activeFact = fact; highlightedBlock = b.id; }}>{$t('facts.marker')} #{fact.id}</button>{/each}
+                          {#each factsByBlock.get(b.id) || [] as fact}<button class="badge badge-warning badge-sm cursor-pointer mb-1" on:click={() => { activeFact = fact; highlightedBlock = b.id; knowledgeExpanded = true; }}>{$t('facts.marker')} #{fact.id}</button>{/each}
                           {#if editingBlockId === b.id}
                             <textarea class="textarea textarea-sm w-full text-[15px] leading-relaxed" rows={Math.max(3, Math.ceil(b.text.length / 40))} bind:value={editingText} disabled={$taskRunning}></textarea>
                             <div class="flex gap-2 justify-end mt-1">
