@@ -337,6 +337,7 @@
 
   function selectChapter(i) {
     selectedChapter.set(i);
+    maybeLoadContent(chapters[i]);
     showRevise = false;
     reviseFeedback = '';
     hideQuotePopover();

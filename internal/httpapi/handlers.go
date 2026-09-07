@@ -286,6 +286,17 @@ func (h *Handlers) isAutoConfirmOn() bool {
 	return h.autoConfirm
 }
 
+func knowledgeSyncMustStop(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return true
+	}
+	_, saveFailed := fsutil.AsSaveError(err)
+	return saveFailed
+}
+
 func (h *Handlers) GetAutoConfirm(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]bool{"enabled": h.isAutoConfirmOn()})
 }
@@ -1019,13 +1030,14 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 				h.logger.WarnKey("log.chapter_autoconfirm_failed", err)
 				break
 			}
+			h.logger.SuccessKey("log.chapter_autoconfirmed", chIdx+1, chTitle)
 			if err := story.SyncPendingKnowledge(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.logger); err != nil {
 				h.logger.WarnKey("log.knowledge_failed", err)
-				success = false
-				h.taskCancel()
-				break
+				if knowledgeSyncMustStop(ctx, err) {
+					success = false
+					break
+				}
 			}
-			h.logger.SuccessKey("log.chapter_autoconfirmed", chIdx+1, chTitle)
 			h.broadcastProgress()
 
 			if h.state.CurrentChapterIndex >= len(h.state.Chapters) {

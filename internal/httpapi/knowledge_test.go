@@ -1,15 +1,32 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"showmethestory/internal/config"
+	"showmethestory/internal/fsutil"
 	"showmethestory/internal/sse"
 	"showmethestory/internal/story"
 	"strings"
 	"testing"
 )
+
+func TestKnowledgeSyncOnlyStopsAutoWriteForCancellationOrSaveFailure(t *testing.T) {
+	if knowledgeSyncMustStop(context.Background(), errors.New("invalid model JSON")) {
+		t.Fatal("retryable model output stopped auto-write")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if !knowledgeSyncMustStop(ctx, context.Canceled) {
+		t.Fatal("cancellation did not stop auto-write")
+	}
+	if !knowledgeSyncMustStop(context.Background(), &fsutil.SaveError{Err: errors.New("disk full")}) {
+		t.Fatal("save failure did not stop auto-write")
+	}
+}
 
 func factHandlers(t *testing.T) *Handlers {
 	t.Helper()
