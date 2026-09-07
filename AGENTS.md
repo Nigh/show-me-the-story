@@ -13,6 +13,8 @@
 
 ## 结尾控制与事实／设定同步
 
+- 设定同步会丢弃 AI 返回的未支持实体字段，并对 JSON／实体校验失败自动重试一次，避免无风险的格式偏差中断自动连写；聊天失败栏支持直接重试 `knowledge_sync`，自动连写因同步失败停止时任务正确标记为失败。
+
 - `GenerateChapterAction` 在记忆同步后重新取得当前章节引用：同步原子提交会替换章节切片，必须对最新章节设置 review，保证自动确认可继续。`TestGenerateChapterReviewAfterMemorySync` 覆盖记忆提取成功／失败时正文与审核状态落盘、确认后进入下一待写章节。
 
 - 批次请求及元数据增加 `ending_intent`（serial/final/sequel）、`ending_style`（closed/open/custom）、`ending_requirements`，元数据另存 `planned_final`。缺省继续连载，自定义结尾必填要求；向预定完结批次后追加需 `confirm_continue=true`，仅生成保存成功后取消旧标记。正式完结仍是用户手动操作。

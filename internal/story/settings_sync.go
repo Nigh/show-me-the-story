@@ -150,6 +150,20 @@ func validateEntity(s *ProjectSettings, kind string, e map[string]any) error {
 	}
 	return nil
 }
+
+func discardUnknownEntityFields(kind string, e map[string]any) {
+	allowed := map[string]string{
+		"characters":    " id name age appearance personality background motivation abilities notes ",
+		"worldview":     " id category name description tags ",
+		"organizations": " id name type description members ",
+		"relations":     " id source_id source_type target_id target_type label ",
+	}[kind]
+	for k := range e {
+		if !strings.Contains(allowed, " "+k+" ") {
+			delete(e, k)
+		}
+	}
+}
 func newEntityID(s *ProjectSettings, kind string) string {
 	switch kind {
 	case "characters":
@@ -250,6 +264,7 @@ func entityHasDependents(s *ProjectSettings, id string) bool {
 func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDelta) error {
 	aliases := map[string]string{}
 	for _, d := range deltas {
+		discardUnknownEntityFields(d.Kind, d.Entity)
 		for _, k := range []string{"source_id", "target_id"} {
 			if id, ok := d.Entity[k].(string); ok && aliases[id] != "" {
 				d.Entity[k] = aliases[id]
@@ -419,22 +434,31 @@ func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *confi
 		entities, _ := json.Marshal(settingsEntities(settingsAtChapter(settings, ch.Num)))
 		blocks, _ := json.Marshal(ch.Blocks)
 		prompt := settingUpdatePrompt(cfg.Language) + "\n" + string(entities) + "\n" + string(blocks)
-		raw := llm.CallAPIWithRetryLog(ctx, api, i18n.SystemPromptFor(cfg.Language, "memory_manager"), prompt, logger)
-		if err := ctx.Err(); err != nil {
-			return err
+		var syncErr error
+		for attempt := 0; attempt < 2; attempt++ {
+			raw := llm.CallAPIWithRetryLog(ctx, api, i18n.SystemPromptFor(cfg.Language, "memory_manager"), prompt, logger)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			var result struct {
+				Changes *[]settingDelta `json:"changes"`
+			}
+			if err := json.Unmarshal([]byte(cleanJSONResponse(raw)), &result); err != nil {
+				syncErr = err
+				continue
+			}
+			if result.Changes == nil {
+				syncErr = fmt.Errorf("%s", i18n.T(cfg.Language, "knowledge_failed"))
+				continue
+			}
+			next = cloneSettings(settings)
+			syncErr = applySettingDeltas(next, ch, *result.Changes)
+			if syncErr == nil {
+				break
+			}
 		}
-		var result struct {
-			Changes *[]settingDelta `json:"changes"`
-		}
-		if err := json.Unmarshal([]byte(cleanJSONResponse(raw)), &result); err != nil {
-			return err
-		}
-		if result.Changes == nil {
-			return fmt.Errorf("%s", i18n.T(cfg.Language, "knowledge_failed"))
-		}
-		next = cloneSettings(settings)
-		if err := applySettingDeltas(next, ch, *result.Changes); err != nil {
-			return err
+		if syncErr != nil {
+			return syncErr
 		}
 		if next.StorySynced == nil {
 			next.StorySynced = map[int]string{}

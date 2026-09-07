@@ -980,6 +980,7 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 		defer h.endTask()
 		h.logger.TaskStart("chapter_generation")
 		ctx := h.activateSkills(h.taskCtx, story.SkillScopeChapterGenerate, true)
+		success := true
 
 		for {
 			chIdx := h.state.CurrentChapterIndex
@@ -1020,6 +1021,7 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := story.SyncPendingKnowledge(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.logger); err != nil {
 				h.logger.WarnKey("log.knowledge_failed", err)
+				success = false
 				h.taskCancel()
 				break
 			}
@@ -1036,7 +1038,7 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		h.logger.TaskEnd("chapter_generation", true)
+		h.logger.TaskEnd("chapter_generation", success)
 		h.broadcastProgress()
 	}()
 
