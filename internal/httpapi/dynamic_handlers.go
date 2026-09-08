@@ -86,6 +86,10 @@ func (h *Handlers) PostStoryResume(w http.ResponseWriter, r *http.Request) {
 	if h.rejectIfTaskRunning(w, r) {
 		return
 	}
+	if h.postprocess != nil && h.postprocess.ContentModified {
+		h.writeErrorReq(w, r, http.StatusConflict, "proofread_resume_forbidden")
+		return
+	}
 	h.state.BookStatus = story.BookStatusActive
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)

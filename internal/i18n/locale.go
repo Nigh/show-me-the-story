@@ -325,6 +325,22 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "全书尚未完成（需所有章节已确认）",
 		LangEN: "Book is not yet complete (all chapters must be confirmed)",
 	},
+	"proofread_backup_required": {
+		LangZH: "进入完稿校订前请先导出未校订的全文和大纲",
+		LangEN: "Export the unproofread manuscript and outlines before final proofreading",
+	},
+	"proofread_resume_forbidden": {
+		LangZH: "该项目的正文已经进入完稿校订；请创建续写项目",
+		LangEN: "This manuscript has entered final proofreading; create a continuation project instead",
+	},
+	"proofread_undo_conflict": {
+		LangZH: "无法撤销校订：%s",
+		LangEN: "Cannot undo proofreading: %s",
+	},
+	"proofread_issue_not_found": {
+		LangZH: "校订问题不存在",
+		LangEN: "Proofreading issue not found",
+	},
 	"need_polish_skill": {
 		LangZH: "没有启用的润色技能，请先在技能管理页启用 polish 类技能",
 		LangEN: "No polish skill enabled; enable a polish-type skill on the Skills page first",
