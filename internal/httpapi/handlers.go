@@ -54,6 +54,7 @@ type Handlers struct {
 	taskTokens         *llm.TaskTokenUsage
 	knowledgeAtStart   string
 	forceKnowledgeSync bool
+	skipKnowledgeSync  bool
 	autoConfirm        bool // 自动确认模式：章节生成完成后自动确认并继续生成下一章
 
 	lastChatMessage   string             // 缓存最后发送的聊天消息，用于重试
@@ -62,17 +63,15 @@ type Handlers struct {
 
 func NewHandlers(apiCfg *config.APIConfig, apiCfgPath string, logger *sse.LogBroadcaster, progDir string, version string) *Handlers {
 	return &Handlers{
-		apiCfg:     apiCfg,
-		apiCfgPath: apiCfgPath,
-		logger:     logger,
-		version:    version,
-		progDir:    progDir,
-		cfg:        config.DefaultConfig(),
-		state:      &story.Progress{Phase: "writing", BookStatus: story.BookStatusActive},
-		settings:   &story.ProjectSettings{},
-		postprocess: &story.PostProcessState{
-			ExecuteOptions: &story.PostProcessExecuteOptions{RunSmoothTransitionsFirst: true},
-		},
+		apiCfg:      apiCfg,
+		apiCfgPath:  apiCfgPath,
+		logger:      logger,
+		version:     version,
+		progDir:     progDir,
+		cfg:         config.DefaultConfig(),
+		state:       &story.Progress{Phase: "writing", BookStatus: story.BookStatusActive},
+		settings:    &story.ProjectSettings{},
+		postprocess: story.NewProofreadState(),
 	}
 }
 
@@ -138,7 +137,7 @@ func (h *Handlers) switchProject(name string) error {
 	postprocessPath := filepath.Join(projectDir, "postprocess.json")
 	postprocess, err := story.LoadPostProcess(postprocessPath)
 	if err != nil {
-		return fmt.Errorf("加载全书优化状态失败: %w", err)
+		return fmt.Errorf("加载完稿校订状态失败: %w", err)
 	}
 
 	h.projectName = name
@@ -207,6 +206,7 @@ func (h *Handlers) tryStartTask() bool {
 	h.taskRunning = true
 	h.knowledgeAtStart = h.knowledgeVersion()
 	h.forceKnowledgeSync = false
+	h.skipKnowledgeSync = false
 	h.activeWork = 1
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx, h.taskTokens = llm.WithTaskTokens(ctx, h.logger)
@@ -222,7 +222,7 @@ func (h *Handlers) endTask() {
 	cancelled := false
 	if h.activeWork <= 0 {
 		h.taskMu.Unlock()
-		if h.cfg != nil && h.state != nil && h.taskCtx != nil && h.taskCtx.Err() == nil && (h.forceKnowledgeSync || h.knowledgeAtStart != h.knowledgeVersion()) {
+		if !h.skipKnowledgeSync && h.cfg != nil && h.state != nil && h.taskCtx != nil && h.taskCtx.Err() == nil && (h.forceKnowledgeSync || h.knowledgeAtStart != h.knowledgeVersion()) {
 			h.logger.TaskStart("knowledge_sync")
 			err := story.SyncPendingKnowledge(h.taskCtx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.logger)
 			if err != nil {
@@ -2488,268 +2488,6 @@ func (h *Handlers) PostChapterPolish(w http.ResponseWriter, r *http.Request) {
 
 		h.logger.TaskEnd("chapter_polish", true)
 		h.broadcastProgress()
-	}()
-
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
-}
-
-// GetPostProcess 获取全书优化状态。
-func (h *Handlers) GetPostProcess(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	h.writeJSON(w, http.StatusOK, h.postProcessResponse())
-}
-
-func (h *Handlers) postProcessResponse() map[string]interface{} {
-	return map[string]interface{}{
-		"book_complete": story.IsBookFullyAccepted(h.state),
-		"state":         h.postprocess,
-	}
-}
-
-// PutPostProcessRoadmap 更新优化工单（勾选、编辑意见等）。
-func (h *Handlers) PutPostProcessRoadmap(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	if h.rejectIfTaskRunning(w, r) {
-		return
-	}
-
-	var req struct {
-		Roadmap            []story.RoadmapItem              `json:"roadmap"`
-		ExecuteOptions     *story.PostProcessExecuteOptions `json:"execute_options"`
-		AuthorRequirements *string                          `json:"author_requirements"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
-		return
-	}
-	if req.Roadmap != nil {
-		h.postprocess.Roadmap = req.Roadmap
-	}
-	if req.ExecuteOptions != nil {
-		h.postprocess.ExecuteOptions = req.ExecuteOptions
-	}
-	if req.AuthorRequirements != nil {
-		h.postprocess.AuthorRequirements = *req.AuthorRequirements
-	}
-	if err := story.SavePostProcess(h.postprocessPath, h.postprocess); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
-		return
-	}
-	h.logger.PostProcessUpdate(h.postProcessResponse())
-	h.writeJSON(w, http.StatusOK, h.postProcessResponse())
-}
-
-// DeletePostProcess 清空全书优化报告与工单。
-func (h *Handlers) DeletePostProcess(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	if h.rejectIfTaskRunning(w, r) {
-		return
-	}
-
-	h.postprocess = &story.PostProcessState{
-		ExecuteOptions: &story.PostProcessExecuteOptions{RunSmoothTransitionsFirst: true},
-	}
-	if err := story.SavePostProcess(h.postprocessPath, h.postprocess); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "clear_postprocess_failed", err.Error())
-		return
-	}
-	h.logger.PostProcessUpdate(h.postProcessResponse())
-	h.writeJSON(w, http.StatusOK, h.postProcessResponse())
-}
-
-// PostPostProcessDiagnose 异步：全书诊断 + 一致性核查 + 生成路线图。
-func (h *Handlers) PostPostProcessDiagnose(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	if !story.IsBookFullyAccepted(h.state) {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "book_not_complete")
-		return
-	}
-	if !h.tryStartTask() {
-		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
-		return
-	}
-
-	go func() {
-		defer h.endTask()
-		h.logger.TaskStart("postprocess_diagnose")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeBookDiagnose, true)
-
-		err := story.FullPostProcessAnalyzeAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.postprocess, h.postprocessPath, h.logger)
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.postprocess_diagnose_cancelled")
-			} else {
-				h.logger.ErrorKey("log.postprocess_diagnose_failed", err)
-			}
-			h.logger.TaskEnd("postprocess_diagnose", false)
-			return
-		}
-
-		h.logger.PostProcessUpdate(h.postProcessResponse())
-		h.logger.TaskEnd("postprocess_diagnose", true)
-	}()
-
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
-}
-
-// PostPostProcessConsistency 异步：仅重新运行全书一致性核查。
-func (h *Handlers) PostPostProcessConsistency(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	if !story.IsBookFullyAccepted(h.state) {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "book_not_complete")
-		return
-	}
-	if !h.tryStartTask() {
-		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
-		return
-	}
-
-	go func() {
-		defer h.endTask()
-		h.logger.TaskStart("postprocess_consistency")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeBookDiagnose, true)
-
-		report, err := story.ConsistencyCheckBookAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.logger)
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.postprocess_consistency_cancelled")
-			} else {
-				h.logger.ErrorKey("log.postprocess_consistency_failed", err)
-			}
-			h.logger.TaskEnd("postprocess_consistency", false)
-			return
-		}
-
-		h.postprocess.ConsistencyReport = report
-		h.postprocess.ConsistencyAt = time.Now().Format(time.RFC3339)
-		_ = story.SavePostProcess(h.postprocessPath, h.postprocess)
-		h.logger.PostProcessReport("consistency", report)
-		h.logger.PostProcessUpdate(h.postProcessResponse())
-		h.logger.TaskEnd("postprocess_consistency", true)
-	}()
-
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
-}
-
-// PostPostProcessRoadmap 异步：根据已有报告重新生成路线图。
-func (h *Handlers) PostPostProcessRoadmap(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	if strings.TrimSpace(h.postprocess.DiagnosisReport) == "" && strings.TrimSpace(h.postprocess.ConsistencyReport) == "" {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_diagnosis_or_consistency")
-		return
-	}
-	if !h.tryStartTask() {
-		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
-		return
-	}
-
-	go func() {
-		defer h.endTask()
-		h.logger.TaskStart("postprocess_roadmap")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeBookRoadmap, true)
-
-		roadmap, err := story.BuildRoadmapAction(ctx, h.apiCfg, h.cfg, h.postprocess.DiagnosisReport, h.postprocess.ConsistencyReport, h.postprocess.AuthorRequirements, h.logger)
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.postprocess_roadmap_cancelled")
-			} else {
-				h.logger.ErrorKey("log.postprocess_roadmap_failed", err)
-			}
-			h.logger.TaskEnd("postprocess_roadmap", false)
-			return
-		}
-
-		h.postprocess.Roadmap = roadmap
-		h.postprocess.RoadmapAt = time.Now().Format(time.RFC3339)
-		_ = story.SavePostProcess(h.postprocessPath, h.postprocess)
-		h.logger.PostProcessRoadmap(h.postprocess)
-		h.logger.PostProcessUpdate(h.postProcessResponse())
-		h.logger.TaskEnd("postprocess_roadmap", true)
-	}()
-
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
-}
-
-// PostPostProcessExecute 异步：执行已勾选的优化工单（有补充要求时覆盖全书各章）。
-func (h *Handlers) PostPostProcessExecute(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	if !story.IsBookFullyAccepted(h.state) {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "book_not_complete")
-		return
-	}
-
-	var body struct {
-		ExecuteOptions     *story.PostProcessExecuteOptions `json:"execute_options"`
-		AuthorRequirements *string                          `json:"author_requirements"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	if body.ExecuteOptions != nil {
-		h.postprocess.ExecuteOptions = body.ExecuteOptions
-	}
-	if body.AuthorRequirements != nil {
-		h.postprocess.AuthorRequirements = *body.AuthorRequirements
-	}
-
-	hasAuthorReq := strings.TrimSpace(h.postprocess.AuthorRequirements) != ""
-	if len(h.postprocess.Roadmap) == 0 && !hasAuthorReq {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "no_roadmap_items")
-		return
-	}
-
-	selected := 0
-	for i := range h.postprocess.Roadmap {
-		if h.postprocess.Roadmap[i].Selected && h.postprocess.Roadmap[i].Status == story.RoadmapStatusPending {
-			selected++
-		}
-	}
-	if selected == 0 && !hasAuthorReq {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "select_at_least_one_item")
-		return
-	}
-	if hasAuthorReq {
-		_ = story.SavePostProcess(h.postprocessPath, h.postprocess)
-	}
-
-	if !h.tryStartTask() {
-		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
-		return
-	}
-
-	go func() {
-		defer h.endTask()
-		h.logger.TaskStart("postprocess_execute")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeBookExecute, true)
-
-		err := story.ExecuteRoadmapAction(ctx, h.apiCfg, h.cfg, h.settings, h.state, h.postprocess, h.progressPath, h.postprocessPath, h.skills, h.logger)
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.postprocess_execute_cancelled")
-			} else {
-				h.logger.ErrorKey("log.postprocess_execute_failed", err)
-			}
-			h.logger.TaskEnd("postprocess_execute", false)
-			h.broadcastProgress()
-			h.logger.PostProcessUpdate(h.postProcessResponse())
-			return
-		}
-
-		h.logger.TaskEnd("postprocess_execute", true)
-		h.broadcastProgress()
-		h.logger.PostProcessUpdate(h.postProcessResponse())
 	}()
 
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})

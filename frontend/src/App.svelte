@@ -10,6 +10,7 @@
   import Config from './pages/Config.svelte';
   import Outline from './pages/Outline.svelte';
   import Writing from './pages/Writing.svelte';
+  import Proofread from './pages/Proofread.svelte';
   import Relations from './pages/Relations.svelte';
   import Skills from './pages/Skills.svelte';
   import Foreshadows from './pages/Foreshadows.svelte';
@@ -192,6 +193,7 @@
           ['config', '⚙️', 'nav.config'],
           ['outline', '📝', 'nav.outline'],
           ['writing', '✍️', 'nav.writing'],
+          ['proofread', '✅', 'nav.proofread'],
           ['foreshadows', '🔗', 'nav.foreshadows'],
           ['memory', '🧠', 'nav.memory'],
           ['relations', '🕸️', 'nav.relations'],
@@ -214,6 +216,8 @@
           <Outline {sendToChat} />
         {:else if $currentPage === 'writing'}
           <Writing {sendToChat} />
+        {:else if $currentPage === 'proofread'}
+          <Proofread />
         {:else if $currentPage === 'foreshadows'}
           <Foreshadows />
         {:else if $currentPage === 'memory'}

@@ -75,6 +75,10 @@ func (h *Handlers) GetKnowledge(w http.ResponseWriter, r *http.Request) {
 			seen[c.Source.Chapter] = true
 		}
 	}
+	if h.state.BookStatus == story.BookStatusCompleted && h.postprocess != nil && h.postprocess.ContentModified {
+		pending = nil
+		changes = nil
+	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"facts": facts, "pending_chapters": pending, "changes": changes})
 }
 func (h *Handlers) PostSettingChange(w http.ResponseWriter, r *http.Request) {

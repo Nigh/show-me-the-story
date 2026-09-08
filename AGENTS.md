@@ -99,7 +99,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 └── internal/
     ├── httpapi/             HTTP 层：web.go 路由注册 + handlers.go 全部 handler、任务互斥、SSE 端点
     ├── agent/               Agent Loop 引擎 + 内置工具集（全局助理用）
-    ├── story/               领域层：进度/章节存储、大纲、写作、伏笔、卷、导入、设定、技能、会话、全书优化
+    ├── story/               领域层：进度/章节存储、大纲、写作、伏笔、卷、导入、设定、技能、会话、完稿校订
     ├── llm/                 OpenAI 兼容 API 客户端：重试、流式、致命错误检测、token 统计、JSON 提取
     ├── config/              APIConfig / Config / StoryConfig / PromptsConfig + 中英默认提示词模板
     ├── sse/                 LogBroadcaster：SSE 事件广播（领域无关，事件负载为 any）
@@ -132,7 +132,7 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/prose/units.go` | `CountProseUnits`（CJK +1；连续字母数字 token +1，内部 `.` `,` `-` `#` 连接；全角字母数字视同半角；标点/空白断词不计数；中英文共用） |
 | `internal/i18n/locale.go` | `LangZH`/`LangEN` 常量、`NormalizeLanguage`、`FromRequest` 从 `X-UI-Locale`/`Accept-Language`/`?locale=` 解析、`errorCatalog` 双语错误表、`T(lang, key, args)`（同时查 `messageCatalog` + `errorCatalog`）、`MsgArgs`、`systemPrompts` 内联 system prompt 集中表、`SystemPromptFor(lang, key)` |
 | `internal/i18n/messages.go` | `messageCatalog`：`log.*` SSE 日志 + `agent.*` 工具状态消息双语表（Go 侧 `%s`/`%d` 模板） |
-| `internal/config/config.go` | `APIConfig`（含 `URLStrict` 严格 URL 模式、`DefaultMaxTokens` 32768、`DefaultHTTPTimeoutSeconds` 600、`ContextBudgetTokens` 全书优化上下文预算、`DefaultContextBudgetTokens` 常量）、`Config`（含 `ProjectFormatVersion`、`SkillConfig` + `Language`）、`StoryConfig`、`PromptsConfig`、`SkillConfig` 结构体，Load/Save 函数（`LoadAPIConfig`/`LoadConfig`/`SaveConfig`），`DefaultConfigForLang(lang)`、`ApplyDefaults(lang)` 按语言选择默认 prompts |
+| `internal/config/config.go` | `APIConfig`（含 `URLStrict` 严格 URL 模式、`DefaultMaxTokens` 32768、`DefaultHTTPTimeoutSeconds` 600、`ContextBudgetTokens` 长上下文预算、`DefaultContextBudgetTokens` 常量）、`Config`（含 `ProjectFormatVersion`、`SkillConfig` + `Language`）、`StoryConfig`、`PromptsConfig`、`SkillConfig` 结构体，Load/Save 函数（`LoadAPIConfig`/`LoadConfig`/`SaveConfig`），`DefaultConfigForLang(lang)`、`ApplyDefaults(lang)` 按语言选择默认 prompts |
 | `internal/config/prompts.go` | `RenderPrompt`（`{{.KeyName}}` 替换）、`DefaultPromptsZH` 变量（所有内置中文提示词模板）、`DefaultPromptsForLang(lang)` |
 | `internal/config/prompts_en.go` | `DefaultPromptsEN`：全量英文模板（与中文一一对应） |
 | `internal/sse/logger.go` | `LogBroadcaster`；`LogEntry` 含 `msg_key`/`msg_args`；`InfoKey`/`SuccessKey`/…；`ToolCallEnd` 含 `result_key`/`result_args`；`Format`（SSE wire 格式）；`CurrentTask()` 任务栈；`TaskStart`/`TaskEnd` 与 warn/error 写入 `devlog`；后台任务遇到 `fsutil.SaveError` 时额外推送结构化 `storage_error`；领域事件方法负载类型为 `any` |
@@ -161,12 +161,12 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `internal/httpapi/skill_handlers.go` | Skill 库 API：四种安装方式、详情/删除/热重载、按作用域激活并记录日志、异步 AI 校验与 AI 优化副本复检；非内置 Skill 的 `unvalidated/validating/passed/needs_optimization/failed` 状态机 |
 | `internal/story/editing.go` | `EditChapterContent` 章节正文局部编辑（`replace_lines`/`replace_text`/`insert_after_line`/`append`），`EditChapterContentRequest` 结构体，`EditOp` 常量，`FindChapterIdx` 辅助函数 |
 | `internal/story/chat.go` | `ChatSession`、`ChatMessage`（含 `tool_result_key`/`tool_result_args`）、`ToolCall`、`ChatSessionIndex` 结构体，Load/Save/Delete、`ChatSessionsDir`/`GenerateSessionID`/`GenerateChatTitle` |
-| `internal/story/postprocess.go` | `PostProcessState`/`RoadmapItem` 结构体（含 `author_requirements` 全书优化补充要求）、`LoadPostProcess`/`SavePostProcess`（`postprocess.json`）、`buildPostProcessBundle`（设定+摘要+全文组装与长文策略）、`DiagnoseBookAction`、`ConsistencyCheckBookAction`（超长书按卷分段）、`BuildRoadmapAction`（注入 `{{.AuthorRequirements}}`）、`FullPostProcessAnalyzeAction`（诊断→核查→路线图）、`planExecuteBatches`（有补充要求时覆盖全书各章并与勾选工单合并为一次修订；否则仅勾选工单）、`ExecuteRoadmapAction`（可选前置衔接优化 + 按批定向修订/润色 + diff 节选）、`IsBookFullyAccepted` |
+| `internal/story/postprocess.go` / `proofread.go` | `postprocess.json` v1 完稿校订状态、结构化人工问题与逐章撤销；旧全书优化数据只读忽略，首次保存新流程时才覆盖。自动校订只返回已有 block 的等量措辞修改，结构/JSON 失败纠正一次，保持剧情与段落对应；人工报告保存可点击的章节/block 锚点。校订不运行写作知识同步。 |
 | `internal/story/inject.go` | 注入块的双语版本：`buildOutlineConstraintsForLang`（有卷摘要的已完结卷压缩为一行卷摘要）、`buildPreviousChapterTailForLang`、`buildHistorySummaryForLang`、`buildCharacterContextForLang`、`buildWorldviewContextForLang`、`formatActiveForeshadowsForChapterLang`、`formatChapterLine`、`formatForeshadowsForPromptLang`、`buildMemoryForLang`（叙事记忆注入）、`extractSnippet`（按段落位置截取原文片段）、`formatMemoryForUpdatePrompt` |
-| `internal/story/*_test.go` | 领域层单测：存储 roundtrip/脏检查/孤儿清理、Block ID 稳定性与 CRUD、卷区间换算与上下文压缩、导入切章/断点、引用式段落修订、字数区间、删章目标解析等 |
+| `internal/story/*_test.go` | 领域层单测：存储 roundtrip/脏检查/孤儿清理、Block ID 稳定性与 CRUD、卷区间换算与上下文压缩、导入切章/断点、引用式段落修订、字数区间、删章目标解析、校订锚点刷新/逐章撤销/旧状态清理等 |
 | `internal/agent/agent.go` | `Tool`、`AgentContext`、`AgentStep` 结构体（`ToolCall` 别名指向 `story.ToolCall`），`RunAgentLoop`（多轮消息历史 + 双语 tool 结果标签）、工具调用解析（`llm.ExtractJSON` 字符串感知；未闭合/解析失败时注入诊断提示让模型重试一次，仍失败则 `agent.output_truncated` / `agent.tool_call_parse_failed`，不修复截断 JSON）、内置工具集（读/写角色/世界观/章节等）、`buildAgentSystemPromptZH`/`buildAgentSystemPromptEN`、`update_project_config` 覆盖已填字段需 `confirm_overwrite: true`、`requireConfirm`（破坏性工具需 `confirm: true`）；文件内含原 `agent_i18n.go` 的 `agentMsg`/`agentErr` i18n 辅助 |
 | `internal/agent/agent_truncated_test.go` | Agent 工具调用解析单元测试：截断不修复、`ExtractJSON` 字符串感知、失败尝试识别、解析重试反馈、`finish_reason` 截断检测 |
-| `internal/httpapi/handlers.go` | `Handlers` 结构体（含项目管理字段 `progDir`/`projectName`/`projectMu`、自动确认开关 `autoConfirm`、`postprocess`/`postprocessPath`）、`projectDir()` 帮助函数、项目切换 `switchProject()`、`ensureProject()` 检查、`rejectIfTaskRunning()`（任务运行期间编辑类端点返回 409）、`writeErrorReq` 本地化错误响应（`SaveError` 返回 `storage_save_failed` 结构化诊断）、所有 HTTP handler（块编辑/卷/导入/全书优化/自动确认等）、`PostChapterGenerate` 自动确认循环、`tryStartTask`/`endTask`/`startChildWork` 互斥、项目管理 handler、`GetVersion` |
+| `internal/httpapi/handlers.go` / `proofread_handlers.go` / `continuation_handlers.go` | 通用任务与项目状态、完稿校订 API、大纲导出及从完结项目创建续写项目；校订任务通过 `skipKnowledgeSync` 明确跳过写作知识收尾。 |
 | `internal/httpapi/project_compat.go` | v4 只读格式检测；v3 映射到 v3.0.x（推荐 v3.0.3），旧内嵌格式映射到 v2.x（推荐 v2.5.2），未知格式不猜测。 |
 | `internal/httpapi/web.go` | 路由注册（含项目管理端点、`/api/autoconfirm`、`/api/version`）、CORS/日志中间件、静态文件服务（`StartWebServer` 接收 main 传入的 `fs.FS`） |
 | `internal/story/embeds/skills/*.md` | 内置 Skill 文件（YAML frontmatter `lang: zh|en` + prompt body），通过 `//go:embed` 嵌入；中文：`humanizer-zh.md` / `story-deslop.md` / `writing-craft.md`；英文：`humanizer-en.md` / `story-deslop-en.md` / `writing-craft-en.md` |
@@ -189,19 +189,18 @@ main.go                      入口：progDir 解析、api.json 加载、//go:em
 | `src/lib/stores.js` | 全局 Svelte stores（progress、config、settings、postprocess、taskRunning、taskTokenUsage、autoConfirm、lastFailedTask、`projectLanguage`、`pendingConfigChanges`/`showConfigChangePanel`、`apiTestResult` LLM 连接测试结果持久化 等）+ toast/log 管理 |
 | `src/lib/proseUnits.js` | `countProseUnits`：与后端 `prose_units.go` 同口径，供写作页章节/全书字数展示 |
 | `src/lib/tokenPoll.js` | `TOKEN_POLL_INTERVAL_MS`：token poll 间隔与 TaskTokenBadge 数字线性动画时长共用 |
-| `src/lib/sse.js` | `connectSSE()` — EventSource `?locale=`；`open` 时恢复任务 UI；处理日志/工具结果/流式内容；收到后台 `storage_error` 时打开全局存储错误弹窗；`postprocess_update` 经 `normalizePostProcessPayload` 兼容裸 `PostProcessState` 与 `{book_complete,state}` |
-| `src/lib/postprocessEvent.js` | `normalizePostProcessPayload`：把全书优化 SSE/API 负载归一成 `{book_complete, state}`；`postprocessEvent.check.js` 自检 |
+| `src/lib/sse.js` | `connectSSE()` — EventSource `?locale=`；`open` 时恢复任务 UI；处理日志/工具结果/流式内容；收到后台 `storage_error` 时打开全局存储错误弹窗；完稿校订任务结束后重新读取 `/api/proofread` |
 | `src/lib/i18n/index.js` | `uiLocale`、`t`/`translate`（`{name}`）、`formatKeyedMessage`/`formatLogEntry`/`formatToolResult`（服务端 key + `{0}`）、`translateServerMessage` legacy 兜底 |
 | `src/lib/i18n/zh.js`, `en.js` | 扁平 key 字典；新增可见文案必须同时在两个文件加 key |
 | `src/pages/Projects.svelte` | 项目选择页：新建项目（名称全宽 + 中文/EN 分段按钮选语言，POST 时携带 `language`）+ 项目列表（每项显示语言 badge，可选择/删除）；选中项目后 `setLocale(project.language)` |
-| `src/pages/Config.svelte` | 配置页：API 配置（含 `url_strict` 严格 URL 模式、解析后 endpoint 预览、上下文预算 tokens、连接测试结果持久化展示——结果存 `apiTestResult` store 切页不丢失，成功/失败以文字+着色卡片与按钮描边展示，修改任一影响连接的字段后自动清除）、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、写作风格与叙述视角、AI 配置变更确认面板（`ConfigChangePanel`）、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；四处设定 CRUD 新建前若表单 dirty 则 ConfirmModal 警告（确认丢弃并新建 / 取消后可先保存）；任务运行时所有输入控件禁用 |
+| `src/pages/Config.svelte` | 配置页：API 配置（含 `url_strict` 严格 URL 模式、解析后 endpoint 预览、连接测试结果持久化展示——结果存 `apiTestResult` store 切页不丢失，成功/失败以文字+着色卡片与按钮描边展示，修改任一影响连接的字段后自动清除；旧长上下文预算字段保留配置兼容但不再展示）、故事配置（直接 PUT 保存 + 关键设定变更时提示协调）、写作风格与叙述视角、AI 配置变更确认面板（`ConfigChangePanel`）、角色管理、世界观管理、组织管理（卡片 + 成员勾选）、关系管理（卡片 + 源/目标实体选择）；四处设定 CRUD 新建前若表单 dirty 则 ConfirmModal 警告（确认丢弃并新建 / 取消后可先保存）；任务运行时所有输入控件禁用 |
 | `src/pages/Outline.svelte` | 批次生成表单（必填大纲梗概、1–36 章、可选长期方向与范围预览）、默认追加、末尾全 pending 批次确认重建；按批次展示梗概/章纲，历史与导入章节独立分组；保留导入断点、内联章纲/出场人物编辑、修订意见、设定提案和人物建议面板 |
 | `src/components/ConfigChangePanel.svelte` | AI 配置变更确认面板：展示 pending 提案（当前 vs 建议）、勾选采纳 / 全部忽略；SSE `config_change_proposal` 触发 |
-| `src/pages/Writing.svelte` | 逐章写作与审核；自动确认只运行到当前规划末尾；支持显式标记完结/恢复连载，未回收伏笔需二次确认，完结后开放全书优化。 |
+| `src/pages/Writing.svelte` | 逐章写作与审核；自动确认只运行到当前规划末尾；支持显式标记完结/恢复连载，未回收伏笔需二次确认。完稿校订改为独立页面。 |
 | `src/components/TaskTokenBadge.svelte` | 任务 token 展示（`↑ prompt ↓ completion tokens`）；对 `taskTokenUsage` 更新做线性 rAF 插值，动画时长 = `TOKEN_POLL_INTERVAL_MS`；目标值低于当前显示值时该维度从 0 重新向上插值（新一段统计或估算修正）；供 ChatPanel / App 顶栏 / Writing 页复用 |
 | `src/pages/Foreshadows.svelte` | 伏笔页：统计概览 + AI 设计伏笔 + 手动 CRUD（`<dialog class="modal">` 创建/编辑表单，DaisyUI 5 字段标签用 `text-xs … block` + `w-full`，不用已移除的 `form-control`/`label-text`）+ AI 建议确认面板（SSE `foreshadow_suggestions`）+ 伏笔-大纲冲突报告卡片（`last_foreshadow_outline_report`）+ 列表/章节时间线/路线图文档三视图 + 复制/下载 `Foreshadows.md` |
 | `src/pages/Memory.svelte` | 叙事记忆页（只读）：从 `progress.memory_entries` 展示统计（条数/覆盖章节/token 上限/内容字数）+ 列表/按章节时间线两视图 + 分类/章节筛选 + 原文片段预览（v4：片段由后端在 `snippet` 字段解析下发）+ 刷新/复制；分类 badge 用 `badge-sm whitespace-nowrap`（DaisyUI 5 固定高度无 nowrap 时窄列会竖排） |
-| `src/components/PostProcessPanel.svelte` | 全书优化面板：可选「补充要求」textarea（`author_requirements`；有内容时执行覆盖全书各章并与勾选工单合并）+ 开始全书分析（诊断+核查+路线图）/ 重新核查 / 重新生成路线图 / 清空；诊断与核查报告 Markdown 展示；优化工单表格（勾选、编辑意见、执行选项、diff 对比弹窗）；执行选项 checkbox 本地编辑时 `!dirty` 才从服务端回填，并用 `checkbox-primary` 保证勾选可见；只有已启用且 `applies_to` 含 `book.execute` 的 polish 类 Skill 才允许全书润色 |
+| `src/pages/Proofread.svelte` | 独立完稿校订页：进入前双备份确认、全文保守校订、结构化问题筛选/跳转/状态、block 人工编辑、逐章撤销、三类导出和创建续写项目。旧 `PostProcessPanel.svelte` 已删除。 |
 | `src/lib/forceGraphLayout.js` | 图谱布局纯函数：`layoutParams(n)`（√N 间距/斥力）、`fitTransform`（包围盒适配视口）、`kineticEnergy`；`forceGraphLayout.check.js` 自检 |
 | `src/pages/Relations.svelte` | 图谱页：Canvas 力导向图谱（ForceGraph），无画布硬夹边、α 冷却后 fit-to-view、按节点数 √N 调间距；拖拽唤醒仿真；滚轮缩放 0.15x–3x（以光标为中心）；hover 高亮（强调 hover 节点与其连线，次强调直接相邻节点，其余淡化） |
 | `src/pages/Assistant.svelte` | 助理页：聊天会话列表 + 消息区 + 工具调用卡片 + 流式回复 |
@@ -308,8 +307,7 @@ API 配置（`APIConfig`）与故事配置（`Config`）完全分离，分别保
 
 注入规则：
 - 大纲生成、章节生成/修订/事实核查、伏笔规划、全书诊断/路线图/执行、导入分析和全局助理分别使用对应作用域。
-- 去 AI 味（`POST /api/chapter/polish`）使用 `chapter.polish`；全书优化中的 polish 工单或 `include_polish` 使用 `book.execute`，且要求 Skill 类别为 `polish`。
-- 前端全书优化面板按与后端一致的 `enabled + category=polish + applies_to=book.execute` 条件启用润色选项。
+- 去 AI 味（`POST /api/chapter/polish`）使用 `chapter.polish`；完稿自动校订将已启用的 `book.execute` Skill 作为从属风格规则，结构与语义保护始终优先。
 
 ### 用户已填配置保护（无字段锁）
 
@@ -454,26 +452,21 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 
 聊天会话存储为项目目录 `sessions/` 下的 JSON 文件。`sessions/index.json` 为会话索引。每个会话文件名为 `{id}.json`。使用 `fsutil.WriteFileAtomic` 保持一致性。
 
-## 全书优化流程
+## 完稿校订流程
 
 ```
-写作页全书已确认 → 「全书优化」面板
- → POST /api/postprocess/diagnose（异步，同一任务锁）
-    1. DiagnoseBookAction：设定+摘要+全文（超预算时仅摘要模式）→ 诊断报告
-    2. ConsistencyCheckBookAction：按卷（15万字/卷）核查 → 核查报告
-    3. BuildRoadmapAction：报告 + 可选 `author_requirements` → 结构化工单 JSON → postprocess.json
- → 用户审阅报告、勾选/编辑工单（可改补充要求）
- → POST /api/postprocess/execute（异步）
-    可选前置 SmoothTransitionsAction
-    逐条 ExecuteRoadmapAction：同章多条工单合并为一次 ReviseSpecificChapterAction / PolishChapterAction（合并 feedback 时附带补充要求）
-    每条完成后保存 diff 节选（前 500 字）+ 更新工单状态
- → 可随时 POST /api/task/stop 取消（已完成项不丢失）
+全部章节 accepted → 正式完结 → 独立「完稿校订」页
+ → 强制提示分别导出未校订全文与全部章节大纲，确认后进入
+ → POST /api/proofread/apply：逐章保守校订，只接受已有 block ID，禁止增删/拆并/重排段落；逐章保存并保留最近一次撤销
+ → POST /api/proofread/analyze：逐章输出需要人工判断的问题，锚定 chapter_num + block_id
+ → 点击报告锚点跳转段落，使用校订专用 block API 人工编辑并标记 pending/resolved/ignored
+ → 分别导出当前全文、全部大纲和 Markdown 校订报告
+ → 如需续写，POST /api/projects/continue 创建仅含冻结设定、事实、大纲和摘要的新项目，从下一章继续规划
 ```
 
-- 上下文预算：`api.json` 的 `context_budget_tokens`（默认 900000），配置页可编辑
-- 数据持久化：项目目录 `postprocess.json`（报告、工单、`author_requirements`、执行状态）
-- 补充要求：写作页全书优化面板 textarea；`PUT /api/postprocess/roadmap` 可单独更新 `author_requirements`；生成/重生成路线图前前端先落盘；**执行时若补充要求非空则覆盖全书每一章**（与该章已勾选 pending 工单合并为一次修订，仍只跑一轮）；无补充要求时行为不变（仅勾选工单）；清空优化数据时一并清除
-- 单独重跑：`POST /api/postprocess/consistency`（仅核查）、`POST /api/postprocess/roadmap`（仅路线图）
+- 数据持久化仍使用项目目录 `postprocess.json`，`schema_version=1`；旧诊断/路线图结构不转换。
+- 自动和人工校订均不触发伏笔、记忆、设定或摘要重算；同 block 措辞变化只确定性刷新引用 quote/revision。首次修改正文后 `content_modified=true`，原项目禁止 `/api/story/resume`。
+- 校订偏好和启用的 `book.execute` Skill 只能影响文风，不能覆盖剧情/事实/段落硬约束。
 
 ## 导入流水线（v4）
 
@@ -574,13 +567,16 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | POST | `/api/chapter/revise/{num}` | 异步 | 定向最小化修订指定章节（含已确认章节，不影响其他章节） |
 | POST | `/api/chapter/polish` | 异步 | 单章去AI味（`{"num":N}` 可选，需启用 polish 类技能；已确认章节润色后保持 accepted 状态） |
 | POST | `/api/chapters/smooth-transitions` | 异步 | 批量优化已确认章节衔接（逐章检查上一章结尾与本章开头，仅生硬时最小化重写开头片段，逐章落盘可随时停止） |
-| GET | `/api/postprocess` | 同步 | 获取全书优化状态（报告 + 工单 + 元信息） |
-| DELETE | `/api/postprocess` | 同步 | 清空全书优化报告与工单 |
-| PUT | `/api/postprocess/roadmap` | 同步 | 更新优化工单（勾选/编辑意见/执行选项/`author_requirements`；字段均可选提交） |
-| POST | `/api/postprocess/diagnose` | 异步 | 全书优化分析（诊断 → 一致性核查 → 生成路线图，需全书已确认） |
-| POST | `/api/postprocess/consistency` | 异步 | 仅重新运行全书一致性核查 |
-| POST | `/api/postprocess/roadmap` | 异步 | 根据已有报告重新生成路线图 |
-| POST | `/api/postprocess/execute` | 异步 | 执行已勾选工单（可选前置衔接优化 + 逐章修订/润色，逐条落盘可随时停止） |
+| GET/DELETE | `/api/proofread` | 同步 | 获取校订状态 / 清空报告（保留正文修改锁和撤销记录） |
+| POST | `/api/proofread/backup` | 同步 | 确认已导出未校订全文与大纲 |
+| POST | `/api/proofread/analyze` | 异步 | 生成带 chapter/block 锚点的人工问题报告 |
+| POST | `/api/proofread/apply` | 异步 | 按原 block 逐章自动校订全文 |
+| PUT | `/api/proofread/issues/{id}` | 同步 | 标记问题 pending/resolved/ignored |
+| POST | `/api/proofread/undo/{num}` | 同步 | 撤销该章最近一次自动校订，版本变化返回 409 |
+| PUT/POST/DELETE | `/api/proofread/chapters/.../blocks...` | 同步 | 完稿校订专用人工 block 编辑，不运行写作同步 |
+| GET | `/api/proofread/export` | 同步 | 导出 Markdown 校订报告 |
+| GET | `/api/export/outline` | 同步 | 导出全部批次梗概与章节大纲 Markdown |
+| POST | `/api/projects/continue` | 同步 | 从已完结项目创建不含正文的续写项目 |
 | DELETE | `/api/chapter` | 同步 | 删除写作前沿章节正文（`DeleteFrontierChapter`） |
 | DELETE | `/api/chapters/from/{num}` | 同步 | 从第 N 章删除到末尾 |
 | DELETE | `/api/outline` | 同步 | 删除大纲 |
@@ -628,10 +624,6 @@ API 配置保存 `api.json`，故事配置保存 `config.json`。设定保存 `s
 | `tool_call_start` | `{session_id, tool_name, args}` | Agent 工具调用开始 |
 | `tool_call_end` | `{session_id, tool_name, result}` | Agent 工具调用结束 |
 | `polish_result` | `{chapter_idx, text}` | 去AI味结果 |
-| `postprocess_report` | `{type, content}` | 全书诊断/核查报告（type: diagnosis/consistency） |
-| `postprocess_roadmap` | `PostProcessState` | 优化路线图生成完成 |
-| `postprocess_item_done` | `RoadmapItem` | 单条工单执行完成（含 diff 节选） |
-| `postprocess_update` | `{book_complete, state}` | 全书优化状态更新 |
 
 ## PromptsConfig 字段
 
