@@ -26,12 +26,12 @@ The program ships with no story content of its own — the genre, world, charact
 - **Fact-check**: each chapter is automatically checked for consistency; failures trigger an automatic rewrite
 - **Continue an existing novel**: paste your existing text, the AI extracts settings and chapter summaries, and continues from where you left off
 - **De-AI polish**: built-in polish skills (forbidden AI clichés, colloquial rewriting, etc.); one-click polish per chapter from the writing page
-- **Full-book optimisation**: once finished, run diagnosis → consistency check → roadmap of fixes → automatic per-chapter revision (supports large-context models, segmented checking, diff preview)
+- **Final proofreading**: after formal completion, run conservative language-only proofreading; plot, structure, and foreshadow issues stay in a clickable manual report
 - **Skill system**: built-in writing / polish skills can be toggled on; custom skills can be reused across projects
 - **AI assistant**: a built-in chat assistant can read and modify settings, outlines, and chapters via conversation (with multiple guards on destructive operations)
 - **Streaming output**: generation streams token by token, with a log panel and progress indicator
 - **Resumable**: progress is persisted on every step; close and reopen the program to pick up where you left off
-- **Export**: one-click export to a single TXT; each chapter is also saved as Markdown in the project directory
+- **Export**: separately download the manuscript, all chapter outlines, and the proofreading report; each chapter is also saved as Markdown
 - **Multilingual**: each project chooses Chinese or English; AI prompts, generated prose, built-in skills and the agent's system prompt all follow the project language; the UI language can be switched independently
 
 ## Quick start
@@ -87,7 +87,7 @@ The project language is fixed at creation time. The UI language defaults to the 
 
 ### Continue an existing novel
 
-On the empty Outline page, import existing text. Imported chapters appear under “Legacy / imported chapters”. Enter a new batch synopsis and chapter count to continue. Resume a completed book before adding new batches.
+On the empty Outline page, import existing text. Imported chapters appear under “Legacy / imported chapters”. Enter a new batch synopsis and chapter count to continue. A completed project can resume directly only before final-proofreading edits; afterward, create a continuation project from the proofreading page.
 
 ### Batch planning and replanning
 
@@ -140,7 +140,7 @@ On the Skills page you can enable built-in skills:
 | Story de-slop audit | Polish | 6-gate AI-fingerprint detection workflow with human-writer baselines |
 | Writing craft | Writing | Chapter opening / closing hooks, payoff density, pacing |
 
-All skills are disabled by default. Enabled skills are injected only into their declared scopes (chapter generation, polish, outline, book processing, and so on), and the live log lists the skills actually activated for each task.
+All skills are disabled by default. Enabled skills are injected only into their declared scopes (chapter generation, polish, outline, final proofreading, and so on), and the live log lists the skills actually activated for each task.
 
 The Skills page can install pasted Markdown, one `.md` file, a ZIP, or a browser-selected folder. User skills live in the global `skills/<id>/` library and can be enabled independently per novel project. A standard package contains `skill.json`, `SKILL.md`, and optional text resources under `references/`, `templates/`, or `assets/`; scripts and binaries are never executed. Legacy `skills/*.md` files inside a project remain available read-only.
 
@@ -148,15 +148,16 @@ Non-built-in skills show an AI validation state. An unvalidated skill displays `
 
 English projects ship with English equivalents (`humanizer-en`, `story-deslop-en`, `writing-craft-en`); the skill list is filtered by project language automatically.
 
-### Full-book optimisation
+### Final proofreading and continuing a finished story
 
-After every chapter is confirmed, the writing page surfaces a "Full-book optimisation" panel:
+Final proofreading is a separate terminal workflow after writing. Accept every chapter, formally complete the book, then open **Final proofreading** from the sidebar:
 
-1. **Start analysis**: the AI reads settings and prose end-to-end (switching to a summary mode or per-volume check on very long books) and produces a diagnosis report + consistency report + actionable roadmap items.
-2. **Review the roadmap**: tick items, edit feedback, optionally enable "smooth transitions first" or "attach de-AI polish".
-3. **Execute selected items**: per-chapter minimal edits; once each item is done you can inspect a diff preview.
+1. Download the **unproofread manuscript** and **all chapter outlines** when prompted.
+2. **Proofread full manuscript** fixes spelling, grammar, repetition, dialogue naturalness, and style while preserving plot, facts, foreshadows, and paragraph structure. Style preferences and enabled polish skills remain subordinate to that boundary.
+3. **Generate interactive report** lists logic, structure, foreshadow, and character issues that need author judgment. Click any chapter/block reference to edit the source, then mark it pending, resolved, or ignored.
+4. Automatic changes can be undone per chapter. Download the current manuscript and Markdown report separately for external editing.
 
-For best results, use a large-context model and set "context budget" on the Config page to roughly 900000 (a 1M-token model).
+Once prose is changed in this workflow, the original project cannot resume writing. To continue the story, enter a new project name and choose **Create continuation**. The app copies frozen settings, facts, outlines, and summaries—but not proofread prose—and opens the new project at the next planning chapter. The original project and downloaded backups remain untouched.
 
 ### AI assistant
 
@@ -192,7 +193,7 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 
 | Task | Prefer |
 |------|--------|
-| **Full-book optimisation** | Use the Full-book optimisation panel on the Writing page. |
+| **Final proofreading** | Formally complete the book, open the dedicated page, export backups, then proofread or work through the interactive report. |
 | **Continue / import existing text** | Outline page → Import existing content. |
 | **Relationship graph layout** | Relations page (Canvas drag/zoom). |
 | **Reset entire project** | Dangerous; if needed, say "reset all progress" explicitly and confirm the range the assistant restates. |
@@ -200,7 +201,7 @@ The chat panel on the right (or the dedicated "Assistant" page) is an AI that ca
 #### UI buttons vs assistant
 
 - **Page buttons**: generate / confirm / revise / delete — clear state, predictable; **default choice** for core workflows.
-- **Assistant**: good when you need explanation, multi-step queries, or one-sentence intent; for complex flows (chapter-count regen, full-book optimisation) prefer the UI, use the assistant as a helper.
+- **Assistant**: good when you need explanation, multi-step queries, or one-sentence intent; for complex flows (chapter-count regeneration and final proofreading) prefer the UI.
 
 #### How to phrase requests
 
@@ -277,16 +278,9 @@ The recommended chapter limit is primarily determined by the **token window** (o
 > - **Models differ in writing quality, not consistency span**: flagship models (GPT-5.5, Claude Opus 4.8) produce more fluent prose, follow instructions more faithfully, and are less likely to invent outline-absent plot points. Cheaper models may need more manual editing. But the context injected is the same for all models.
 > - Local open-source models (like Qwen3) depend on hardware and quantisation; the table assumes full-precision inference. Quantised deployments will see some quality loss.
 
-### Full-book optimisation context budget
+### Proofreading model calls
 
-The full-book optimisation (diagnosis + consistency check + roadmap) requires the entire text or summaries. The "context budget" on the Config page determines usable capacity (65 % is reserved as a safety margin):
-
-| Book size | Recommended context_budget_tokens | Notes |
-|-----------|----------------------------------|-------|
-| ≤ 30 ch × 2,500 words | 300,000 (default) | Full-text mode |
-| ≤ 30 ch × 5,000 words | 500,000 | Full-text mode |
-| ≤ 50 ch × 2,500 words | 500,000 | Full-text mode |
-| 50+ ch or 150K+ words | 900,000+ | Per-volume segmented check |
+Automatic proofreading and report analysis process one chapter at a time, so the model does not need to hold the entire manuscript in one request. Failed chapters remain unchanged and can be retried; cancellation keeps chapters already saved. The prompt enforces one-to-one paragraph mapping, but authors should still sample-check AI edits and keep the prompted backups.
 
 ### Notes for very large books
 
