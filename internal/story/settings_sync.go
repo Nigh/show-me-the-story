@@ -51,12 +51,44 @@ func settingsEntities(s *ProjectSettings) map[string][]map[string]any {
 	return out
 }
 func entityAt(s *ProjectSettings, kind, id string) map[string]any {
-	for _, e := range settingsEntities(s)[kind] {
-		if e["id"] == id {
-			return e
+	var value any
+	switch kind {
+	case "characters":
+		for _, e := range s.Characters {
+			if e.ID == id {
+				value = e
+				break
+			}
+		}
+	case "worldview":
+		for _, e := range s.Worldview {
+			if e.ID == id {
+				value = e
+				break
+			}
+		}
+	case "organizations":
+		for _, e := range s.Organizations {
+			if e.ID == id {
+				value = e
+				break
+			}
+		}
+	case "relations":
+		for _, e := range s.Relations {
+			if e.ID == id {
+				value = e
+				break
+			}
 		}
 	}
-	return nil
+	if value == nil {
+		return nil
+	}
+	data, _ := json.Marshal(value)
+	var out map[string]any
+	_ = json.Unmarshal(data, &out)
+	return out
 }
 func putEntity(s *ProjectSettings, kind, id string, value map[string]any) error {
 	all := settingsEntities(s)
@@ -180,9 +212,11 @@ func settingsAtChapter(s *ProjectSettings, num int) *ProjectSettings {
 	if s == nil {
 		return nil
 	}
-	out := cloneSettings(s)
-	for i := len(out.StoryChanges) - 1; i >= 0; i-- {
-		c := out.StoryChanges[i]
+	// Entity reads decode independent maps; putEntity replaces a slice, so the
+	// read snapshot need not clone the entire provenance history.
+	out := &ProjectSettings{Characters: s.Characters, Worldview: s.Worldview, Organizations: s.Organizations, Relations: s.Relations}
+	for i := len(s.StoryChanges) - 1; i >= 0; i-- {
+		c := s.StoryChanges[i]
 		if c.Status != "applied" || c.Source.Chapter <= num {
 			continue
 		}
@@ -261,7 +295,7 @@ func entityHasDependents(s *ProjectSettings, id string) bool {
 	}
 	return false
 }
-func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDelta) error {
+func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDelta, visible ...map[string]bool) error {
 	aliases := map[string]string{}
 	for _, d := range deltas {
 		discardUnknownEntityFields(d.Kind, d.Entity)
@@ -326,6 +360,10 @@ func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDel
 			continue
 		}
 		conflict := d.Conflict
+		if before != nil && len(visible) > 0 && !visible[0][id] {
+			// Includes name/edge collisions resolved after local $ID aliases.
+			conflict = true
+		}
 		for k, v := range before {
 			if k == "id" || v == "" || reflect.DeepEqual(v, after[k]) {
 				continue
@@ -345,6 +383,16 @@ func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDel
 		status := "applied"
 		if conflict {
 			status = "pending"
+		}
+		duplicate := false
+		for _, old := range s.StoryChanges {
+			if old.Status == "pending" && old.Kind == d.Kind && old.EntityID == id && old.Source.Chapter == ch.Num && old.Source.BlockID == d.BlockID && old.Source.ContentRev == ChapterRevision(ch) && reflect.DeepEqual(old.Before, before) && reflect.DeepEqual(old.After, after) {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
 		}
 		c := SettingChange{ID: len(s.StoryChanges) + 1, Kind: d.Kind, EntityID: id, Before: before, After: after, Source: MemoryReference{Chapter: ch.Num, BlockID: d.BlockID, Quote: ch.Blocks[bi].Text, ContentRev: ChapterRevision(ch)}, Status: status, Reason: d.Reason}
 		s.StoryChanges = append(s.StoryChanges, c)
@@ -431,9 +479,10 @@ func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *confi
 		if err := llm.ValidateConfig(api); err != nil {
 			return err
 		}
-		entities, _ := json.Marshal(settingsEntities(settingsAtChapter(settings, ch.Num)))
+		selected, visible := retrieveSettings(settingsAtChapter(settings, ch.Num), chapterKnowledgeQuery(ch), settingsContextRunes)
+		entities, _ := json.Marshal(settingsEntities(selected))
 		blocks, _ := json.Marshal(ch.Blocks)
-		prompt := settingUpdatePrompt(cfg.Language) + "\n" + string(entities) + "\n" + string(blocks)
+		prompt := settingUpdatePrompt(cfg.Language) + knowledgeSelectionNotice(cfg.Language) + "\n" + string(entities) + "\n" + string(blocks)
 		var syncErr error
 		for attempt := 0; attempt < 2; attempt++ {
 			raw := llm.CallAPIWithRetryLog(ctx, api, i18n.SystemPromptFor(cfg.Language, "memory_manager"), prompt, logger)
@@ -452,7 +501,7 @@ func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *confi
 				continue
 			}
 			next = cloneSettings(settings)
-			syncErr = applySettingDeltas(next, ch, *result.Changes)
+			syncErr = applySettingDeltas(next, ch, *result.Changes, visible)
 			if syncErr == nil {
 				break
 			}

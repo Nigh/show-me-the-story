@@ -1,10 +1,12 @@
 package story
 
 import (
+	"encoding/json"
 	"fmt"
 	"showmethestory/internal/config"
 	"showmethestory/internal/i18n"
 	"strings"
+	"unicode/utf8"
 )
 
 // Helper functions that produce language-specific text fragments injected
@@ -137,169 +139,59 @@ func buildHistorySummaryForLang(state *Progress, idx int, lang string) string {
 	return history
 }
 
-// buildCharacterContextForLang returns structured character details injected into writing prompts.
+// buildCharacterContextForLang retrieves chapter-relevant original settings.
 func buildCharacterContextForLang(settings *ProjectSettings, ch ChapterState, lang string) string {
-	settings = settingsAtChapter(settings, ch.Num)
-	var sb strings.Builder
-	if settings != nil {
-		for _, r := range settings.Relations {
-			fmt.Fprintf(&sb, "[%s → %s] %s\n", r.SourceID, r.TargetID, r.Label)
-		}
+	snapshot := settingsAtChapter(settings, ch.Num)
+	selected, _ := retrieveSettings(snapshot, chapterKnowledgeQuery(ch), settingsContextRunes)
+	selected.Worldview, selected.Organizations = nil, nil
+	data, _ := json.Marshal(settingsEntities(selected))
+	derived := buildOutlineDerivedCharacterContext(ch, snapshot, lang)
+	if utf8.RuneCountInString(derived) > 1000 {
+		derived = ""
 	}
-	chapterOutline := ch.Outline
-
-	if settings != nil && len(settings.Characters) > 0 {
-		castNames := make(map[string]bool)
-		for _, c := range normalizeOutlineCharacters(ch.Characters) {
-			castNames[c.Name] = true
-		}
-		var relevant []Character
-		for _, c := range settings.Characters {
-			name := StripNameMarks(c.Name)
-			if strings.Contains(chapterOutline, name) || castNames[name] {
-				relevant = append(relevant, c)
-			}
-		}
-		if len(relevant) == 0 {
-			relevant = settings.Characters
-		}
-
-		en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-		for _, c := range relevant {
-			sb.WriteString(fmt.Sprintf("【%s】", c.Name))
-			if c.Age != "" {
-				if en {
-					sb.WriteString(fmt.Sprintf(" Age: %s", c.Age))
-				} else {
-					sb.WriteString(fmt.Sprintf(" 年龄:%s", c.Age))
-				}
-			}
-			sb.WriteString("\n")
-			write := func(label, val string) {
-				if val == "" {
-					return
-				}
-				sb.WriteString(fmt.Sprintf("  %s: %s\n", label, val))
-			}
-			if en {
-				write("Appearance", c.Appearance)
-				write("Personality", c.Personality)
-				write("Background", c.Background)
-				write("Motivation", c.Motivation)
-				write("Abilities", c.Abilities)
-				write("Notes", c.Notes)
-			} else {
-				write("外貌", c.Appearance)
-				write("性格", c.Personality)
-				write("背景", c.Background)
-				write("动机", c.Motivation)
-				write("能力", c.Abilities)
-				write("备注", c.Notes)
-			}
-			sb.WriteString("\n")
-		}
-	}
-
-	if derived := buildOutlineDerivedCharacterContext(ch, settings, lang); derived != "" {
-		sb.WriteString(derived)
-	}
-	return sb.String()
+	return knowledgeSelectionNotice(lang) + string(data) + "\n" + derived
 }
 
 func buildWorldviewContextForLang(settings *ProjectSettings, chapterOutline, lang string) string {
-	if settings == nil {
-		return ""
-	}
-
-	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-	var sb strings.Builder
-
-	if len(settings.Worldview) > 0 {
-		var relevant []WorldviewEntry
-		for _, w := range settings.Worldview {
-			if strings.Contains(chapterOutline, w.Name) || strings.Contains(chapterOutline, w.Category) {
-				relevant = append(relevant, w)
-			}
-		}
-		if len(relevant) == 0 {
-			relevant = settings.Worldview
-		}
-		for _, w := range relevant {
-			sb.WriteString(fmt.Sprintf("【%s】(%s)\n  %s\n\n", w.Name, w.Category, w.Description))
-		}
-	}
-
-	if len(settings.Organizations) > 0 {
-		var relevantOrgs []Organization
-		for _, o := range settings.Organizations {
-			if strings.Contains(chapterOutline, o.Name) {
-				relevantOrgs = append(relevantOrgs, o)
-			}
-		}
-		if len(relevantOrgs) == 0 {
-			relevantOrgs = settings.Organizations
-		}
-		for _, o := range relevantOrgs {
-			if en {
-				sb.WriteString(fmt.Sprintf("[Organization: %s] (%s)\n  %s\n", o.Name, o.Type, o.Description))
-				if len(o.Members) > 0 {
-					sb.WriteString(fmt.Sprintf("  Member IDs: %s\n", strings.Join(o.Members, ", ")))
-				}
-			} else {
-				sb.WriteString(fmt.Sprintf("【组织:%s】(%s)\n  %s\n", o.Name, o.Type, o.Description))
-				if len(o.Members) > 0 {
-					sb.WriteString(fmt.Sprintf("  成员IDs: %s\n", strings.Join(o.Members, ", ")))
-				}
-			}
-			sb.WriteString("\n")
-		}
-	}
-
-	return sb.String()
+	selected, _ := retrieveSettings(settings, chapterOutline, settingsContextRunes)
+	selected.Characters, selected.Relations = nil, nil
+	data, _ := json.Marshal(settingsEntities(selected))
+	return knowledgeSelectionNotice(lang) + string(data)
 }
 
 func chapterWorldview(settings *ProjectSettings, ch ChapterState, lang string) string {
-	return buildWorldviewContextForLang(settingsAtChapter(settings, ch.Num), ch.Outline, lang)
+	return buildWorldviewContextForLang(settingsAtChapter(settings, ch.Num), chapterKnowledgeQuery(ch), lang)
 }
 
-// buildMemoryForLang renders the memory block for injection into writing/fact-check prompts.
-func buildMemoryForLang(state *Progress, idx int, lang string) string {
-	if len(state.MemoryEntries) == 0 {
+// An explicit notice prevents a retrieved subset being mistaken for the full registry.
+func knowledgeSelectionNotice(lang string) string {
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		return "\n[Retrieved original records; this is a budgeted subset, not the complete registry. Missing records do not imply absence of a fact/entity. Do not infer new identities or overwrite unseen fields. Evidence snippets may be excerpts.]\n"
+	}
+	return "\n【检索到的原始条目：这是预算内的相关子集，并非完整资料库。未命中不代表事实或实体不存在，不得据此猜测新身份或覆盖未提供的字段；来源片段可能是节选。】\n"
+}
+
+// The optional query includes freshly generated prose during fact checking.
+func buildMemoryForLang(state *Progress, idx int, lang string, query ...string) string {
+	if idx < 0 || idx >= len(state.Chapters) || len(state.MemoryEntries) == 0 {
 		return ""
 	}
-	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-	var sb strings.Builder
-	if en {
-		sb.WriteString("【Story Memory — long-term narrative details from earlier chapters】\n")
-	} else {
-		sb.WriteString("【叙事记忆——早期章节的关键叙事细节】\n")
+	ch := state.Chapters[idx]
+	if len(query) > 0 {
+		ch.Content = query[0]
 	}
-	for _, m := range state.MemoryEntries {
-		if idx >= 0 && idx < len(state.Chapters) && m.Chapter > state.Chapters[idx].Num {
-			continue
-		}
-		if len(m.References) > 0 && !memoryHasLiveReference(state, m) {
-			continue
-		}
-		if state.MemoryMaxTokens > 0 && sb.Len()*3/2 > state.MemoryMaxTokens {
-			break
-		}
-		snippet := extractSnippet(state, m.Chapter, m.Position, 100)
-		if snippet != "" {
-			if en {
-				sb.WriteString(fmt.Sprintf("[Ch.%d] %s (original: \"%s\")\n", m.Chapter, m.Content, snippet))
-			} else {
-				sb.WriteString(fmt.Sprintf("[第%d章] %s（原文：「%s」）\n", m.Chapter, m.Content, snippet))
-			}
-		} else {
-			if en {
-				sb.WriteString(fmt.Sprintf("[Ch.%d] %s\n", m.Chapter, m.Content))
-			} else {
-				sb.WriteString(fmt.Sprintf("[第%d章] %s\n", m.Chapter, m.Content))
-			}
-		}
+	budget := memoryContextRunes
+	if state.MemoryMaxTokens > 0 {
+		budget = min(budget, state.MemoryMaxTokens*2/3)
 	}
-	return sb.String()
+	notice := knowledgeSelectionNotice(lang)
+	remaining := budget - utf8.RuneCountInString(notice) - 2
+	if remaining <= 0 {
+		return ""
+	}
+	entries := retrieveMemories(state, ch, remaining, true)
+	data, _ := json.Marshal(entries)
+	return notice + string(data)
 }
 
 // extractSnippet extracts approximately maxRunes characters from the chapter content
@@ -512,6 +404,11 @@ func memoryLinkPrompt(lang string) string {
 
 func settingUpdatePrompt(lang string) string {
 	schema := "\nJSON: {\"changes\":[{\"kind\":\"characters|worldview|organizations|relations\",\"entity\":{\"id\":\"existing ID, or empty for new\"},\"block_id\":1,\"evolution\":false,\"conflict\":false,\"reason\":\"evidence explanation\"}]}\n"
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		schema += "Keep fields concise: describe enduring attributes and current state, not a chapter-by-chapter plot log. Preserve existing independent constraints when updating a field. Do not append paraphrases of known facts. Event history and original evidence are stored separately.\n"
+	} else {
+		schema += "字段保持精简：只描述稳定属性与当前状态，不写逐章剧情流水账。更新字段必须保留原有独立约束，不追加已有事实的同义复述。事件历史和原文证据由系统另行保存。\n"
+	}
 	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
 		return "Extract setting changes evidenced in the accepted chapter blocks. Reuse existing entity IDs; never guess identities. Supply only changed fields for existing entities, complete required fields for new entities. Mark contradictions, uncertain identities or inferences conflict=true. evolution=true only for explicit chronological developments (e.g. allies becoming enemies), never for factual contradictions. No deletions. New characters: name; worldview: name/category/description; organizations: name/type/description/members; relations: source_id/source_type/target_id/target_type/label (types character/worldview/organization). For new entities use local IDs starting with $ (e.g. $alice); list new characters/worldview first, organizations next, relations last. References may use existing IDs or earlier unambiguous new $IDs. Never link uncertain new entities. The server allocates permanent IDs. Use exact block IDs as evidence. Return changes:[] when nothing changes. Below: existing entities, then chapter blocks." + schema
 	}

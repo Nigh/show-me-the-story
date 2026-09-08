@@ -102,5 +102,5 @@ func (h *Handlers) PostSettingChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logger.SettingsUpdated()
-	h.writeJSON(w, http.StatusOK, h.settings)
+	h.GetSettings(w, r)
 }

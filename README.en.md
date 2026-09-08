@@ -105,6 +105,8 @@ Use “Long-term direction” for goals spanning multiple batches, such as “Th
 
 ### Linked facts and automatic setting updates
 
+Long-form writing retrieves relevant facts and settings locally, then injects original records within a budget. Entity names and direct relationships take priority; an empty match does not load the whole registry. Very long fields use clearly marked sentence excerpts, and updates based on excerpts require review. Complete records and provenance remain stored. Keyword retrieval may miss aliases or paraphrases.
+
 The Writing page marks passages linked to key facts. Inspect all identified passages for a fact, jump across chapters, and return to compare them. Editing or deleting a linked passage requires confirmation; a changed chapter version requires a fresh review. AI paragraph revision preserves facts by default. AI may miss links, and confirming an edit does not automatically correct other chapters.
 
 Accepted chapters automatically update characters, world entries, organizations, relationships, and the graph. Conflicts with author settings appear as before/after proposals on the Writing page. Editing or deleting source prose safely withdraws automatic changes or requests review when later dependencies exist. Failed sync preserves prose and offers a retry; automatic writing pauses. Only newly generated or actively edited chapters participate; untouched old prose is not backfilled.

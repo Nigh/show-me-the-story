@@ -87,6 +87,10 @@ func factProtection(state *Progress, num int, lang string) string {
 	live := facts[:0]
 	for _, f := range facts {
 		if memoryHasLiveReference(state, f) {
+			// Revision must preserve every linked fact, but does not need copies
+			// of all historical evidence paragraphs attached to those facts.
+			f.References = nil
+			f.Snippet = ""
 			live = append(live, f)
 		}
 	}
@@ -133,16 +137,15 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 	if next.MemoryMaxTokens <= 0 {
 		next.MemoryMaxTokens = calcMemoryMaxTokens(cfg.Story.ChapterCount, cfg.Story.TargetWordsPerChapter)
 	}
-	existing := []MemoryEntry{}
-	for _, m := range state.MemoryEntries {
-		if m.Chapter <= ch.Num {
-			existing = append(existing, m)
-		}
+	existing := retrieveMemories(state, ch, memoryContextRunes, false)
+	visibleFacts := map[int]bool{}
+	for _, m := range existing {
+		visibleFacts[m.ID] = true
 	}
 	blocks, _ := json.Marshal(ch.Blocks)
 	prompt := config.RenderPrompt(cfg.Prompts.MemoryUpdate, map[string]string{
 		"Title": state.Title, "ChapterNum": fmt.Sprint(ch.Num), "ChapterTitle": ch.Title, "ChapterOutline": ch.Outline,
-		"ChapterContent": ch.Content, "ExistingMemory": formatMemoryForUpdatePrompt(existing, cfg.Language),
+		"ChapterContent": ch.Content, "ExistingMemory": knowledgeSelectionNotice(cfg.Language) + formatMemoryForUpdatePrompt(existing, cfg.Language),
 		"MemoryMaxTokens": fmt.Sprint(next.MemoryMaxTokens),
 	})
 	prompt += memoryLinkPrompt(cfg.Language) + "\n" + string(blocks)
@@ -177,6 +180,9 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 	seenFacts := map[int]bool{}
 	// Old references remain as historical evidence until their replacement is valid.
 	for _, nm := range *result.NewMemories {
+		if nm.ID > 0 && !visibleFacts[nm.ID] {
+			return fmt.Errorf("invalid existing fact identity")
+		}
 		if nm.ID < 0 || strings.TrimSpace(nm.Content) == "" || len(nm.BlockIDs) == 0 {
 			return fmt.Errorf("invalid fact evidence")
 		}
@@ -191,7 +197,7 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 				target = j
 				break
 			}
-			if nm.ID == 0 && m.Content == nm.Content {
+			if nm.ID == 0 && m.Chapter <= ch.Num && m.Content == nm.Content {
 				target = j
 				break
 			}
