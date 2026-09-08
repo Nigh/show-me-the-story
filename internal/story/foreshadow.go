@@ -46,7 +46,7 @@ func SuggestForeshadows(ctx context.Context, apiCfg *config.APIConfig, cfg *conf
 	userPrompt := config.RenderPrompt(cfg.Prompts.ForeshadowPlanning, map[string]string{
 		"Title":         state.Title,
 		"CorePrompt":    state.CorePrompt,
-		"StorySynopsis": state.StorySynopsis,
+		"StorySynopsis": BookSynopsis(cfg, state),
 		"Outline":       outline,
 	})
 

@@ -117,7 +117,7 @@ func SavePostProcess(path string, pp *PostProcessState) error {
 }
 
 func IsBookFullyAccepted(state *Progress) bool {
-	if state == nil || len(state.Chapters) == 0 {
+	if state == nil || state.BookStatus != BookStatusCompleted || len(state.Chapters) == 0 {
 		return false
 	}
 	for _, ch := range state.Chapters {
@@ -168,7 +168,7 @@ func buildAllSettingsText(cfg *config.Config, settings *ProjectSettings, state *
 	if cfg.Story.WritingPOV != "" {
 		sb.WriteString(fmt.Sprintf("叙述视角：%s\n", cfg.Story.WritingPOV))
 	}
-	synopsis := preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
+	synopsis := BookSynopsis(cfg, state)
 	sb.WriteString(fmt.Sprintf("梗概：%s\n", synopsis))
 	if state.CorePrompt != "" {
 		sb.WriteString(fmt.Sprintf("核心提示词：%s\n", state.CorePrompt))
@@ -823,7 +823,7 @@ func ExecuteRoadmapAction(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 
 		if execErr == nil {
 			state.Chapters[chapterIdx].Status = StatusAccepted
-			_ = SaveProgress(progressPath, state)
+			execErr = SaveProgress(progressPath, state)
 		}
 
 		diffRevised := excerptForDiff(state.Chapters[chapterIdx].Content, diffExcerptRunes)

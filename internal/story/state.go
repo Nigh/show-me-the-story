@@ -10,9 +10,11 @@ import (
 )
 
 type ChapterState struct {
-	Num     int    `json:"num"`
-	Title   string `json:"title"`
-	Outline string `json:"outline"`
+	KnowledgeTracked bool   `json:"knowledge_tracked,omitempty"`
+	MemoryRevision   string `json:"memory_revision,omitempty"`
+	Num              int    `json:"num"`
+	Title            string `json:"title"`
+	Outline          string `json:"outline"`
 	// Characters is the structured cast for this chapter's outline (proper names only).
 	// Used for unregistered-character suggestions; optional on legacy projects.
 	Characters []OutlineChapterCharacter `json:"characters,omitempty"`
@@ -52,7 +54,8 @@ type Foreshadow struct {
 	Name          string            `json:"name"`
 	Description   string            `json:"description"`
 	PlantChapter  int               `json:"plant_chapter"`
-	TargetChapter int               `json:"target_chapter"`
+	TargetChapter int               `json:"target_chapter,omitempty"`
+	TargetHorizon string            `json:"target_horizon,omitempty"`
 	Status        ForeshadowStatus  `json:"status"`
 	Events        []ForeshadowEvent `json:"events"`
 	Resolution    string            `json:"resolution"`
@@ -90,11 +93,12 @@ type WritingConflict struct {
 }
 
 type MemoryEntry struct {
-	ID       int    `json:"id"`
-	Content  string `json:"content"`
-	Category string `json:"category"` // character | location | item | event | promise | other
-	Chapter  int    `json:"chapter"`
-	Position int    `json:"position"`
+	References []MemoryReference `json:"references,omitempty"`
+	ID         int               `json:"id"`
+	Content    string            `json:"content"`
+	Category   string            `json:"category"` // character | location | item | event | promise | other
+	Chapter    int               `json:"chapter"`
+	Position   int               `json:"position"`
 	// Snippet is resolved server-side for API responses (chapter content no
 	// longer travels with /api/progress); never persisted.
 	Snippet string `json:"snippet,omitempty"`
@@ -115,6 +119,8 @@ type Arc struct {
 }
 
 type Progress struct {
+	NextMemoryID                int                      `json:"next_memory_id,omitempty"`
+	OutlineBatches              []OutlineBatch           `json:"outline_batches,omitempty"`
 	Phase                       string                   `json:"phase"`
 	Title                       string                   `json:"title"`
 	CorePrompt                  string                   `json:"core_prompt"`
@@ -129,6 +135,27 @@ type Progress struct {
 	PendingWritingConflict      *WritingConflict         `json:"pending_writing_conflict,omitempty"`
 	MemoryEntries               []MemoryEntry            `json:"memory_entries,omitempty"`
 	MemoryMaxTokens             int                      `json:"memory_max_tokens,omitempty"`
+	BookStatus                  string                   `json:"book_status,omitempty"`
+	LongTermDirection           string                   `json:"long_term_direction,omitempty"`
+	LatestPlanningReview        *PlanningReview          `json:"latest_planning_review,omitempty"`
+	NarrativeCheckpoints        []NarrativeCheckpoint    `json:"narrative_checkpoints,omitempty"`
+}
+
+const (
+	BookStatusActive    = "active"
+	BookStatusCompleted = "completed"
+)
+
+type PlanningReview struct {
+	ThroughChapter int    `json:"through_chapter"`
+	Content        string `json:"content"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type NarrativeCheckpoint struct {
+	StartChapter int    `json:"start_chapter"`
+	EndChapter   int    `json:"end_chapter"`
+	Summary      string `json:"summary"`
 }
 
 const (
@@ -182,6 +209,7 @@ func SaveProgress(path string, p *Progress) error {
 	if err := fsutil.WriteFileAtomic(path, data); err != nil {
 		return fmt.Errorf("保存进度文件失败: %w", err)
 	}
+	cleanupChapterFiles(path, p)
 	return nil
 }
 

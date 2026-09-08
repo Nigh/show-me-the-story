@@ -1,6 +1,6 @@
 <script>
   import { currentPage } from './lib/router.js';
-  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage } from './lib/stores.js';
+  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage, config } from './lib/stores.js';
   import { connectSSE } from './lib/sse.js';
   import { api } from './lib/api.js';
   import { onMount } from 'svelte';
@@ -52,6 +52,8 @@
     try {
       const cur = await api('GET', '/api/projects/current');
       if (cur.name) {
+        config.set(null);
+        config.set(await api('GET', '/api/config'));
         currentProject.set(cur.name);
         if (cur.language) {
           projectLanguage.set(cur.language);
@@ -82,6 +84,7 @@
 
   function backToProjects() {
     currentProject.set(null);
+    config.set(null);
   }
 
   function toggleLocale() {
@@ -91,7 +94,7 @@
 
 <div class="flex flex-col h-screen bg-base-300 text-base-content overflow-hidden">
   <!-- Header -->
-  <header class="navbar bg-base-200 border-b border-base-content/10 px-6 min-h-[46px] shrink-0 gap-4">
+  <header class="navbar bg-base-200 border-b border-base-content/10 px-4 min-h-[46px] shrink-0 gap-2 flex-wrap">
     <span class="text-lg font-semibold">{$t('app.title')}</span>
     {#if appVersion}
       <span class="badge badge-xs badge-ghost font-mono">{appVersion}</span>
@@ -102,7 +105,7 @@
       </a>
     {/if}
     {#if $currentProject}
-      <span class="badge badge-sm badge-outline">{$currentProject}</span>
+      <span class="badge badge-sm badge-outline">{$config?.story?.title?.trim() || $t('app.untitled')}</span>
       <span class="badge badge-sm badge-accent uppercase" title={$projectLanguage === 'en' ? 'English' : '中文'}>
         {$projectLanguage === 'en' ? 'EN' : 'ZH'}
       </span>
@@ -164,7 +167,7 @@
       </nav>
 
       <!-- Center: page content -->
-      <main class="flex-1 min-w-0 overflow-y-auto p-4 border-r border-base-content/10">
+      <main class="@container flex-[2] min-w-0 overflow-y-auto p-4 border-r border-base-content/10">
         {#if $currentPage === 'config'}
           <Config {sendToChat} />
         {:else if $currentPage === 'outline'}
@@ -183,7 +186,7 @@
       </main>
 
       <!-- Right: Chat Panel -->
-      <div class="flex-1 min-w-0 bg-base-200 overflow-hidden">
+      <div class="flex-1 min-w-72 max-w-md bg-base-200 overflow-hidden">
         <ChatPanel bind:this={chatPanel} contextPage={$currentPage} />
       </div>
     </div>

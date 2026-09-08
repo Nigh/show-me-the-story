@@ -23,6 +23,8 @@ type Config struct {
 	// written when a v3 project is created so newer binaries never need to
 	// guess whether an unmarked project is safe to open.
 	ProjectFormatVersion int           `json:"project_format_version"`
+	CreatedWithVersion   string        `json:"created_with_version,omitempty"`
+	CompatibleAppLine    string        `json:"compatible_app_line,omitempty"`
 	Language             string        `json:"language"` // "zh" 或 "en"，影响 AI 提示词与生成内容；旧项目缺省视为 "zh"
 	Story                StoryConfig   `json:"story"`
 	Prompts              PromptsConfig `json:"prompts"`
@@ -37,6 +39,7 @@ type StoryConfig struct {
 	WritingStyle          string `json:"writing_style"`
 	WritingPOV            string `json:"writing_pov"` // 叙述视角，如第一人称女主、第三人称限知等
 	StorySynopsis         string `json:"story_synopsis"`
+	LongTermDirection     string `json:"long_term_direction,omitempty"`
 }
 
 type PromptsConfig struct {
@@ -78,7 +81,8 @@ const DefaultMaxTokens = 32768
 const DefaultHTTPTimeoutSeconds = 600
 
 // ProjectFormatVersion is the only on-disk project layout this binary writes.
-const ProjectFormatVersion = 3
+const ProjectFormatVersion = 4
+const CompatibleAppLine = "3.1"
 
 func DefaultAPIConfig() *APIConfig {
 	return &APIConfig{
@@ -96,9 +100,9 @@ func DefaultConfigForLang(lang string) *Config {
 	lang = i18n.NormalizeLanguage(lang)
 	cfg := &Config{
 		ProjectFormatVersion: ProjectFormatVersion,
+		CompatibleAppLine:    CompatibleAppLine,
 		Language:             lang,
 		Story: StoryConfig{
-			ChapterCount:          12,
 			TargetWordsPerChapter: 5000,
 		},
 		SkillConfig: &SkillConfig{

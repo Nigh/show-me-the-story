@@ -62,9 +62,9 @@ func TestContinuationOutlineAllowed(t *testing.T) {
 	}{
 		{"outline", 1, true},
 		{"writing", 10, true},
-		{"outline", 0, false},
-		{"writing", 0, false},
-		{"", 5, false},
+		{"outline", 0, true},
+		{"writing", 0, true},
+		{"", 5, true},
 		{"done", 5, false},
 	}
 	for _, c := range cases {

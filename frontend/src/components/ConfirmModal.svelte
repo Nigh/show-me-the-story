@@ -17,7 +17,7 @@
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="fixed inset-0 z-[110] bg-black/50 flex items-center justify-center" on:click={cancel}>
     <div class="bg-base-200 rounded-xl shadow-2xl p-6 max-w-sm mx-4 border border-base-content/10" on:click|stopPropagation>
-      <p class="text-base mb-6">{$confirmModal.message}</p>
+      <p class="text-base mb-6 whitespace-pre-wrap max-h-80 overflow-auto">{$confirmModal.message}</p>
       <div class="flex justify-end gap-2">
         <button class="btn btn-ghost btn-sm" on:click={cancel}>{$t('common.cancel')}</button>
         <button class="btn btn-error btn-sm" on:click={confirm}>{$t('common.confirm')}</button>

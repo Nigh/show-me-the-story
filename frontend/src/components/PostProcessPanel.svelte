@@ -263,7 +263,7 @@
       </div>
 
       {#if pp?.diagnosis_report || pp?.consistency_report}
-        <div class="tabs tabs-boxed tabs-sm w-fit">
+        <div class="tabs tabs-box tabs-sm w-fit">
           <button class="tab {reportTab === 'diagnosis' ? 'tab-active' : ''}" on:click={() => reportTab = 'diagnosis'}>{$t('pp.tab.diagnosis')}</button>
           <button class="tab {reportTab === 'consistency' ? 'tab-active' : ''}" on:click={() => reportTab = 'consistency'}>{$t('pp.tab.consistency')}</button>
         </div>
@@ -363,7 +363,7 @@
                     <div class="flex flex-col gap-1">
                       <span class="badge badge-xs whitespace-nowrap w-fit {statusCls[item.status] || 'badge-ghost'}">{statusLabels[item.status] || item.status}</span>
                       {#if item.error}
-                        <span class="text-error text-[10px] leading-snug break-words" title={item.error}>{item.error}</span>
+                        <span class="text-error text-xs leading-snug break-words" title={item.error}>{item.error}</span>
                       {/if}
                     </div>
                   </td>

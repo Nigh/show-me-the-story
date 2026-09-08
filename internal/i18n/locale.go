@@ -43,6 +43,20 @@ func FromRequest(r *http.Request) string {
 // errorCatalog maps a stable error key to its zh/en messages.
 // Messages may contain %s for args.
 var errorCatalog = map[string]map[string]string{
+	"setting_has_dependents":   {LangZH: "其他关系或组织仍引用该设定，请先核对并处理依赖", LangEN: "Other relationships or organizations still reference this setting; review those dependencies first"},
+	"ending_invalid":           {LangZH: "结尾选项无效，自定义结尾必须填写要求", LangEN: "Invalid ending options; a custom ending requires instructions"},
+	"ending_continue_confirm":  {LangZH: "继续追加将取消原预定完结标记，请确认继续创作", LangEN: "Confirm continuing: this removes the previous planned final-chapter marker"},
+	"fact_impact_confirm":      {LangZH: "此修改影响关联事实，请核对后确认并提交当前正文版本", LangEN: "This edit affects linked facts; review and confirm with the current content revision"},
+	"content_version_conflict": {LangZH: "正文已变更，请刷新后重新核对", LangEN: "The chapter changed; refresh and review again"},
+	"knowledge_failed":         {LangZH: "事实或设定同步未完成，请重试", LangEN: "Fact or setting synchronization is incomplete; retry"},
+	"batch_synopsis_required":  {LangZH: "请填写本批大纲梗概", LangEN: "An outline synopsis is required for this batch"},
+	"batch_count_invalid":      {LangZH: "每批章节数必须为 1 到 36", LangEN: "Each batch must contain 1 to 36 chapters"},
+	"batch_mode_invalid":       {LangZH: "无效的批次生成模式", LangEN: "Invalid batch generation mode"},
+	"batch_book_completed":     {LangZH: "作品已完结，请先恢复连载", LangEN: "Resume the completed book before generating a batch"},
+	"batch_chapter_busy":       {LangZH: "请先处理写作中或待审核章节", LangEN: "Finish the chapter being written or reviewed first"},
+	"batch_replace_invalid":    {LangZH: "只能重新规划末尾且全部未写的完整批次", LangEN: "Only the last entirely unwritten batch can be replanned"},
+	"batch_response_invalid":   {LangZH: "模型返回的章节数量或编号不符合本批要求，请重试", LangEN: "The model returned incorrect chapter numbers or count; please retry"},
+
 	"missing_project_name": {
 		LangZH: "缺少项目名称",
 		LangEN: "Project name is required",

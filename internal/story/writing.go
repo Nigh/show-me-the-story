@@ -115,6 +115,9 @@ func formatExtraWritingConstraintsBlock(constraints, lang string) string {
 }
 
 func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, progressPath string, settings *ProjectSettings, skills []Skill, logger *sse.LogBroadcaster) error {
+	if err := SyncPendingKnowledge(ctx, apiCfg, cfg, state, settings, progressPath, logger); err != nil {
+		return err
+	}
 	if err := llm.ValidateConfig(apiCfg); err != nil {
 		return err
 	}
@@ -271,6 +274,8 @@ func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *c
 
 	logger.StepInfo(6, 6, "正在维护叙事记忆...")
 	syncMemoryAfterChapter(ctx, apiCfg, cfg, state, i, progressPath, logger)
+	// Memory sync commits a copied chapter slice, so refresh the chapter reference.
+	ch = &state.Chapters[i]
 
 	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
 
@@ -369,7 +374,7 @@ func ReviseChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *con
 	}
 
 	chapterIdx := state.CurrentChapterIndex
-	if chapterIdx >= len(state.Chapters) {
+	if chapterIdx < 0 || chapterIdx >= len(state.Chapters) {
 		return fmt.Errorf("章节索引越界")
 	}
 
@@ -491,12 +496,17 @@ func ReviseSpecificChapterAction(ctx context.Context, apiCfg *config.APIConfig, 
 }
 
 func ConfirmChapterAction(state *Progress, progressPath string) error {
+	original := state
+	next := *state
+	next.Chapters = append([]ChapterState(nil), state.Chapters...)
+	next.NarrativeCheckpoints = append([]NarrativeCheckpoint(nil), state.NarrativeCheckpoints...)
+	state = &next
 	if state.Phase != "writing" {
 		return fmt.Errorf("当前不在写作阶段")
 	}
 
 	chapterIdx := state.CurrentChapterIndex
-	if chapterIdx >= len(state.Chapters) {
+	if chapterIdx < 0 || chapterIdx >= len(state.Chapters) {
 		return fmt.Errorf("章节索引越界")
 	}
 
@@ -506,8 +516,23 @@ func ConfirmChapterAction(state *Progress, progressPath string) error {
 	}
 
 	ch.Status = StatusAccepted
+	ch.KnowledgeTracked = true
 	state.CurrentChapterIndex = chapterIdx + 1
-	return SaveProgress(progressPath, state)
+	if state.CurrentChapterIndex%20 == 0 {
+		var summary strings.Builder
+		for i := state.CurrentChapterIndex - 20; i < state.CurrentChapterIndex; i++ {
+			fmt.Fprintf(&summary, "[%d] %s\n", state.Chapters[i].Num, state.Chapters[i].Summary)
+		}
+		state.NarrativeCheckpoints = append(state.NarrativeCheckpoints, NarrativeCheckpoint{
+			StartChapter: state.Chapters[state.CurrentChapterIndex-20].Num,
+			EndChapter:   ch.Num, Summary: strings.TrimSpace(summary.String()),
+		})
+	}
+	if err := SaveProgress(progressPath, state); err != nil {
+		return err
+	}
+	*original = *state
+	return nil
 }
 
 func generateChapterContentStream(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, idx int, settings *ProjectSettings, extraWritingConstraints string, logger *sse.LogBroadcaster) (string, error) {
@@ -524,7 +549,7 @@ func generateChapterContentStream(ctx context.Context, apiCfg *config.APIConfig,
 	foreshadowContext := formatActiveForeshadowsForChapterLang(state.Foreshadows, ch.Num, lang)
 
 	characterContext := buildCharacterContextForLang(settings, ch, lang)
-	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
+	worldviewContext := chapterWorldview(settings, ch, lang)
 	outlineConstraints := buildOutlineConstraintsForLang(state, idx, lang)
 	memoryContext := buildMemoryForLang(state, idx, lang)
 
@@ -535,7 +560,7 @@ func generateChapterContentStream(ctx context.Context, apiCfg *config.APIConfig,
 		"Title":              preferUserValue(cfg.Story.Title, state.Title),
 		"ChapterNum":         fmt.Sprintf("%d", ch.Num),
 		"CorePrompt":         state.CorePrompt,
-		"StorySynopsis":      preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis),
+		"StorySynopsis":      ChapterSynopsis(cfg, state, ch.Num),
 		"HistorySummary":     historySummary,
 		"PreviousEnding":     buildPreviousChapterTailForLang(state, idx, lang),
 		"ChapterTitle":       ch.Title,
@@ -643,7 +668,7 @@ func generateChapterFactCheck(ctx context.Context, apiCfg *config.APIConfig, cfg
 	ch := state.Chapters[idx]
 	lang := cfg.Language
 	outlineConstraints := buildOutlineConstraintsForLang(state, idx, lang)
-	memoryContext := buildMemoryForLang(state, idx, lang)
+	memoryContext := buildMemoryForLang(state, idx, lang, content)
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.FactCheck, map[string]string{
 		"ChapterContent":     content,
@@ -807,8 +832,10 @@ func reviseChapterSegment(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	}
 
 	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
-	characterContext := buildCharacterContextForLang(settings, ch, lang)
-	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
+	contextChapter := ch
+	contextChapter.Outline += "\n" + feedbackForAI
+	characterContext := buildCharacterContextForLang(settings, contextChapter, lang)
+	worldviewContext := chapterWorldview(settings, contextChapter, lang)
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ChapterSegmentRevision, map[string]string{
 		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
@@ -824,6 +851,7 @@ func reviseChapterSegment(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		"UserFeedback":     feedbackForAI,
 	})
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterSegmentRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
+	userPrompt += factProtection(state, ch.Num, lang)
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
@@ -869,8 +897,10 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *config.APIConfig, c
 	lang := cfg.Language
 
 	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
-	characterContext := buildCharacterContextForLang(settings, ch, lang)
-	worldviewContext := buildWorldviewContextForLang(settings, ch.Outline, lang)
+	contextChapter := ch
+	contextChapter.Outline += "\n" + userFeedback
+	characterContext := buildCharacterContextForLang(settings, contextChapter, lang)
+	worldviewContext := chapterWorldview(settings, contextChapter, lang)
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ChapterRevision, map[string]string{
 		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
@@ -885,6 +915,7 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *config.APIConfig, c
 		"UserFeedback":     userFeedback,
 	})
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
+	userPrompt += factProtection(state, ch.Num, lang)
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
@@ -1059,6 +1090,7 @@ func SmoothTransitionsAction(ctx context.Context, apiCfg *config.APIConfig, cfg 
 			"Opening":        opening,
 		})
 		systemPrompt := i18n.SystemPromptFor(cfg.Language, "transition_editor")
+		userPrompt += factProtection(state, ch.Num, cfg.Language)
 
 		resp := llm.CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 		if resp == "" {
@@ -1081,6 +1113,7 @@ func SmoothTransitionsAction(ctx context.Context, apiCfg *config.APIConfig, cfg 
 			ch.Content = revised + "\n\n" + strings.TrimLeft(rest, "\n")
 		}
 		SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
+		ch.KnowledgeTracked = true
 		if err := SaveProgress(progressPath, state); err != nil {
 			return err
 		}
@@ -1131,6 +1164,7 @@ func PolishChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *con
 	}
 
 	systemPrompt := i18n.SystemPromptFor(cfg.Language, "polish_editor")
+	userPrompt += factProtection(state, ch.Num, cfg.Language)
 
 	onChunk := func(chunk string) {
 		logger.ContentChunk(chapterIdx, chunk)
@@ -1143,6 +1177,7 @@ func PolishChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *con
 	}
 
 	ch.Content = stripChapterMetaProse(result, cfg.Language)
+	ch.KnowledgeTracked = true
 	ch.Status = StatusReview
 
 	SaveChapterMarkdown(filepath.Dir(progressPath), *ch, state.Title)
@@ -1178,82 +1213,9 @@ func nextMemoryID(entries []MemoryEntry) int {
 	return maxID + 1
 }
 
-// syncMemoryAfterChapter extracts narrative memory from a chapter and updates the memory store.
-// For revised chapters, old memories from that chapter are automatically deleted before re-extraction.
 func syncMemoryAfterChapter(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, idx int, progressPath string, logger *sse.LogBroadcaster) {
-	if ctx.Err() != nil {
-		return
-	}
-
-	ch := state.Chapters[idx]
-	lang := cfg.Language
-
-	if state.MemoryMaxTokens <= 0 {
-		snapshot := state.StoryConfigSnapshot
-		if snapshot == nil {
-			snapshot = &cfg.Story
-		}
-		state.MemoryMaxTokens = calcMemoryMaxTokens(snapshot.ChapterCount, snapshot.TargetWordsPerChapter)
-	}
-
-	// Delete old memories from this chapter (for revised chapters)
-	var filtered []MemoryEntry
-	for _, m := range state.MemoryEntries {
-		if m.Chapter != ch.Num {
-			filtered = append(filtered, m)
-		}
-	}
-	state.MemoryEntries = filtered
-
-	existingMemory := formatMemoryForUpdatePrompt(state.MemoryEntries, lang)
-
-	userPrompt := config.RenderPrompt(cfg.Prompts.MemoryUpdate, map[string]string{
-		"Title":           preferUserValue(cfg.Story.Title, state.Title),
-		"ChapterNum":      fmt.Sprintf("%d", ch.Num),
-		"ChapterTitle":    ch.Title,
-		"ChapterOutline":  ch.Outline,
-		"ChapterContent":  ch.Content,
-		"ExistingMemory":  existingMemory,
-		"MemoryMaxTokens": fmt.Sprintf("%d", state.MemoryMaxTokens),
-	})
-
-	systemPrompt := i18n.SystemPromptFor(lang, "memory_manager")
-	if systemPrompt == "" {
-		systemPrompt = "你是一位精准的小说叙事记忆管理员。"
-	}
-
-	result := llm.CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
-
-	newMemories, updates, err := parseMemoryUpdateResult(result)
-	if err != nil {
-		logger.InfoKey("log.memory_update_failed")
-		return
-	}
-
-	for _, u := range updates {
-		if u.Action == "delete" {
-			for j := len(state.MemoryEntries) - 1; j >= 0; j-- {
-				if state.MemoryEntries[j].ID == u.ID {
-					state.MemoryEntries = append(state.MemoryEntries[:j], state.MemoryEntries[j+1:]...)
-					break
-				}
-			}
-		}
-	}
-
-	for _, nm := range newMemories {
-		entry := MemoryEntry{
-			ID:       nextMemoryID(state.MemoryEntries),
-			Content:  nm.Content,
-			Category: nm.Category,
-			Chapter:  ch.Num,
-			Position: nm.Position,
-		}
-		state.MemoryEntries = append(state.MemoryEntries, entry)
-	}
-
-	if err := SaveProgress(progressPath, state); err != nil {
-		logger.InfoKey("log.memory_save_failed")
+	if err := SyncChapterMemory(ctx, apiCfg, cfg, state, idx, progressPath, logger); err != nil {
+		logger.WarnKey("log.knowledge_failed", err)
 	}
 }
 

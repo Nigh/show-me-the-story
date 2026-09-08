@@ -54,6 +54,7 @@
     'foreshadow_suggest': { method: 'POST', url: '/api/foreshadows/suggest' },
     'continuation_outline': { method: 'POST', url: '/api/outline/generate-continuation' },
     'settings_reconciliation': { method: 'POST', url: '/api/settings/reconcile' },
+    'knowledge_sync': { method: 'POST', url: '/api/knowledge/sync' },
   };
 
   function isHallucinatedWait(msg, allMsgs, idx) {

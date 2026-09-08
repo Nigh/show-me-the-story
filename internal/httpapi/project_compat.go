@@ -12,6 +12,7 @@ import (
 const (
 	projectCompatibilitySupported = "supported"
 	projectCompatibilityLegacy    = "legacy_incompatible"
+	projectCompatibilityV3        = "v3_incompatible"
 	projectCompatibilityUnknown   = "unknown_incompatible"
 )
 
@@ -45,6 +46,9 @@ func detectProjectCompatibility(projectDir string) (string, error) {
 	if configProbe.ProjectFormatVersion != 0 {
 		if configProbe.ProjectFormatVersion == config.ProjectFormatVersion {
 			return projectCompatibilitySupported, nil
+		}
+		if configProbe.ProjectFormatVersion == 3 {
+			return projectCompatibilityV3, nil
 		}
 		return projectCompatibilityUnknown, nil
 	}
@@ -91,7 +95,20 @@ func detectProjectCompatibility(projectDir string) (string, error) {
 			return projectCompatibilityUnknown, nil
 		}
 	}
-	return projectCompatibilitySupported, nil
+	return projectCompatibilityV3, nil
+}
+
+func compatibilityVersions(kind string) (format, line, recommended string) {
+	switch kind {
+	case projectCompatibilitySupported:
+		return "v4", "v3.1.x", "v3.1.0"
+	case projectCompatibilityV3:
+		return "v3", "v3.0.x", "v3.0.3"
+	case projectCompatibilityLegacy:
+		return "legacy inline", "v2.x", "v2.5.2"
+	default:
+		return "unknown", "", ""
+	}
 }
 
 func ensureProjectCompatible(projectDir string) error {

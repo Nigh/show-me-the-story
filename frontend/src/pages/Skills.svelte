@@ -19,15 +19,15 @@
 </script>
 
 <div class="space-y-4">
- <div class="card bg-base-200 shadow-sm"><div class="card-body">
-  <h2 class="card-title">{$t('skills.install.title')}</h2><div class="tabs tabs-boxed w-fit">{#each ['paste','markdown','zip','folder'] as item}<button class:tab-active={mode===item} class="tab" on:click={()=>mode=item}>{$t(`skills.install.${item}`)}</button>{/each}</div>
+ <div class="card bg-base-200 shadow-sm"><div class="card-body p-4">
+  <h2 class="card-title text-base">{$t('skills.install.title')}</h2><div class="tabs tabs-box w-fit">{#each ['paste','markdown','zip','folder'] as item}<button class:tab-active={mode===item} class="tab" on:click={()=>mode=item}>{$t(`skills.install.${item}`)}</button>{/each}</div>
   {#if mode==='paste'}<textarea class="textarea textarea-bordered w-full h-40 font-mono text-xs" bind:value={markdown} disabled={$taskRunning} placeholder="---&#10;id: my-skill&#10;name: My Skill&#10;category: writing&#10;applies_to: [chapter.generate]&#10;---"></textarea>
   {:else if mode==='folder'}<input class="file-input file-input-bordered w-full" type="file" webkitdirectory multiple disabled={$taskRunning} on:change={e=>folderFiles=Array.from(e.currentTarget.files)}/>{#if folderFiles.length}<p class="text-xs opacity-60">{folderFiles.length} {$t('skills.install.files')}</p>{/if}
   {:else}<input class="file-input file-input-bordered w-full" type="file" accept={mode==='zip'?'.zip':'.md,text/markdown'} disabled={$taskRunning} on:change={e=>selectedFile=e.currentTarget.files[0]}/>{/if}
   <label class="label cursor-pointer justify-start gap-3"><input type="checkbox" class="checkbox checkbox-sm" bind:checked={overwrite} disabled={$taskRunning}/><span>{$t('skills.install.overwrite')}</span></label>
   <button class="btn btn-primary btn-sm w-fit" disabled={$taskRunning||installing} on:click={install}>{installing?$t('skills.install.installing'):$t('skills.install.button')}</button>{#if staticCheck}<div class="alert py-2 {staticCheck.valid?'alert-success':'alert-error'}"><span>{staticCheck.valid?$t('skills.install.valid'):`${$t('skills.install.invalid')}: ${staticCheck.error}`}</span></div>{/if}<p class="text-xs opacity-60">{$t('skills.install.security')}</p>
  </div></div>
- <div class="card bg-base-200 shadow-sm"><div class="card-body"><h2 class="card-title">{$t('skills.title')}</h2><p class="text-sm opacity-60 mb-3">{$t('skills.intro')}</p><div class="overflow-x-auto"><table class="table table-sm">
+ <div class="card bg-base-200 shadow-sm"><div class="card-body p-4"><h2 class="card-title text-base">{$t('skills.title')}</h2><p class="text-sm opacity-60 mb-3">{$t('skills.intro')}</p><div class="overflow-x-auto"><table class="table table-sm">
   <thead><tr><th>{$t('skills.col.name')}</th><th>{$t('skills.col.scope')}</th><th>{$t('skills.col.validation')}</th><th>{$t('skills.col.source')}</th><th>{$t('skills.col.actions')}</th><th>{$t('skills.col.enabled')}</th></tr></thead><tbody>
   {#if $skills.length===0}<tr><td colspan="6" class="text-center opacity-50 py-8">{$t('skills.empty')}</td></tr>{/if}
   {#each $skills as sv}<tr>

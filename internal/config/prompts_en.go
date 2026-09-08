@@ -294,7 +294,7 @@ Output strict JSON only.`,
 [Title] {{.Title}}
 [Story type] {{.StoryType}}
 [Core writing prompt] {{.CorePrompt}}
-[Synopsis] {{.StorySynopsis}}
+[Batch synopsis] {{.StorySynopsis}}
 [Writing style] {{.WritingStyle}}
 [Narrative POV] {{.WritingPOV}}
 

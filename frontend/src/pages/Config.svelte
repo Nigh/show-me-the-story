@@ -143,14 +143,12 @@
     const prev = $config?.story || {};
     const story = {
       ...localStoryCfg,
-      chapter_count: Number(localStoryCfg.chapter_count) || 30,
       target_words_per_chapter: Number(localStoryCfg.target_words_per_chapter) || 2500,
     };
     const settingsChanged =
       story.type !== prev.type ||
       story.writing_style !== prev.writing_style ||
-      story.writing_pov !== prev.writing_pov ||
-      story.story_synopsis !== prev.story_synopsis;
+      story.writing_pov !== prev.writing_pov;
 
     try {
       const saved = await api('PUT', '/api/config', { ...($config || {}), story });
@@ -449,7 +447,7 @@
 <div class="space-y-3">
   <ConfigChangePanel />
   <!-- API + Story Config: side by side -->
-  <div class="grid grid-cols-2 gap-3">
+  <div class="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
     <div class="card bg-base-200 shadow-sm">
       <div class="card-body p-4 gap-2">
         <h3 class="card-title text-base">{$t('config.api.title')}</h3>
@@ -459,7 +457,7 @@
             <input type="text" class="input input-sm w-full" bind:value={localApiCfg.base_url} placeholder="https://api.openai.com/v1" disabled={$taskRunning || testingApi} />
             <label class="label cursor-pointer justify-start gap-2 py-1 px-0 min-h-0">
               <input type="checkbox" class="toggle toggle-xs" bind:checked={localApiCfg.url_strict} disabled={$taskRunning || testingApi} />
-              <span class="label-text text-xs text-base-content/60">{$t('config.api.urlStrict')}</span>
+              <span class="text-xs text-base-content/60">{$t('config.api.urlStrict')}</span>
             </label>
             <p class="text-xs text-base-content/45 mb-1">{$t('config.api.urlStrictHint')}</p>
             {#if resolvedChatURL}
@@ -529,10 +527,6 @@
             <input type="text" class="input input-sm w-full" bind:value={localStoryCfg.title} placeholder={$t('config.story.title.placeholder')} disabled={$taskRunning} />
           </div>
           <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.chapterCount')}</span>
-            <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.chapter_count} disabled={$taskRunning} />
-          </div>
-          <div>
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.targetWords')}</span>
             <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.target_words_per_chapter} disabled={$taskRunning} />
           </div>
@@ -556,17 +550,6 @@
         <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.pov.label')}</span>
         <textarea class="textarea w-full h-20 text-base" bind:value={localStoryCfg.writing_pov} placeholder={$t('config.pov.placeholder')} disabled={$taskRunning}></textarea>
       </div>
-      <div class="flex justify-end">
-        <button class="btn btn-primary btn-xs" on:click={saveStoryConfig} disabled={$taskRunning}>{$t('common.save')}</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Story Synopsis -->
-  <div class="card bg-base-200 shadow-sm">
-    <div class="card-body p-4 gap-2">
-      <h3 class="card-title text-base">{$t('config.synopsis.title')}</h3>
-      <textarea class="textarea w-full h-40 text-base" bind:value={localStoryCfg.story_synopsis} placeholder={$t('config.synopsis.placeholder')} disabled={$taskRunning}></textarea>
       <div class="flex justify-end">
         <button class="btn btn-primary btn-xs" on:click={saveStoryConfig} disabled={$taskRunning}>{$t('common.save')}</button>
       </div>

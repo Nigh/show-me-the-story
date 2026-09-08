@@ -50,18 +50,19 @@ func StartWebServer(apiCfg *config.APIConfig, apiCfgPath string, logger *sse.Log
 	mux.HandleFunc("POST /api/config/apply-changes", h.PostApplyConfigChanges)
 	mux.HandleFunc("DELETE /api/config/pending-changes", h.DeletePendingConfigChanges)
 	mux.HandleFunc("GET /api/progress", h.GetProgress)
+	mux.HandleFunc("GET /api/knowledge", h.GetKnowledge)
+	mux.HandleFunc("POST /api/knowledge/sync", h.PostKnowledgeSync)
+	mux.HandleFunc("POST /api/settings/story-changes", h.PostSettingChange)
 	mux.HandleFunc("DELETE /api/progress", h.DeleteProgress)
 	mux.HandleFunc("GET /api/status", h.GetStatus)
 
-	mux.HandleFunc("POST /api/outline/generate", h.PostOutlineGenerate)
-	mux.HandleFunc("POST /api/outline/confirm", h.PostOutlineConfirm)
 	mux.HandleFunc("POST /api/outline/revise", h.PostOutlineRevise)
 	mux.HandleFunc("POST /api/outline/generate-continuation", h.PostOutlineGenerateContinuation)
+	mux.HandleFunc("POST /api/story/complete", h.PostStoryComplete)
+	mux.HandleFunc("POST /api/story/review", h.PostPlanningReview)
+	mux.HandleFunc("POST /api/story/resume", h.PostStoryResume)
 	mux.HandleFunc("POST /api/outline/characters/confirm", h.PostOutlineCharactersConfirm)
 	mux.HandleFunc("PUT /api/outline/{num}", h.PutChapterOutline)
-	mux.HandleFunc("POST /api/arcs/skeleton", h.PostArcSkeleton)
-	mux.HandleFunc("POST /api/arcs/{id}/outline", h.PostArcOutline)
-	mux.HandleFunc("POST /api/arcs/append", h.PostArcAppend)
 
 	mux.HandleFunc("GET /api/chapters/{num}", h.GetChapterContent)
 	mux.HandleFunc("PUT /api/chapters/{num}/blocks/{id}", h.PutChapterBlock)
@@ -235,12 +236,16 @@ func (h *Handlers) GetProjects(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		formatVersion, appLine, recommended := compatibilityVersions(compatibility)
 		info := map[string]string{
-			"name":          name,
-			"phase":         phase,
-			"title":         title,
-			"language":      lang,
-			"compatibility": compatibility,
+			"name":                    name,
+			"phase":                   phase,
+			"title":                   title,
+			"language":                lang,
+			"compatibility":           compatibility,
+			"project_format":          formatVersion,
+			"compatible_app_line":     appLine,
+			"recommended_app_version": recommended,
 		}
 
 		// Get mod time for sorting
@@ -294,6 +299,7 @@ func (h *Handlers) PostProject(w http.ResponseWriter, r *http.Request) {
 	os.MkdirAll(sessionsDir, 0755)
 
 	cfg := config.DefaultConfigForLang(lang)
+	cfg.CreatedWithVersion = h.version
 	if err := config.SaveConfig(filepath.Join(projectDir, "config.json"), cfg); err != nil {
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "init_project_config_failed", err)
 		return
@@ -379,7 +385,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-UI-Locale, Accept-Language, X-Content-Rev, X-Confirm-Fact-Impact")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return

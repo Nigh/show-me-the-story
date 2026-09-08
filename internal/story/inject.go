@@ -1,9 +1,12 @@
 package story
 
 import (
+	"encoding/json"
 	"fmt"
+	"showmethestory/internal/config"
 	"showmethestory/internal/i18n"
 	"strings"
+	"unicode/utf8"
 )
 
 // Helper functions that produce language-specific text fragments injected
@@ -15,6 +18,9 @@ import (
 // in the requested language.
 func buildOutlineConstraintsForLang(state *Progress, idx int, lang string) string {
 	var past, future strings.Builder
+	if idx >= 0 && idx < len(state.Chapters) {
+		past.WriteString(chapterEnding(state, state.Chapters[idx].Num, lang))
+	}
 	// Arc-aware compression: chapters inside a summarized arc collapse to one
 	// arc-summary line, so 1000-chapter books don't inject every past outline.
 	summarized := func(num int) *Arc {
@@ -133,150 +139,59 @@ func buildHistorySummaryForLang(state *Progress, idx int, lang string) string {
 	return history
 }
 
-// buildCharacterContextForLang returns structured character details injected into writing prompts.
+// buildCharacterContextForLang retrieves chapter-relevant original settings.
 func buildCharacterContextForLang(settings *ProjectSettings, ch ChapterState, lang string) string {
-	var sb strings.Builder
-	chapterOutline := ch.Outline
-
-	if settings != nil && len(settings.Characters) > 0 {
-		castNames := make(map[string]bool)
-		for _, c := range normalizeOutlineCharacters(ch.Characters) {
-			castNames[c.Name] = true
-		}
-		var relevant []Character
-		for _, c := range settings.Characters {
-			name := StripNameMarks(c.Name)
-			if strings.Contains(chapterOutline, name) || castNames[name] {
-				relevant = append(relevant, c)
-			}
-		}
-		if len(relevant) == 0 {
-			relevant = settings.Characters
-		}
-
-		en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-		for _, c := range relevant {
-			sb.WriteString(fmt.Sprintf("【%s】", c.Name))
-			if c.Age != "" {
-				if en {
-					sb.WriteString(fmt.Sprintf(" Age: %s", c.Age))
-				} else {
-					sb.WriteString(fmt.Sprintf(" 年龄:%s", c.Age))
-				}
-			}
-			sb.WriteString("\n")
-			write := func(label, val string) {
-				if val == "" {
-					return
-				}
-				sb.WriteString(fmt.Sprintf("  %s: %s\n", label, val))
-			}
-			if en {
-				write("Appearance", c.Appearance)
-				write("Personality", c.Personality)
-				write("Background", c.Background)
-				write("Motivation", c.Motivation)
-				write("Abilities", c.Abilities)
-				write("Notes", c.Notes)
-			} else {
-				write("外貌", c.Appearance)
-				write("性格", c.Personality)
-				write("背景", c.Background)
-				write("动机", c.Motivation)
-				write("能力", c.Abilities)
-				write("备注", c.Notes)
-			}
-			sb.WriteString("\n")
-		}
+	snapshot := settingsAtChapter(settings, ch.Num)
+	selected, _ := retrieveSettings(snapshot, chapterKnowledgeQuery(ch), settingsContextRunes)
+	selected.Worldview, selected.Organizations = nil, nil
+	data, _ := json.Marshal(settingsEntities(selected))
+	derived := buildOutlineDerivedCharacterContext(ch, snapshot, lang)
+	if utf8.RuneCountInString(derived) > 1000 {
+		derived = ""
 	}
-
-	if derived := buildOutlineDerivedCharacterContext(ch, settings, lang); derived != "" {
-		sb.WriteString(derived)
-	}
-	return sb.String()
+	return knowledgeSelectionNotice(lang) + string(data) + "\n" + derived
 }
 
 func buildWorldviewContextForLang(settings *ProjectSettings, chapterOutline, lang string) string {
-	if settings == nil {
-		return ""
-	}
-
-	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-	var sb strings.Builder
-
-	if len(settings.Worldview) > 0 {
-		var relevant []WorldviewEntry
-		for _, w := range settings.Worldview {
-			if strings.Contains(chapterOutline, w.Name) || strings.Contains(chapterOutline, w.Category) {
-				relevant = append(relevant, w)
-			}
-		}
-		if len(relevant) == 0 {
-			relevant = settings.Worldview
-		}
-		for _, w := range relevant {
-			sb.WriteString(fmt.Sprintf("【%s】(%s)\n  %s\n\n", w.Name, w.Category, w.Description))
-		}
-	}
-
-	if len(settings.Organizations) > 0 {
-		var relevantOrgs []Organization
-		for _, o := range settings.Organizations {
-			if strings.Contains(chapterOutline, o.Name) {
-				relevantOrgs = append(relevantOrgs, o)
-			}
-		}
-		if len(relevantOrgs) == 0 {
-			relevantOrgs = settings.Organizations
-		}
-		for _, o := range relevantOrgs {
-			if en {
-				sb.WriteString(fmt.Sprintf("[Organization: %s] (%s)\n  %s\n", o.Name, o.Type, o.Description))
-				if len(o.Members) > 0 {
-					sb.WriteString(fmt.Sprintf("  Member IDs: %s\n", strings.Join(o.Members, ", ")))
-				}
-			} else {
-				sb.WriteString(fmt.Sprintf("【组织:%s】(%s)\n  %s\n", o.Name, o.Type, o.Description))
-				if len(o.Members) > 0 {
-					sb.WriteString(fmt.Sprintf("  成员IDs: %s\n", strings.Join(o.Members, ", ")))
-				}
-			}
-			sb.WriteString("\n")
-		}
-	}
-
-	return sb.String()
+	selected, _ := retrieveSettings(settings, chapterOutline, settingsContextRunes)
+	selected.Characters, selected.Relations = nil, nil
+	data, _ := json.Marshal(settingsEntities(selected))
+	return knowledgeSelectionNotice(lang) + string(data)
 }
 
-// buildMemoryForLang renders the memory block for injection into writing/fact-check prompts.
-func buildMemoryForLang(state *Progress, idx int, lang string) string {
-	if len(state.MemoryEntries) == 0 {
+func chapterWorldview(settings *ProjectSettings, ch ChapterState, lang string) string {
+	return buildWorldviewContextForLang(settingsAtChapter(settings, ch.Num), chapterKnowledgeQuery(ch), lang)
+}
+
+// An explicit notice prevents a retrieved subset being mistaken for the full registry.
+func knowledgeSelectionNotice(lang string) string {
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		return "\n[Retrieved original records; this is a budgeted subset, not the complete registry. Missing records do not imply absence of a fact/entity. Do not infer new identities or overwrite unseen fields. Evidence snippets may be excerpts.]\n"
+	}
+	return "\n【检索到的原始条目：这是预算内的相关子集，并非完整资料库。未命中不代表事实或实体不存在，不得据此猜测新身份或覆盖未提供的字段；来源片段可能是节选。】\n"
+}
+
+// The optional query includes freshly generated prose during fact checking.
+func buildMemoryForLang(state *Progress, idx int, lang string, query ...string) string {
+	if idx < 0 || idx >= len(state.Chapters) || len(state.MemoryEntries) == 0 {
 		return ""
 	}
-	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-	var sb strings.Builder
-	if en {
-		sb.WriteString("【Story Memory — long-term narrative details from earlier chapters】\n")
-	} else {
-		sb.WriteString("【叙事记忆——早期章节的关键叙事细节】\n")
+	ch := state.Chapters[idx]
+	if len(query) > 0 {
+		ch.Content = query[0]
 	}
-	for _, m := range state.MemoryEntries {
-		snippet := extractSnippet(state, m.Chapter, m.Position, 100)
-		if snippet != "" {
-			if en {
-				sb.WriteString(fmt.Sprintf("[Ch.%d] %s (original: \"%s\")\n", m.Chapter, m.Content, snippet))
-			} else {
-				sb.WriteString(fmt.Sprintf("[第%d章] %s（原文：「%s」）\n", m.Chapter, m.Content, snippet))
-			}
-		} else {
-			if en {
-				sb.WriteString(fmt.Sprintf("[Ch.%d] %s\n", m.Chapter, m.Content))
-			} else {
-				sb.WriteString(fmt.Sprintf("[第%d章] %s\n", m.Chapter, m.Content))
-			}
-		}
+	budget := memoryContextRunes
+	if state.MemoryMaxTokens > 0 {
+		budget = min(budget, state.MemoryMaxTokens*2/3)
 	}
-	return sb.String()
+	notice := knowledgeSelectionNotice(lang)
+	remaining := budget - utf8.RuneCountInString(notice) - 2
+	if remaining <= 0 {
+		return ""
+	}
+	entries := retrieveMemories(state, ch, remaining, true)
+	data, _ := json.Marshal(entries)
+	return notice + string(data)
 }
 
 // extractSnippet extracts approximately maxRunes characters from the chapter content
@@ -465,4 +380,98 @@ func formatForeshadowsForPromptLang(foreshadows []Foreshadow, lang string) strin
 	}
 
 	return sb.String()
+}
+
+func BatchSynopses(state *Progress, lang string) string {
+	var out strings.Builder
+	for _, b := range state.OutlineBatches {
+		out.WriteString(endingPrompt(b, 0, lang))
+		if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+			fmt.Fprintf(&out, "[Batch %d, chapters %d–%d]\n%s\n\n", b.ID, b.StartCh, b.EndCh, b.Synopsis)
+		} else {
+			fmt.Fprintf(&out, "【批次 %d，第 %d–%d 章大纲梗概】\n%s\n\n", b.ID, b.StartCh, b.EndCh, b.Synopsis)
+		}
+	}
+	return out.String()
+}
+
+func memoryLinkPrompt(lang string) string {
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		return "\nRequired output override: return JSON {\"new_memories\":[{\"id\":0,\"content\":\"fact\",\"category\":\"character|location|item|event|promise|other\",\"block_ids\":[1]}]}. Extract all consistency-critical facts, including those in the outline. Link each fact to ALL relevant blocks of THIS chapter using the supplied block IDs, not paragraph positions. For an existing fact reuse its exact ID and content; use id=0 only for a new fact. Include existing facts mentioned again. Do not delete, merge or alter existing facts to meet a token budget. Return an empty array only when no facts apply. Block evidence:\n"
+	}
+	return "\n输出格式覆盖：返回 JSON {\"new_memories\":[{\"id\":0,\"content\":\"事实\",\"category\":\"character|location|item|event|promise|other\",\"block_ids\":[1]}]}。提取所有影响一致性的关键事实，包括大纲中已有的事实。每个事实关联本章所有相关段落，使用下方真实 Block ID，不是段落序号。复用已有事实时保持其 ID 和 content 原文；只有新事实才用 id=0。本章再次提到的已有事实也要返回。不得为了 token 预算删除、合并或改变既有事实。只有确实没有事实时返回空数组。段落证据：\n"
+}
+
+func settingUpdatePrompt(lang string) string {
+	schema := "\nJSON: {\"changes\":[{\"kind\":\"characters|worldview|organizations|relations\",\"entity\":{\"id\":\"existing ID, or empty for new\"},\"block_id\":1,\"evolution\":false,\"conflict\":false,\"reason\":\"evidence explanation\"}]}\n"
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		schema += "Keep fields concise: describe enduring attributes and current state, not a chapter-by-chapter plot log. Preserve existing independent constraints when updating a field. Do not append paraphrases of known facts. Event history and original evidence are stored separately.\n"
+	} else {
+		schema += "字段保持精简：只描述稳定属性与当前状态，不写逐章剧情流水账。更新字段必须保留原有独立约束，不追加已有事实的同义复述。事件历史和原文证据由系统另行保存。\n"
+	}
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		return "Extract setting changes evidenced in the accepted chapter blocks. Reuse existing entity IDs; never guess identities. Supply only changed fields for existing entities, complete required fields for new entities. Mark contradictions, uncertain identities or inferences conflict=true. evolution=true only for explicit chronological developments (e.g. allies becoming enemies), never for factual contradictions. No deletions. New characters: name; worldview: name/category/description; organizations: name/type/description/members; relations: source_id/source_type/target_id/target_type/label (types character/worldview/organization). For new entities use local IDs starting with $ (e.g. $alice); list new characters/worldview first, organizations next, relations last. References may use existing IDs or earlier unambiguous new $IDs. Never link uncertain new entities. The server allocates permanent IDs. Use exact block IDs as evidence. Return changes:[] when nothing changes. Below: existing entities, then chapter blocks." + schema
+	}
+	return "从已确认正文段落中提取有证据的设定变化。已有实体复用 ID，只提交变化字段；新实体提供必填字段。禁止猜测身份。矛盾、身份含糊或推断必须 conflict=true。只有正文明确发生的时间演变（如盟友变敌人）才设 evolution=true，事实矛盾不算演变。禁止删除。新人物：name；世界观：name/category/description；组织：name/type/description/members；关系：source_id/source_type/target_id/target_type/label（类型 character/worldview/organization）。新实体使用 $ 开头的临时 ID，如 $alice，先输出人物和世界观，再组织，再关系；引用可用已有 ID 或之前输出的无歧义新实体 $ID，禁止关联尚有歧义的新实体。服务端分配正式 ID。block_id 必须使用真实段落证据。没有变化返回 changes:[]。下方依次为已有设定和本章段落。" + schema
+}
+
+func BookSynopsis(cfg *config.Config, state *Progress) string {
+	if len(state.OutlineBatches) > 0 {
+		return BatchSynopses(state, cfg.Language)
+	}
+	return preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
+}
+
+func ChapterSynopsis(cfg *config.Config, state *Progress, num int) string {
+	for _, b := range state.OutlineBatches {
+		if num >= b.StartCh && num <= b.EndCh {
+			if i18n.NormalizeLanguage(cfg.Language) == i18n.LangEN {
+				return fmt.Sprintf("[Batch synopsis, chapters %d–%d; follow this chapter's outline without advancing later events]\n%s", b.StartCh, b.EndCh, b.Synopsis)
+			}
+			return fmt.Sprintf("【第 %d–%d 章大纲梗概；仅按本章章纲推进，不得提前展开后续情节】\n%s", b.StartCh, b.EndCh, b.Synopsis)
+		}
+	}
+	return preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
+}
+
+func batchScopeTemplate(lang string) string {
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		return "\n[Required batch synopsis: chapters {{.StartNum}}–{{.EndNum}}]\n{{.OutlineSynopsis}}\n[Long-term direction, optional]\n{{.LongTermDirection}}\nGenerate exactly {{.NewChapterCount}} consecutive chapters in this range, constrained by this batch synopsis. Start the story when there are no existing chapters; otherwise continue the existing plot. Do not treat this batch as the whole book."
+	} else {
+		return "\n【本批大纲梗概：第 {{.StartNum}}–{{.EndNum}} 章，必须遵循】\n{{.OutlineSynopsis}}\n【长期方向（可选）】\n{{.LongTermDirection}}\n严格生成上述范围内连续的 {{.NewChapterCount}} 章，由本批梗概约束。没有已有章节时从故事开篇开始，否则承接已有剧情。不得把本批梗概当成全书计划。"
+	}
+}
+
+func endingPrompt(b OutlineBatch, num int, lang string) string {
+	if b.EndingIntent == "" && !b.PlannedFinal {
+		return ""
+	}
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		if !b.PlannedFinal {
+			return "\n[Ending control] Continue serialization. Close the local beat while leaving a natural next step; do not finish the entire book.\n"
+		}
+		s := fmt.Sprintf("\n[Ending control] Plan the batch toward a book ending at chapter %d. Current chapter: %d (0 means batch planning). Do not finish early. At the final chapter, ending requirements override generic cliffhanger rules. Resolve the main conflict.\n", b.EndCh, num)
+		if b.EndingIntent == "sequel" {
+			s += "Complete this book's arc and preserve a concrete entry point for a sequel.\n"
+		}
+		if b.EndingStyle == "open" {
+			s += "Open ending: establish the main outcome, leaving the future or thematic interpretation open.\n"
+		} else if b.EndingStyle != "custom" {
+			s += "Closed ending: settle the main conflict and principal character arcs.\n"
+		}
+		return s + b.EndingRequirements + "\n"
+	}
+	if !b.PlannedFinal {
+		return "\n【结尾控制】继续连载：完成局部情节并留下自然的下一步，不要写成全书完结。\n"
+	}
+	s := fmt.Sprintf("\n【结尾控制】本批向第 %d 章全书收尾逐步推进。当前章：%d（0 表示批次规划）。不得提前完结；末章结尾要求优先于通用章末钩子规则，须交代主线结果。\n", b.EndCh, num)
+	if b.EndingIntent == "sequel" {
+		s += "完成本书主线，同时保留明确的续作入口。\n"
+	}
+	if b.EndingStyle == "open" {
+		s += "开放式结局：交代主线结果，人物未来或主题解释可以留白。\n"
+	} else if b.EndingStyle != "custom" {
+		s += "闭合式结局：收束主线冲突及主要人物弧线。\n"
+	}
+	return s + b.EndingRequirements + "\n"
 }

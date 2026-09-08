@@ -67,7 +67,7 @@ func chapterHasDeletableContent(ch *ChapterState) bool {
 func purgeMemoryForChapter(state *Progress, chapterNum int) {
 	filtered := state.MemoryEntries[:0]
 	for _, m := range state.MemoryEntries {
-		if m.Chapter != chapterNum {
+		if m.Chapter != chapterNum || len(m.References) > 0 {
 			filtered = append(filtered, m)
 		}
 	}
