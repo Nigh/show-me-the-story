@@ -615,7 +615,7 @@ The memory store bridges the gap left by the rolling summary (which only covers 
 [Memory token budget] {{.MemoryMaxTokens}} tokens
 
 Extraction rules:
-1. Only extract **specific narrative details NOT in the outline** — high-level plot points already in the outline do not need memorising.
+1. Extract all specific facts important to continuity, including facts already in the outline or mentioned again in this chapter.
 2. Focus on these categories:
    - character: speech tics, habits, appearance details, subtle emotional shifts
    - location: place names, scene layout, environmental features
@@ -623,21 +623,18 @@ Extraction rules:
    - event: specific promises, agreements, or information exchanged in dialogue
    - promise: commitments a character made to others or themselves, unfinished obligations
    - other: any other detail with narrative continuity value
-3. Each memory is a single sentence, with the approximate paragraph number in the original chapter (1-indexed, split by paragraph breaks).
-4. If an existing memory entry is superseded or contradicted by this chapter, mark it for deletion in updates.
-5. If the total memory exceeds the token budget (~{{.MemoryMaxTokens}} tokens), merge or remove the least important entries in the response.
+3. Summarize new facts in one sentence with id=0; the server allocates permanent IDs. Use the supplied real block IDs in block_ids.
+4. Reuse only supplied existing IDs and copy their content exactly. Return changed facts as new facts instead of modifying existing facts.
+5. The token budget is for context retrieval; never delete, merge or rewrite existing facts to meet it.
 
 Return JSON:
 {
   "new_memories": [
-    {"content": "memory description", "category": "category", "position": paragraph_number}
-  ],
-  "updates": [
-    {"id": existing_memory_id, "action": "delete", "reason": "reason for deletion"}
+    {"id": 0, "content": "memory description", "category": "character", "block_ids": [1]}
   ]
 }
 
-Only return entries that changed. If this chapter has no memorable new details, return {"new_memories": [], "updates": []}.
+Return new facts and existing facts mentioned again in this chapter. Return {"new_memories": []} only when no facts apply.
 Return JSON only, nothing else.`,
 
 	ArcSkeleton: `You are a senior development editor who specializes in structuring very long novels. Design the volume-level skeleton for the following book (each arc is a self-contained story stage; chapter outlines will be generated arc by arc later).

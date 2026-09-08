@@ -1,9 +1,9 @@
 <script>
   import { currentPage } from './lib/router.js';
-  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage, config } from './lib/stores.js';
+  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage, config, settings, chatSessions, currentChatSession } from './lib/stores.js';
   import { connectSSE } from './lib/sse.js';
   import { api } from './lib/api.js';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { t, uiLocale, setLocale } from './lib/i18n/index.js';
   import TaskTokenBadge from './components/TaskTokenBadge.svelte';
   import Projects from './pages/Projects.svelte';
@@ -19,6 +19,49 @@
   import StorageErrorModal from './components/StorageErrorModal.svelte';
 
   let chatPanel;
+  let initializing = true;
+  let restoring = false;
+  let restoreTimer;
+  let destroyed = false;
+
+  $: if ($taskRunning && !$currentProject) restoreCurrentProject();
+
+  onDestroy(() => { destroyed = true; clearTimeout(restoreTimer); });
+
+  async function restoreCurrentProject() {
+    if (restoring || destroyed) return;
+    restoring = true;
+    try {
+      const cur = await api('GET', '/api/projects/current');
+      if (destroyed) return;
+      if (cur.name && cur.name !== $currentProject) {
+        config.set(null);
+        progress.set(null);
+        settings.set(null);
+        chatSessions.set([]);
+        currentChatSession.set(null);
+        currentProject.set(cur.name);
+        initializing = false;
+        if (cur.language) {
+          projectLanguage.set(cur.language);
+          setLocale(cur.language);
+        }
+        if ($taskRunning) currentPage.set('writing');
+        await Promise.allSettled([
+          api('GET', '/api/config').then(config.set),
+          api('GET', '/api/progress').then(progress.set),
+          api('GET', '/api/settings').then(settings.set),
+          api('GET', '/api/chat/sessions').then(chatSessions.set),
+        ]);
+      }
+      initializing = false;
+    } catch (_) {
+      clearTimeout(restoreTimer);
+      if (!destroyed) restoreTimer = setTimeout(restoreCurrentProject, 2000);
+    } finally {
+      restoring = false;
+    }
+  }
 
   let appVersion = '';
   let latestVersion = '';
@@ -29,6 +72,7 @@
   $: $contextPage = $currentPage;
 
   onMount(async () => {
+    restoreCurrentProject();
     connectSSE();
     // Fetch app version
     try {
@@ -48,22 +92,6 @@
         }
       } catch (e) {}
     }
-    // Check if a project is already selected
-    try {
-      const cur = await api('GET', '/api/projects/current');
-      if (cur.name) {
-        config.set(null);
-        config.set(await api('GET', '/api/config'));
-        currentProject.set(cur.name);
-        if (cur.language) {
-          projectLanguage.set(cur.language);
-          // First time opening this project this session: align UI with project language.
-          // Subsequent toggles persist in localStorage.
-          setLocale(cur.language);
-        }
-        try { const p = await api('GET', '/api/progress'); progress.set(p); } catch (e) {}
-      }
-    } catch (e) {}
   });
 
   $: phase = $progress
@@ -82,7 +110,15 @@
     if (chatPanel) await chatPanel.sendMessageToChat(text);
   }
 
-  function backToProjects() {
+  async function backToProjects() {
+    if ($taskRunning || restoring) return;
+    try {
+      const status = await api('GET', '/api/status');
+      if (status.is_task_running || $taskRunning) {
+        taskRunning.set(true);
+        return;
+      }
+    } catch (_) { return; }
     currentProject.set(null);
     config.set(null);
   }
@@ -112,7 +148,7 @@
       <button
         class="btn btn-ghost btn-xs gap-1"
         on:click={backToProjects}
-        disabled={$taskRunning}
+        disabled={$taskRunning || restoring}
         title={$taskRunning ? $t('app.switchProject.disabled') : $t('app.switchProject.tooltip')}
       >
         {$t('app.switchProject')}
@@ -139,7 +175,11 @@
     </button>
   </header>
 
-  {#if !$currentProject}
+  {#if initializing || ($taskRunning && !$currentProject)}
+    <main class="flex-1 flex items-center justify-center" aria-busy="true">
+      <span class="loading loading-spinner loading-lg"></span>
+    </main>
+  {:else if !$currentProject}
     <!-- Project selection -->
     <main class="flex-1 overflow-y-auto p-6">
       <Projects />
