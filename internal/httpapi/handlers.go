@@ -745,19 +745,19 @@ func (h *Handlers) GetBookExport(w http.ResponseWriter, r *http.Request) {
 		lang = i18n.NormalizeLanguage(h.cfg.Language)
 	}
 	title := h.state.Title
-	if title == "" {
-		title = h.projectName
+	if h.cfg != nil && h.cfg.Story.Title != "" {
+		title = h.cfg.Story.Title
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, "%s\n", title)
+	fmt.Fprintf(w, "# %s", title)
 	for _, ch := range h.state.Chapters {
 		if ch.Content == "" {
 			continue
 		}
 		if lang == i18n.LangEN {
-			fmt.Fprintf(w, "\n\nChapter %d: %s\n\n%s", ch.Num, ch.Title, ch.Content)
+			fmt.Fprintf(w, "\n\n## Chapter %d: %s\n\n%s", ch.Num, ch.Title, ch.Content)
 		} else {
-			fmt.Fprintf(w, "\n\n第 %d 章 %s\n\n%s", ch.Num, ch.Title, ch.Content)
+			fmt.Fprintf(w, "\n\n## 第 %d 章 %s\n\n%s", ch.Num, ch.Title, ch.Content)
 		}
 	}
 }
