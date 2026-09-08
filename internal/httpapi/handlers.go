@@ -2039,7 +2039,9 @@ func (h *Handlers) SSEHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(w, http.StatusOK, h.settings)
+	view := *h.settings
+	view.StoryChanges, view.StorySynced = nil, nil
+	h.writeJSON(w, http.StatusOK, &view)
 }
 
 func (h *Handlers) PostCharacter(w http.ResponseWriter, r *http.Request) {

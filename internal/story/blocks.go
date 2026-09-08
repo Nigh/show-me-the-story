@@ -185,6 +185,8 @@ func ReviseBlockAction(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 	if feedbackForAI == "" {
 		feedbackForAI = i18n.SystemPromptFor(lang, "segment_revision_default_feedback")
 	}
+	contextChapter := *ch
+	contextChapter.Outline += "\n" + feedbackForAI
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ChapterSegmentRevision, map[string]string{
 		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
@@ -193,8 +195,8 @@ func ReviseBlockAction(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 		"HistorySummary":   buildHistorySummaryForLang(state, chapterIdx, lang),
 		"WritingStyle":     cfg.Story.WritingStyle,
 		"WritingPOV":       cfg.Story.WritingPOV,
-		"CharacterContext": buildCharacterContextForLang(settings, *ch, lang),
-		"WorldviewContext": chapterWorldview(settings, *ch, lang),
+		"CharacterContext": buildCharacterContextForLang(settings, contextChapter, lang),
+		"WorldviewContext": chapterWorldview(settings, contextChapter, lang),
 		"QuotedText":       original,
 		"SegmentOriginal":  original,
 		"UserFeedback":     feedbackForAI,

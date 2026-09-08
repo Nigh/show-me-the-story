@@ -28,6 +28,20 @@ func TestKnowledgeSyncOnlyStopsAutoWriteForCancellationOrSaveFailure(t *testing.
 	}
 }
 
+func TestSettingsViewDoesNotShipProvenance(t *testing.T) {
+	h := factHandlers(t)
+	h.settings.Characters = []story.Character{{ID: "c_1", Name: "Alice"}}
+	h.settings.StoryChanges = []story.SettingChange{{ID: 1, Status: "applied", Reason: "HISTORY_SENTINEL"}}
+	h.settings.StorySynced = map[int]string{1: "revision"}
+	res := httptest.NewRecorder()
+	h.GetSettings(res, httptest.NewRequest("GET", "/api/settings", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "Alice") || strings.Contains(res.Body.String(), "story_changes") || strings.Contains(res.Body.String(), "story_synced") {
+		t.Fatal(res.Body.String())
+	}
+	if len(h.settings.StoryChanges) != 1 || h.settings.StorySynced[1] != "revision" {
+		t.Fatal("view removed stored provenance")
+	}
+}
 func factHandlers(t *testing.T) *Handlers {
 	t.Helper()
 	h := NewHandlers(&config.APIConfig{}, "", sse.NewLogBroadcaster(), t.TempDir(), "test")
