@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { api } from '../lib/api.js';
-  import { progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
+  import { config, progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
   import { navigate } from '../lib/router.js';
   import { t } from '../lib/i18n/index.js';
   import { countProseUnits } from '../lib/proseUnits.js';
@@ -407,7 +407,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${p.title || $t('writing.export.defaultName')}.txt`;
+      a.download = `${$config?.story?.title || p.title || $t('writing.export.defaultName')}.txt`;
       a.click();
       URL.revokeObjectURL(url);
       addToast($t('writing.toasts.exportDone', { n: written.length }), 'success');
