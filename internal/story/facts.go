@@ -149,10 +149,40 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 		"MemoryMaxTokens": fmt.Sprint(next.MemoryMaxTokens),
 	})
 	prompt += memoryLinkPrompt(cfg.Language) + "\n" + string(blocks)
-	raw := llm.CallAPIWithRetryLog(ctx, api, i18n.SystemPromptFor(cfg.Language, "memory_manager"), prompt, logger)
-	if err := ctx.Err(); err != nil {
+	var syncErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		raw := llm.CallAPIWithRetryLog(ctx, api, i18n.SystemPromptFor(cfg.Language, "memory_manager"), prompt, logger)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if raw == "" {
+			return fmt.Errorf("%s", i18n.T(cfg.Language, "knowledge_failed"))
+		}
+		next = *state
+		if next.MemoryMaxTokens <= 0 {
+			next.MemoryMaxTokens = calcMemoryMaxTokens(cfg.Story.ChapterCount, cfg.Story.TargetWordsPerChapter)
+		}
+		syncErr = applyChapterMemoryResult(&next, ch, visibleFacts, raw)
+		if syncErr == nil {
+			break
+		}
+		prompt += memoryRetryPrompt(cfg.Language, syncErr)
+	}
+	if syncErr != nil {
+		return syncErr
+	}
+	next.Chapters = append([]ChapterState(nil), state.Chapters...)
+	next.Chapters[idx].MemoryRevision = rev
+	if err := SaveProgress(path, &next); err != nil {
 		return err
 	}
+	*state = next
+	return nil
+}
+
+// Validate a fresh copy for each attempt; no partial facts reach live state.
+func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[int]bool, raw string) error {
+	rev := ChapterRevision(ch)
 	var result struct {
 		NewMemories *[]struct {
 			ID       int    `json:"id"`
@@ -165,9 +195,9 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 		return err
 	}
 	if result.NewMemories == nil {
-		return fmt.Errorf("%s", i18n.T(cfg.Language, "knowledge_failed"))
+		return fmt.Errorf("missing new_memories array")
 	}
-	next.MemoryEntries = append([]MemoryEntry(nil), state.MemoryEntries...)
+	next.MemoryEntries = append([]MemoryEntry(nil), next.MemoryEntries...)
 	for j := range next.MemoryEntries {
 		next.MemoryEntries[j].References = append([]MemoryReference(nil), next.MemoryEntries[j].References...)
 		for k := range next.MemoryEntries[j].References {
@@ -181,7 +211,7 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 	// Old references remain as historical evidence until their replacement is valid.
 	for _, nm := range *result.NewMemories {
 		if nm.ID > 0 && !visibleFacts[nm.ID] {
-			return fmt.Errorf("invalid existing fact identity")
+			return fmt.Errorf("invalid existing fact identity: id=%d was not supplied; use id=0 for new facts", nm.ID)
 		}
 		if nm.ID < 0 || strings.TrimSpace(nm.Content) == "" || len(nm.BlockIDs) == 0 {
 			return fmt.Errorf("invalid fact evidence")
@@ -203,7 +233,7 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 			}
 		}
 		if nm.ID > 0 && (target < 0 || next.MemoryEntries[target].Content != nm.Content) {
-			return fmt.Errorf("invalid existing fact identity")
+			return fmt.Errorf("invalid existing fact identity: id=%d must preserve the supplied content exactly", nm.ID)
 		}
 		refs := []MemoryReference{}
 		seen := map[int]bool{}
@@ -241,11 +271,5 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 		m.References = append(kept, refs...)
 		next.MemoryEntries[target] = m
 	}
-	next.Chapters = append([]ChapterState(nil), state.Chapters...)
-	next.Chapters[idx].MemoryRevision = rev
-	if err := SaveProgress(path, &next); err != nil {
-		return err
-	}
-	*state = next
 	return nil
 }

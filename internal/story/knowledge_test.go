@@ -17,6 +17,64 @@ func factChapter(num int, text string) ChapterState {
 	SyncChapterBlocks(&ch)
 	return ch
 }
+
+func TestMemoryIdentityRetry(t *testing.T) {
+	for _, lang := range []string{"zh", "en"} {
+		for _, invalid := range []string{
+			`{"new_memories":[{"id":99,"content":"Alice has a scar","category":"character","block_ids":[1]}]}`,
+			`{"new_memories":[{"id":7,"content":"Alice has no scar","category":"character","block_ids":[1]}]}`,
+			`{"new_memories":[{"id":0,"content":"New fact","category":"event","block_ids":[1]},{"id":99,"content":"Bad ID","category":"event","block_ids":[1]}]}`,
+			`{"new_memories":`,
+		} {
+			t.Run(lang+invalid, func(t *testing.T) {
+				for _, recover := range []bool{true, false} {
+					state := &Progress{Chapters: []ChapterState{factChapter(1, "Alice has a scar.")}, MemoryEntries: []MemoryEntry{{ID: 7, Content: "Alice has a scar", Category: "character", Chapter: 1}}, NextMemoryID: 8}
+					before, _ := json.Marshal(state.MemoryEntries)
+					calls := 0
+					api := batchAPI(t, func(prompt string) string {
+						calls++
+						if calls == 2 {
+							feedback := "The previous response failed validation:"
+							if lang == "zh" {
+								feedback = "上次输出校验失败："
+							}
+							if !strings.Contains(prompt, feedback) {
+								t.Error("retry lacks correction feedback")
+							}
+							live, _ := json.Marshal(state.MemoryEntries)
+							if string(live) != string(before) || state.NextMemoryID != 8 {
+								t.Error("failed attempt changed live facts or consumed IDs")
+							}
+							if recover {
+								return `{"new_memories":[{"id":7,"content":"Alice has a scar","category":"character","block_ids":[1]}]}`
+							}
+						}
+						return invalid
+					})
+					path := filepath.Join(t.TempDir(), "progress.json")
+					err := SyncChapterMemory(context.Background(), api, config.DefaultConfigForLang(lang), state, 0, path, sse.NewLogBroadcaster())
+					if calls != 2 || (err == nil) != recover {
+						t.Fatalf("calls=%d recover=%v err=%v", calls, recover, err)
+					}
+					loaded, err := LoadProgress(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if recover {
+						if len(loaded.MemoryEntries) != 1 || loaded.MemoryEntries[0].ID != 7 || len(loaded.MemoryEntries[0].References) != 1 || loaded.Chapters[0].MemoryRevision == "" {
+							t.Fatal("corrected identity or evidence was not persisted")
+						}
+					} else {
+						after, _ := json.Marshal(loaded.MemoryEntries)
+						if string(after) != string(before) || loaded.NextMemoryID != 8 || loaded.Chapters[0].MemoryRevision != "" || !loaded.Chapters[0].KnowledgeTracked {
+							t.Fatal("failed retries changed stored facts or lost pending marker")
+						}
+					}
+				}
+			})
+		}
+	}
+}
 func TestEndingControls(t *testing.T) {
 	for _, lang := range []string{"zh", "en"} {
 		state := &Progress{OutlineBatches: []OutlineBatch{{ID: 1, StartCh: 1, EndCh: 2, EndingIntent: "final", PlannedFinal: true}}}
@@ -361,8 +419,12 @@ func TestGenerateChapterReviewAfterMemorySync(t *testing.T) {
 			if err := GenerateChapterAction(context.Background(), api, cfg, state, path, nil, nil, sse.NewLogBroadcaster()); err != nil {
 				t.Fatal(err)
 			}
-			if memoryCalls != 1 {
-				t.Fatalf("memory calls = %d, want 1", memoryCalls)
+			wantCalls := 1
+			if memoryReply == "invalid JSON" {
+				wantCalls = 2
+			}
+			if memoryCalls != wantCalls {
+				t.Fatalf("memory calls = %d, want %d", memoryCalls, wantCalls)
 			}
 			loaded, err := LoadProgress(path)
 			if err != nil {

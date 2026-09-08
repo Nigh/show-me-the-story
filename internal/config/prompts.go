@@ -625,7 +625,7 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
 【记忆库 token 上限】{{.MemoryMaxTokens}}
 
 提取规则：
-1. 只提取**大纲中未体现的**具体叙事细节——大纲已有的高层情节描述不需要记忆
+1. 提取所有影响后续一致性的具体事实，包括大纲中已有且本章再次提到的事实
 2. 重点记忆以下类型：
    - character：角色的口头禅、习惯动作、外貌细节、情绪微妙变化
    - location：具体地名、场景布置、环境特征
@@ -633,21 +633,18 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
    - event：具体对话中的关键承诺、约定、信息交换
    - promise：角色对他人或自己的承诺、未完成的事项
    - other：其他有延续价值的细节
-3. 每条记忆用一句话概括，附带该细节在原文章节中的大致段落序号（从1开始，按段落分隔计算）
-4. 如果已有记忆中的某条因本章内容而过时或被推翻，在 updates 中标记删除
-5. 如果记忆总数超出 token 上限（约 {{.MemoryMaxTokens}} tokens），在 response 中合并或删除最不重要的条目
+3. 新事实用一句话概括，id=0，由系统分配正式 ID；block_ids 使用提供的真实段落 ID
+4. 复用已有事实时只能使用所提供的 ID，content 必须逐字复制。事实发生变化时作为新事实返回，不修改原事实
+5. token 预算仅用于系统检索上下文，不得据此删除、合并或改写已有事实
 
 请以JSON格式返回：
 {
   "new_memories": [
-    {"content": "记忆内容描述", "category": "分类", "position": 段落序号}
-  ],
-  "updates": [
-    {"id": 已有记忆ID, "action": "delete", "reason": "删除原因"}
+    {"id": 0, "content": "记忆内容描述", "category": "character", "block_ids": [1]}
   ]
 }
 
-只返回有变化的内容。如果本章没有值得记忆的新细节，返回 {"new_memories": [], "updates": []}。
+返回本章新事实和再次提及的已有事实；只有无相关事实时返回 {"new_memories": []}。
 请严格以JSON格式输出，不要添加任何额外文字。`,
 
 	ArcSkeleton: `你是一位擅长超长篇小说结构设计的资深策划编辑。请为以下小说设计全书的卷级骨架（每卷是一个相对完整的故事阶段，章节大纲会在之后按卷分批生成）。

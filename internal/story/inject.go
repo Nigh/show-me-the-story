@@ -402,6 +402,13 @@ func memoryLinkPrompt(lang string) string {
 	return "\n输出格式覆盖：返回 JSON {\"new_memories\":[{\"id\":0,\"content\":\"事实\",\"category\":\"character|location|item|event|promise|other\",\"block_ids\":[1]}]}。提取所有影响一致性的关键事实，包括大纲中已有的事实。每个事实关联本章所有相关段落，使用下方真实 Block ID，不是段落序号。复用已有事实时保持其 ID 和 content 原文；只有新事实才用 id=0。本章再次提到的已有事实也要返回。不得为了 token 预算删除、合并或改变既有事实。只有确实没有事实时返回空数组。段落证据：\n"
 }
 
+func memoryRetryPrompt(lang string, err error) string {
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		return "\nThe previous response failed validation: " + err.Error() + ". Return the complete corrected JSON. Only reuse IDs from the supplied existing memories and copy their content exactly. For new or changed facts use id=0. Do not invent IDs or merge existing facts.\n"
+	}
+	return "\n上次输出校验失败：" + err.Error() + "。请返回完整的修正后 JSON。只能复用所提供已有记忆的 ID，并逐字复制其 content；新事实或发生变化的事实用 id=0。不得编造 ID 或合并已有事实。\n"
+}
+
 func settingUpdatePrompt(lang string) string {
 	schema := "\nJSON: {\"changes\":[{\"kind\":\"characters|worldview|organizations|relations\",\"entity\":{\"id\":\"existing ID, or empty for new\"},\"block_id\":1,\"evolution\":false,\"conflict\":false,\"reason\":\"evidence explanation\"}]}\n"
 	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
