@@ -220,7 +220,7 @@ func callAgentAPI(ctx context.Context, apiCfg *config.APIConfig, messages []llm.
 	if err == nil {
 		return result.FinishReason, nil
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || result.Content != "" {
 		return "", err
 	}
 	syncResult, err2 := llm.CallAPIMessagesSync(ctx, &agentCfg, messages)

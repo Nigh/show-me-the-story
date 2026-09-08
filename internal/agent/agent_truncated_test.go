@@ -1,11 +1,29 @@
 package agent
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"showmethestory/internal/config"
 	"showmethestory/internal/llm"
 	"strings"
 	"testing"
 )
+
+func TestAgentPartialStreamDoesNotAppendFallback(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n")
+	}))
+	defer srv.Close()
+	var output strings.Builder
+	_, err := callAgentAPI(context.Background(), &config.APIConfig{BaseURL: srv.URL}, nil, func(s string) { output.WriteString(s) })
+	if err == nil || calls != 1 || output.String() != "partial" {
+		t.Fatalf("err=%v calls=%d output=%q", err, calls, output.String())
+	}
+}
 
 func TestParseToolCallTruncatedJSONNoRepair(t *testing.T) {
 	// 流式截断：缺 </tool_call> 且 JSON 不完整 — 不修复，parseToolCall 应返回 nil
