@@ -36,6 +36,8 @@
 
 ## 批次大纲（当前交互与接口）
 
+- 共用 LLM 流式读取使用 `bufio.Reader`，不再受 Scanner 默认 64 KiB 单行限制；读取失败、损坏 SSE JSON、缺少 `finish_reason` 和 `[DONE]` 的提前 EOF 均返回错误，半截响应不交给大纲 JSON 解析，沿用 API 重试。`data:` 后空格可省略。字符串调用保留 `finish_reason=length` 诊断并停止无效重试；Agent 已收到片段后失败不再拼接同步回退结果。`internal/llm/api_stream_test.go` 覆盖流完整性、长行、请求输出预算和回退。
+
 - 大纲生成标题与提交按钮区分“生成首批大纲”“生成后续大纲”“重新生成末批大纲”。生成章节数输入框右侧实时显示单章或范围（如“此次生成第7章”／“此次生成7-12章”），窄栏换行；按最大已有章号追加，重建按原批起始章且提示“重新生成”。非法数量隐藏范围并禁用提交；范围为 14px，使用 `aria-describedby` 与 `aria-live`，中英文同步。
 
 - 配置页不再提供全书梗概编辑；旧 `config.story.story_synopsis` / `progress.story_synopsis` 保留兼容读取和保存。标题栏显示已保存的小说标题，空白为“无题”/“Untitled”。
