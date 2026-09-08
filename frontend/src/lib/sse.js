@@ -1,6 +1,5 @@
 import { get } from 'svelte/store';
 import { addLog, addToast, config, progress, skills, taskRunning, streamingContent, streamingChapterIdx, taskTokenUsage, currentChatSession, settings, chatSessions, lastFailedTask, currentTaskName, logEntries, postprocess, foreshadowSuggestions, foreshadowShowSuggestions, outlineCharacterSuggestions, outlineCharacterShowSuggestions, pendingConfigChanges, showConfigChangePanel, storageError } from './stores.js';
-import { normalizePostProcessPayload } from './postprocessEvent.js';
 import { api } from './api.js';
 import { getLocale, translate, formatLogEntry, formatToolResult } from './i18n/index.js';
 import { TOKEN_POLL_INTERVAL_MS } from './tokenPoll.js';
@@ -181,8 +180,8 @@ export function connectSSE() {
       lastFailedTask.set({ task: d.task, taskName: taskLabel(d.task) });
     }
 
-    if (d.task === 'postprocess_diagnose' || d.task === 'postprocess_consistency' || d.task === 'postprocess_roadmap' || d.task === 'postprocess_execute') {
-      api('GET', '/api/postprocess').then(p => postprocess.set(p)).catch(() => {});
+      if (d.task === 'proofread_analyze' || d.task === 'proofread_apply') {
+        api('GET', '/api/proofread').then(p => postprocess.set({ book_complete: true, state: p })).catch(() => {});
     }
 
     if (d.task === 'skill_validation' || d.task === 'skill_optimization') {
@@ -300,27 +299,6 @@ export function connectSSE() {
       if (!s) return s;
       const toolCalls = [...(s.pending_tool_calls || []), { name: d.tool_name, status: 'running', args: d.args }];
       return { ...s, pending_tool_calls: toolCalls };
-    });
-  });
-
-  eventSource.addEventListener('postprocess_update', e => {
-    const d = JSON.parse(e.data);
-    // Bare PostProcessState must be wrapped; otherwise $postprocess.state is undefined,
-    // execute-option checkboxes snap/clear, and postprocess_item_done cannot patch roadmap.
-    postprocess.update(pp => normalizePostProcessPayload(d, pp));
-  });
-
-  eventSource.addEventListener('postprocess_roadmap', e => {
-    const d = JSON.parse(e.data);
-    postprocess.update(pp => pp ? { ...pp, state: d } : { book_complete: true, state: d });
-  });
-
-  eventSource.addEventListener('postprocess_item_done', e => {
-    const item = JSON.parse(e.data);
-    postprocess.update(pp => {
-      if (!pp?.state?.roadmap) return pp;
-      const roadmap = pp.state.roadmap.map(r => r.id === item.id ? { ...r, ...item } : r);
-      return { ...pp, state: { ...pp.state, roadmap } };
     });
   });
 

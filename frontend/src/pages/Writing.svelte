@@ -5,7 +5,6 @@
   import { navigate } from '../lib/router.js';
   import { t } from '../lib/i18n/index.js';
   import { countProseUnits } from '../lib/proseUnits.js';
-  import PostProcessPanel from '../components/PostProcessPanel.svelte';
   import TaskTokenBadge from '../components/TaskTokenBadge.svelte';
   import KnowledgePanel from '../components/KnowledgePanel.svelte';
   let facts = [];
@@ -561,8 +560,6 @@
         </div>
       </div>
     {/if}
-
-    <PostProcessPanel />
 
     <!-- 章节区 -->
     <div class="grid grid-cols-[345px_minmax(0,1fr)] gap-3" style="min-height:400px">

@@ -479,10 +479,6 @@
             <input type="number" class="input input-sm w-full" bind:value={localApiCfg.max_tokens} placeholder="{$t('config.api.maxTokens.placeholder')}" disabled={$taskRunning || testingApi} title={$t('config.api.maxTokens.tooltip')} />
           </div>
           <div class="col-span-2">
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.budget')}</span>
-            <input type="number" class="input input-sm w-full" bind:value={localApiCfg.context_budget_tokens} placeholder="900000" disabled={$taskRunning || testingApi} title={$t('config.api.budget.tooltip')} />
-          </div>
-          <div class="col-span-2">
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.key')}</span>
             <input type="password" class="input input-sm w-full" bind:value={localApiCfg.api_key} placeholder="sk-..." disabled={$taskRunning || testingApi} />
           </div>
