@@ -130,6 +130,9 @@ func GenerateChapterAction(ctx context.Context, apiCfg *config.APIConfig, cfg *c
 	}
 
 	i := state.CurrentChapterIndex
+	if err := EnsureNarrativeCheckpoints(ctx, apiCfg, cfg, state, progressPath, logger); err != nil {
+		return err
+	}
 	ch := &state.Chapters[i]
 
 	if ch.Status == StatusAccepted {
@@ -513,16 +516,6 @@ func ConfirmChapterAction(state *Progress, progressPath string) error {
 	ch.Status = StatusAccepted
 	ch.KnowledgeTracked = true
 	state.CurrentChapterIndex = chapterIdx + 1
-	if state.CurrentChapterIndex%20 == 0 {
-		var summary strings.Builder
-		for i := state.CurrentChapterIndex - 20; i < state.CurrentChapterIndex; i++ {
-			fmt.Fprintf(&summary, "[%d] %s\n", state.Chapters[i].Num, state.Chapters[i].Summary)
-		}
-		state.NarrativeCheckpoints = append(state.NarrativeCheckpoints, NarrativeCheckpoint{
-			StartChapter: state.Chapters[state.CurrentChapterIndex-20].Num,
-			EndChapter:   ch.Num, Summary: strings.TrimSpace(summary.String()),
-		})
-	}
 	if err := SaveProgress(progressPath, state); err != nil {
 		return err
 	}
@@ -543,8 +536,7 @@ func generateChapterContentStream(ctx context.Context, apiCfg *config.APIConfig,
 
 	foreshadowContext := formatActiveForeshadowsForChapterLang(state.Foreshadows, ch.Num, lang)
 
-	characterContext := buildCharacterContextForLang(settings, ch, lang)
-	worldviewContext := chapterWorldview(settings, ch, lang)
+	characterContext, worldviewContext := buildChapterSettingsContexts(settings, ch, lang)
 	outlineConstraints := buildOutlineConstraintsForLang(state, idx, lang)
 	memoryContext := buildMemoryForLang(state, idx, lang)
 
@@ -829,8 +821,7 @@ func reviseChapterSegment(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
 	contextChapter := ch
 	contextChapter.Outline += "\n" + feedbackForAI
-	characterContext := buildCharacterContextForLang(settings, contextChapter, lang)
-	worldviewContext := chapterWorldview(settings, contextChapter, lang)
+	characterContext, worldviewContext := buildChapterSettingsContexts(settings, contextChapter, lang)
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ChapterSegmentRevision, map[string]string{
 		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
@@ -894,8 +885,7 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *config.APIConfig, c
 	historySummary := buildHistorySummaryForLang(state, chapterIdx, lang)
 	contextChapter := ch
 	contextChapter.Outline += "\n" + userFeedback
-	characterContext := buildCharacterContextForLang(settings, contextChapter, lang)
-	worldviewContext := chapterWorldview(settings, contextChapter, lang)
+	characterContext, worldviewContext := buildChapterSettingsContexts(settings, contextChapter, lang)
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ChapterRevision, map[string]string{
 		"ChapterNum":       fmt.Sprintf("%d", ch.Num),

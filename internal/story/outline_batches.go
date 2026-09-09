@@ -86,6 +86,9 @@ func GenerateOutlineBatch(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	if err := ValidateOutlineBatch(state, req, cfg.Language); err != nil {
 		return err
 	}
+	if err := EnsureNarrativeCheckpoints(ctx, apiCfg, cfg, state, path, logger); err != nil {
+		return err
+	}
 	next := *state
 	next.Chapters = append([]ChapterState(nil), state.Chapters...)
 	next.OutlineBatches = append([]OutlineBatch(nil), state.OutlineBatches...)
@@ -110,18 +113,14 @@ func GenerateOutlineBatch(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		next.Chapters = kept
 	}
 	start := 1
-	var previous strings.Builder
-	previous.WriteString(BatchSynopses(&next, cfg.Language))
 	for _, ch := range next.Chapters {
 		if ch.Num >= start {
 			start = ch.Num + 1
 		}
-		previous.WriteString(formatChapterLine(ch.Num, ch.Title, ch.Outline, cfg.Language))
-		if ch.Summary != "" {
-			previous.WriteString(ch.Summary + "\n")
-		}
 	}
 	synopsis := strings.TrimSpace(req.Synopsis)
+	previous := BuildPlanningHistory(&next, synopsis+"\n"+req.LongTermDirection, cfg.Language)
+	selectedSettings, _ := retrieveSettings(settings, synopsis+"\n"+req.LongTermDirection, settingsContextRunes)
 	template := cfg.Prompts.ContinuationOutlineGeneration
 	// Always add the explicit scope, including for previously saved custom templates.
 	template += batchScopeTemplate(cfg.Language)
@@ -130,7 +129,7 @@ func GenerateOutlineBatch(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		"Title": preferUserValue(cfg.Story.Title, state.Title), "StoryType": cfg.Story.Type,
 		"CorePrompt": state.CorePrompt, "StorySynopsis": synopsis, "OutlineSynopsis": synopsis,
 		"WritingStyle": cfg.Story.WritingStyle, "WritingPOV": cfg.Story.WritingPOV,
-		"ExistingOutline": previous.String(), "NewChapterCount": fmt.Sprint(req.ChapterCount),
+		"ExistingOutline": previous, "NewChapterCount": fmt.Sprint(req.ChapterCount),
 		"StartNum": fmt.Sprint(start), "EndNum": fmt.Sprint(start + req.ChapterCount - 1),
 		"UserRequirements": synopsis, "LongTermDirection": strings.TrimSpace(req.LongTermDirection),
 	}
@@ -138,7 +137,7 @@ func GenerateOutlineBatch(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	var chapters []OutlineChapter
 	var generatedTitle string
 	for attempt := 0; attempt < 3; attempt++ {
-		resp, err := generateOutlineChaptersOnly(ctx, apiCfg, cfg, settings, template, data, logger)
+		resp, err := generateOutlineChaptersOnly(ctx, apiCfg, cfg, selectedSettings, template, data, logger)
 		if err != nil {
 			return err
 		}

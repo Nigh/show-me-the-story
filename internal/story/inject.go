@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"showmethestory/internal/config"
 	"showmethestory/internal/i18n"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -21,12 +22,24 @@ func buildOutlineConstraintsForLang(state *Progress, idx int, lang string) strin
 	if idx >= 0 && idx < len(state.Chapters) {
 		past.WriteString(chapterEnding(state, state.Chapters[idx].Num, lang))
 	}
-	for i := 0; i < idx && i < len(state.Chapters); i++ {
+	recentStart := max(0, idx-historyRecentChapters)
+	for i := recentStart; i < idx && i < len(state.Chapters); i++ {
 		ch := state.Chapters[i]
 		if strings.TrimSpace(ch.Outline) == "" {
 			continue
 		}
 		past.WriteString(formatChapterLine(ch.Num, ch.Title, ch.Outline, lang))
+	}
+	old := []knowledgeDocument{}
+	if idx > recentStart {
+		query := chapterKnowledgeQuery(state.Chapters[idx])
+		for i := 0; i < recentStart; i++ {
+			ch := state.Chapters[i]
+			old = append(old, knowledgeDocument{text: formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)})
+		}
+		for _, i := range packKnowledge(old, rankKnowledge(old, query), 5000) {
+			past.WriteString(old[i].text)
+		}
 	}
 	end := idx + 1 + futureOutlineWindow
 	if end > len(state.Chapters) {
@@ -65,7 +78,7 @@ func buildOutlineConstraintsForLang(state *Progress, idx int, lang string) strin
 		}
 	}
 	sb.WriteString("\n")
-	return sb.String()
+	return truncateRunesExact(sb.String(), 12000)
 }
 
 func formatChapterLine(num int, title, outline, lang string) string {
@@ -94,20 +107,21 @@ func buildPreviousChapterTailForLang(state *Progress, idx int, lang string) stri
 }
 
 func buildHistorySummaryForLang(state *Progress, idx int, lang string) string {
-	startIdx := 0
-	if idx > 5 {
-		startIdx = idx - 5
+	startIdx := max(0, idx-historyRecentChapters)
+	parts := []string{}
+	if idx > 0 {
+		parts = append(parts, formatCheckpointHistory(state, state.Chapters[startIdx].Num, historyPromptRunes/2, lang))
 	}
-	var history string
 	for i := startIdx; i < idx; i++ {
 		if state.Chapters[i].Summary != "" {
 			if i18n.NormalizeLanguage(lang) == i18n.LangEN {
-				history += fmt.Sprintf("[Chapter %d summary]: %s\n", state.Chapters[i].Num, state.Chapters[i].Summary)
+				parts = append(parts, fmt.Sprintf("[Chapter %d summary]: %s", state.Chapters[i].Num, state.Chapters[i].Summary))
 			} else {
-				history += fmt.Sprintf("[第%d章摘要]: %s\n", state.Chapters[i].Num, state.Chapters[i].Summary)
+				parts = append(parts, fmt.Sprintf("[第%d章摘要]: %s", state.Chapters[i].Num, state.Chapters[i].Summary))
 			}
 		}
 	}
+	history := boundedHistoryFallback(parts, historyPromptRunes)
 	if history == "" {
 		if i18n.NormalizeLanguage(lang) == i18n.LangEN {
 			history = "This is the opening of the story; no prior context."
@@ -140,6 +154,23 @@ func buildWorldviewContextForLang(settings *ProjectSettings, chapterOutline, lan
 
 func chapterWorldview(settings *ProjectSettings, ch ChapterState, lang string) string {
 	return buildWorldviewContextForLang(settingsAtChapter(settings, ch.Num), chapterKnowledgeQuery(ch), lang)
+}
+
+func buildChapterSettingsContexts(settings *ProjectSettings, ch ChapterState, lang string) (string, string) {
+	snapshot := settingsAtChapter(settings, ch.Num)
+	selected, _ := retrieveSettings(snapshot, chapterKnowledgeQuery(ch), settingsContextRunes)
+	characters := *selected
+	characters.Worldview, characters.Organizations = nil, nil
+	world := *selected
+	world.Characters, world.Relations = nil, nil
+	charData, _ := json.Marshal(settingsEntities(&characters))
+	worldData, _ := json.Marshal(settingsEntities(&world))
+	derived := buildOutlineDerivedCharacterContext(ch, snapshot, lang)
+	if utf8.RuneCountInString(derived) > 1000 {
+		derived = ""
+	}
+	notice := knowledgeSelectionNotice(lang)
+	return notice + string(charData) + "\n" + derived, notice + string(worldData)
 }
 
 // An explicit notice prevents a retrieved subset being mistaken for the full registry.
@@ -206,6 +237,15 @@ func formatActiveForeshadowsForChapterLang(foreshadows []Foreshadow, chapterNum 
 			}
 		}
 	}
+	sort.SliceStable(active, func(i, j int) bool {
+		due := func(fs Foreshadow) int {
+			if fs.TargetChapter <= 0 {
+				return 1 << 30
+			}
+			return fs.TargetChapter
+		}
+		return due(active[i]) < due(active[j])
+	})
 	if len(active) == 0 {
 		return ""
 	}
@@ -236,14 +276,15 @@ func formatActiveForeshadowsForChapterLang(foreshadows []Foreshadow, chapterNum 
 		}
 
 		if len(fs.Events) > 0 {
+			events := fs.Events[max(0, len(fs.Events)-3):]
 			if en {
 				sb.WriteString("   Progress so far:\n")
-				for _, ev := range fs.Events {
+				for _, ev := range events {
 					sb.WriteString(fmt.Sprintf("   - Chapter %d: %s\n", ev.Chapter, ev.Note))
 				}
 			} else {
 				sb.WriteString("   已有进展:\n")
-				for _, ev := range fs.Events {
+				for _, ev := range events {
 					sb.WriteString(fmt.Sprintf("   - 第%d章: %s\n", ev.Chapter, ev.Note))
 				}
 			}
@@ -274,7 +315,7 @@ func formatActiveForeshadowsForChapterLang(foreshadows []Foreshadow, chapterNum 
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	return truncateRunesExact(sb.String(), 6000)
 }
 
 // formatForeshadowsForPromptLang renders the foreshadow list given to the update tracker.
@@ -289,6 +330,9 @@ func formatForeshadowsForPromptLang(foreshadows []Foreshadow, lang string) strin
 	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
 	var sb strings.Builder
 	for _, fs := range foreshadows {
+		if fs.Status == ForeshadowResolved || fs.Status == ForeshadowAbandoned {
+			continue
+		}
 		sb.WriteString(fmt.Sprintf("#%d [%s] %s\n", fs.ID, fs.Status, fs.Name))
 		if en {
 			sb.WriteString(fmt.Sprintf("   Description: %s\n", fs.Description))
@@ -306,14 +350,15 @@ func formatForeshadowsForPromptLang(foreshadows []Foreshadow, lang string) strin
 		sb.WriteString("\n")
 
 		if len(fs.Events) > 0 {
+			events := fs.Events[max(0, len(fs.Events)-3):]
 			if en {
 				sb.WriteString("   Progress so far:\n")
-				for _, ev := range fs.Events {
+				for _, ev := range events {
 					sb.WriteString(fmt.Sprintf("   - Chapter %d: %s\n", ev.Chapter, ev.Note))
 				}
 			} else {
 				sb.WriteString("   已有进展:\n")
-				for _, ev := range fs.Events {
+				for _, ev := range events {
 					sb.WriteString(fmt.Sprintf("   - 第%d章: %s\n", ev.Chapter, ev.Note))
 				}
 			}
@@ -330,7 +375,13 @@ func formatForeshadowsForPromptLang(foreshadows []Foreshadow, lang string) strin
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	if sb.Len() == 0 {
+		if en {
+			return "(none)"
+		}
+		return "无"
+	}
+	return truncateRunesExact(sb.String(), 6000)
 }
 
 func BatchSynopses(state *Progress, lang string) string {

@@ -349,13 +349,7 @@ func (h *Handlers) PutAPIConfig(w http.ResponseWriter, r *http.Request) {
 	if newCfg.HTTPTimeoutSeconds <= 0 {
 		newCfg.HTTPTimeoutSeconds = config.DefaultHTTPTimeoutSeconds
 	}
-	if newCfg.ContextBudgetTokens <= 0 {
-		if window := llm.FetchModelContextWindow(&newCfg); window > 0 {
-			newCfg.ContextBudgetTokens = window
-		} else {
-			newCfg.ContextBudgetTokens = config.DefaultContextBudgetTokens
-		}
-	}
+	llm.EnsureContextBudget(&newCfg)
 
 	data, err := json.MarshalIndent(newCfg, "", "  ")
 	if err != nil {

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -54,17 +53,20 @@ func (h *Handlers) PostPlanningReview(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer h.endTask()
 		h.logger.TaskStart("planning_review")
-		var history strings.Builder
 		through := 0
 		for _, ch := range h.state.Chapters {
 			if ch.Status == story.StatusAccepted {
-				fmt.Fprintf(&history, "[%d %s] %s\n", ch.Num, ch.Title, ch.Summary)
 				through = ch.Num
 			}
 		}
-		prompt := "Review the accepted novel chapters below. Summarize plot and character state, identify consistency or pacing risks and active foreshadows, then propose several optional directions for the next planning batch. Do not decide for the author.\n\n" + history.String()
+		if err := story.EnsureNarrativeCheckpoints(h.taskCtx, h.apiCfg, h.cfg, h.state, h.progressPath, h.logger); err != nil {
+			h.logger.TaskEnd("planning_review", false)
+			return
+		}
+		history := story.BuildPlanningHistory(h.state, h.state.LongTermDirection, h.cfg.Language)
+		prompt := "Review the accepted novel chapters below. Summarize plot and character state, identify consistency or pacing risks and active foreshadows, then propose several optional directions for the next planning batch. Do not decide for the author.\n\n" + history
 		if i18n.NormalizeLanguage(h.cfg.Language) == i18n.LangZH {
-			prompt = "复盘以下已确认章节：总结剧情与人物状态，指出一致性、节奏风险和活跃伏笔，并提出数个下一批剧情方向供作者选择，不要替作者作决定。\n\n" + history.String()
+			prompt = "复盘以下已确认章节：总结剧情与人物状态，指出一致性、节奏风险和活跃伏笔，并提出数个下一批剧情方向供作者选择，不要替作者作决定。\n\n" + history
 		}
 		content := llm.CallAPIWithRetryLog(h.taskCtx, h.apiCfg, i18n.SystemPromptFor(h.cfg.Language, "author_default"), prompt, h.logger)
 		if strings.TrimSpace(content) == "" {
