@@ -593,6 +593,10 @@ Return JSON:
 Return new facts and existing facts mentioned again in this chapter. Return {"new_memories": []} only when no facts apply.
 Return JSON only, nothing else.`,
 
+	HistoryCompression: `Compress the following novel history into a compact checkpoint for future continuation. Preserve current character states, relationship changes, unresolved promises, key items and locations, timeline facts, one-time events that already happened, and unresolved foreshadows. Merge duplicates, do not imitate the prose, and invent nothing. Return only the summary, at most {{.MaxRunes}} characters.
+
+{{.History}}`,
+
 	ImportMetaAnalysis: `You are a professional fiction editor. The user is importing a published novel. Below are an opening excerpt and the chapter title list. Analyze them and extract the work's metadata.
 
 [Opening excerpt]

@@ -240,44 +240,11 @@ To back up or migrate, copy the data directory.
 
 ## Recommended limits
 
-Every AI call in this tool (outline generation, chapter writing, fact-checking, etc.) injects historical summaries, prior outlines, character settings, active foreshadows, narrative memory, and more into the prompt. The **full outline constraints** block (all previous chapter outlines + next 10 chapters) grows linearly with chapter count and is the largest token consumer. The recommended chapter limit is primarily determined by the **token window** — the outline constraints grow linearly until the prompt exceeds the model's context limit.
+Writing context now has a fixed budget instead of growing without limit. It keeps the latest 20 chapter summaries and the previous chapter ending, retrieves older outlines by relevance, and includes at most 10 future outlines. Facts, settings, and foreshadows are also selected within bounded contexts. Every request reserves room for model output and tokenizer variance; if the conservative estimate exceeds `context_budget_tokens`, it stops before contacting the provider.
 
-### Per-chapter writing call estimate
+After a work exceeds 40 accepted chapters, the next writing, batch-planning, or planning-review task compresses history older than the latest 20 chapters into persistent 20-chapter checkpoints. Every ten sibling checkpoints are compressed into the next level. Editing or deleting an old chapter invalidates and rebuilds the affected summaries; if the compression call fails temporarily, a bounded local fallback is used without blocking continuation.
 
-| Current chapter | Input tokens (excl. output) | Notes |
-|----------------|----------------------------|-------|
-| 10 | ~9,000 | Short outline block |
-| 30 | ~12,000 | Default config |
-| 50 | ~17,000 | Outline block ~9K |
-| 80 | ~22,000 | Outline block ~13.5K |
-| 100 | ~27,000 | Outline block ~17K |
-
-> Based on 2,500 words/chapter and 5 characters. At 5,000 words/chapter the output doubles (~7,500 tokens). Fact-check retries (up to 3×) can double total consumption in the worst case.
-
-### Recommendations by model
-
-The recommended chapter limit is primarily determined by the **token window** (outline constraints grow with chapter count). Models differ in **writing quality** (prose fluency, instruction adherence, literary polish), not in how many chapters they can keep consistent — because the context injected each chapter (settings, outlines, summaries, foreshadows, narrative memory) is identical for all models.
-
-| Model | Context | Chapters | Words/chapter | Total words | Writing quality notes |
-|-------|---------|----------|--------------|-------------|----------------------|
-| GPT-5.5 | 1M | 50–80 | 2,500–5,000 | 120–400K | Flagship: fluent prose, high instruction fidelity, rarely invents beyond outline |
-| Claude Opus 4.8 | 1M | 50–80 | 2,500–5,000 | 120–400K | Best literary quality, nuanced descriptions, excels at complex characters |
-| Gemini 3.5 Flash | 1M | 50–80 | 2,500–5,000 | 120–400K | Fast and cost-effective, good writing quality |
-| DeepSeek-V4-Pro | 1M | 50–80 | 2,500–5,000 | 120–400K | Excellent value, good quality, occasional manual tweaks needed |
-| GPT-5.4 | 1M | 50–80 | 2,500–5,000 | 120–400K | Strong all-round capability, stable for mid-to-long novels |
-| Claude Sonnet 4.6 | 1M | 50–80 | 2,500–5,000 | 120–400K | Fast and good quality, excellent value |
-| DeepSeek-V4-Flash | 1M | 50–80 | 1,500–3,000 | 75–240K | Ultra-low cost, decent quality, may need more manual edits |
-| GPT-5.4 mini | 400K | 30–50 | 1,500–3,000 | 45–150K | Low cost and fast, limited by 400K window |
-| Qwen3-235B (local) | 128K | 20–30 | 2,000–3,000 | 40–90K | Zero API cost, limited by 128K window |
-| Qwen3-32B (local) | 128K | 15–25 | 1,500–2,500 | 22–60K | Lightweight local model, limited by 128K window |
-
-> **On context information and model capability**:
-> - **Settings and outlines are identical for all models**: character/world/organisation settings are injected fresh every chapter, all previous chapter outlines are injected in full, and the foreshadow system tracks cross-chapter threads independently. None of this varies by model.
-> - **The 5-chapter detail window is a fixed tool design**: the system keeps detailed summaries for the last 5 chapters (~250 words each, covering character dynamics, psychological arcs, key details) and injects ~800 words of the previous chapter's ending. Full prose from 6+ chapters ago is not visible, but key narrative details are preserved by the narrative memory system.
-> - **Narrative memory bridges the long-term gap**: after each chapter, the AI extracts key narrative details not in the outline (character speech tics, specific promises, prop details, etc.) and stores them in a cross-chapter memory bank injected into subsequent writing prompts within the available budget. Facts are not deleted to meet prompt budgets; chapter revisions mark old references stale and add new references after a successful sync.
-> - **Summaries remain the foundation for recent chapters**: the memory system focuses on preserving cross-chapter key details, while the last 5 chapters' detailed summaries provide full plot progression, character states, and emotional tone. The two complement each other to maintain narrative coherence.
-> - **Models differ in writing quality, not consistency span**: flagship models (GPT-5.5, Claude Opus 4.8) produce more fluent prose, follow instructions more faithfully, and are less likely to invent outline-absent plot points. Cheaper models may need more manual editing. But the context injected is the same for all models.
-> - Local open-source models (like Qwen3) depend on hardware and quantisation; the table assumes full-precision inference. Quantised deployments will see some quality loss.
+The model still needs enough context for the requested chapter output, current batch synopsis, and bounded knowledge context. A larger window does not by itself guarantee better long-range consistency; models also differ in how effectively they use supplied context.
 
 ### Proofreading model calls
 
@@ -285,13 +252,13 @@ Automatic proofreading and report analysis process one chapter at a time, so the
 
 ### Notes for very large books
 
-- **Token window is the primary limit**: at 100 chapters, outline injection is ~27K tokens plus ~15K for other context, totalling ~42K input tokens — well within 128K+ models. The real bottleneck is not "fitting" but that very long outlines may be harder for the AI to fully utilise.
-- **Outline generation**: generating 80+ chapter outlines in one pass also requires large output budgets; use a 128K+ model.
-- **Fact-check**: up to 3 retries; worst case for 50 ch × 5,000 words can consume ~100K tokens per chapter.
-- **Foreshadow system**: active foreshadows grow with chapters, adding ~0.5–1.5K tokens/chapter.
+- **Context budget**: when the model endpoint reports its real window, the app automatically clamps an oversized setting. Otherwise configure it manually; a smaller value triggers local protection earlier.
+- **Outline generation**: each batch remains limited to 36 chapters. Planning uses hierarchical checkpoints, recent batches, and relevant older chapters instead of the complete historical outline.
+- **Fact-check**: up to three retries can increase total token spend, while every individual request remains budget-limited.
+- **Foreshadow system**: only unresolved threads and their latest three progress events are injected; complete history remains stored in the project.
 - **Narrative memory**: the token budget scales with book size (up to 20000 tokens), so longer novels get a larger memory bank to retain more early details.
 
-> **TL;DR**: the default config (30 chapters × 2,500 words) works well with most mainstream models. 100+ chapter novels are primarily limited by token window (need 128K+ models). The narrative memory system automatically maintains cross-chapter detail consistency.
+> **TL;DR**: hundreds of chapters no longer make each prompt grow linearly through complete historical outlines. Hierarchical summaries preserve the distant arc, BM25 retrieval supplies precise facts and settings, and the final budget check prevents oversized requests.
 
 ## Notes
 

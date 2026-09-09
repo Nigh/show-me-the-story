@@ -55,6 +55,12 @@ type CompletionResult struct {
 // A server-side output limit will not recover by retrying the same request.
 type outputLimitError struct{ maxTokens int }
 
+type contextBudgetError struct{ prompt, budget int }
+
+func (e *contextBudgetError) Error() string {
+	return fmt.Sprintf("estimated prompt size %d tokens exceeds context input budget %d; reduce project context or increase the configured context window", e.prompt, e.budget)
+}
+
 func (e *outputLimitError) Error() string {
 	return fmt.Sprintf("API output truncated (finish_reason=length, requested max_tokens=%d); check provider output/reasoning limits or reduce the requested batch size", e.maxTokens)
 }
@@ -107,15 +113,17 @@ func normalizeURL(apiCfg *config.APIConfig) string {
 	return resolveChatCompletionsURL(apiCfg.BaseURL, apiCfg.URLStrict)
 }
 
-// EnsureContextBudget fills ContextBudgetTokens when unset: it tries the
-// model's real context window first, then falls back to the default.
+// EnsureContextBudget fills an unset budget and clamps configured values to a
+// smaller model-reported window. A deliberate smaller user limit is retained.
 func EnsureContextBudget(apiCfg *config.APIConfig) {
-	if apiCfg == nil || apiCfg.ContextBudgetTokens > 0 {
+	if apiCfg == nil {
 		return
 	}
 	if window := FetchModelContextWindow(apiCfg); window > 0 {
-		apiCfg.ContextBudgetTokens = window
-	} else {
+		if apiCfg.ContextBudgetTokens <= 0 || apiCfg.ContextBudgetTokens > window {
+			apiCfg.ContextBudgetTokens = window
+		}
+	} else if apiCfg.ContextBudgetTokens <= 0 {
 		apiCfg.ContextBudgetTokens = config.DefaultContextBudgetTokens
 	}
 }
@@ -177,6 +185,10 @@ func IsFatalAPIError(err error) bool {
 	if errors.As(err, &limit) {
 		return true
 	}
+	var budget *contextBudgetError
+	if errors.As(err, &budget) {
+		return true
+	}
 	msg := err.Error()
 	// 注意：不要把所有 "dial tcp" 都当作致命错误——
 	// "dial tcp ... i/o timeout" 等临时网络故障应当重试。
@@ -193,6 +205,32 @@ func IsFatalAPIError(err error) bool {
 		return true
 	}
 	return false
+}
+
+// PromptInputBudget reserves output capacity and a small provider/tokenizer
+// margin. Estimates deliberately use the project's conservative rune ratio.
+func PromptInputBudget(apiCfg *config.APIConfig) int {
+	window := config.DefaultContextBudgetTokens
+	output := config.DefaultMaxTokens
+	if apiCfg != nil {
+		if apiCfg.ContextBudgetTokens > 0 {
+			window = apiCfg.ContextBudgetTokens
+		}
+		if apiCfg.MaxTokens > 0 {
+			output = apiCfg.MaxTokens
+		}
+	}
+	margin := max(4096, window/20)
+	return max(0, window-output-margin)
+}
+
+func validateContextBudget(apiCfg *config.APIConfig, messages []Message) error {
+	prompt := EstimateTokensFromRunes(countMessageRunes(messages))
+	budget := PromptInputBudget(apiCfg)
+	if prompt > budget {
+		return &contextBudgetError{prompt: prompt, budget: budget}
+	}
+	return nil
 }
 
 func CallAPI(ctx context.Context, apiCfg *config.APIConfig, system, user string) (string, error) {
@@ -229,6 +267,9 @@ func CallAPIMessages(ctx context.Context, apiCfg *config.APIConfig, messages []M
 
 // CallAPIMessagesSync 同步 HTTP 调用（仅作流式失败时的回退）。
 func CallAPIMessagesSync(ctx context.Context, apiCfg *config.APIConfig, messages []Message) (CompletionResult, error) {
+	if err := validateContextBudget(apiCfg, messages); err != nil {
+		return CompletionResult{}, err
+	}
 	fullURL := normalizeURL(apiCfg)
 	tracker := TaskTokensFromContext(ctx)
 	tracker.beginCall(messages)
@@ -369,6 +410,9 @@ func CallAPIStream(ctx context.Context, apiCfg *config.APIConfig, system, user s
 
 // CallAPIStreamMessages 以完整的多轮消息数组调用 API（流式）。
 func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messages []Message, onChunk func(string)) (CompletionResult, error) {
+	if err := validateContextBudget(apiCfg, messages); err != nil {
+		return CompletionResult{}, err
+	}
 	fullURL := normalizeURL(apiCfg)
 	tracker := TaskTokensFromContext(ctx)
 	tracker.beginCall(messages)

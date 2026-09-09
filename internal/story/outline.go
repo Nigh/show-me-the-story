@@ -124,32 +124,20 @@ func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, 
 
 func reviseOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, userFeedback, progressPath, cfgPath string, logger *sse.LogBroadcaster) error {
 	lang := cfg.Language
-	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-
-	lockedChapters := ""
+	lockedChapters := BuildPlanningHistory(state, userFeedback, lang)
+	currentOutline := ""
 	for _, ch := range state.Chapters {
-		if ch.Status == StatusAccepted {
-			lockedChapters += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
+		if ch.Status != StatusAccepted {
+			currentOutline += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
 		}
 	}
-	if lockedChapters == "" {
-		if en {
-			lockedChapters = "(no locked chapters)"
-		} else {
-			lockedChapters = "无已锁定章节。"
-		}
-	}
-
-	currentOutline := BatchSynopses(state, lang)
-	for _, ch := range state.Chapters {
-		currentOutline += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
-	}
+	selectedSettings, _ := retrieveSettings(settings, userFeedback+"\n"+currentOutline, settingsContextRunes)
 
 	data := mergeOutlinePromptData(map[string]string{
 		"CurrentOutline": currentOutline,
 		"UserFeedback":   userFeedback,
 		"LockedChapters": lockedChapters,
-	}, cfg, settings)
+	}, cfg, selectedSettings)
 
 	systemPrompt := i18n.SystemPromptFor(lang, "outline_editor_locked_json")
 	minLen, _ := calcOutlineLengthRange(cfg.Story.TargetWordsPerChapter)
@@ -158,7 +146,7 @@ func reviseOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Co
 	var lastShort []int
 	for attempt := 0; attempt < outlineGenMaxAttempts; attempt++ {
 		userPrompt := finalizeOutlinePrompt(cfg.Prompts.OutlineRevision,
-			config.RenderPrompt(cfg.Prompts.OutlineRevision, data), cfg, settings)
+			config.RenderPrompt(cfg.Prompts.OutlineRevision, data), cfg, selectedSettings)
 		if attempt > 0 {
 			userPrompt += formatShortOutlineRetryFeedback(lastShort, minLen, lang)
 		}
@@ -228,6 +216,9 @@ func cleanJSONResponse(s string) string {
 
 func ReviseOutlineAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, progressPath, cfgPath, feedback string, logger *sse.LogBroadcaster) error {
 	logger.StepInfo(1, 2, "正在根据意见修订大纲...")
+	if err := EnsureNarrativeCheckpoints(ctx, apiCfg, cfg, state, progressPath, logger); err != nil {
+		return err
+	}
 
 	if err := reviseOutline(ctx, apiCfg, cfg, state, settings, feedback, progressPath, cfgPath, logger); err != nil {
 		return fmt.Errorf("修订大纲失败: %w", err)

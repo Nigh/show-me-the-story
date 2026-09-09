@@ -15,7 +15,7 @@ type APIConfig struct {
 	Model               string `json:"model"`
 	MaxTokens           int    `json:"max_tokens,omitempty"` // 0 = 模型默认；新建默认 32768；Agent 调用建议 ≥ 8192
 	HTTPTimeoutSeconds  int    `json:"http_timeout_seconds"`
-	ContextBudgetTokens int    `json:"context_budget_tokens"` // 全书优化上下文预算，默认 900000
+	ContextBudgetTokens int    `json:"context_budget_tokens"` // 模型上下文预算，默认 300000
 }
 
 type Config struct {
@@ -55,6 +55,7 @@ type PromptsConfig struct {
 	BookConsistencyCheck          string `json:"book_consistency_check"`
 	BookRoadmap                   string `json:"book_roadmap"`
 	MemoryUpdate                  string `json:"memory_update"`
+	HistoryCompression            string `json:"history_compression,omitempty"`
 	ImportMetaAnalysis            string `json:"import_meta_analysis"`
 	ImportChapterAnalysis         string `json:"import_chapter_analysis"`
 }
@@ -256,6 +257,9 @@ func (p *PromptsConfig) ApplyDefaults(lang string) {
 	}
 	if p.MemoryUpdate == "" {
 		p.MemoryUpdate = defaults.MemoryUpdate
+	}
+	if p.HistoryCompression == "" {
+		p.HistoryCompression = defaults.HistoryCompression
 	}
 	if p.ImportMetaAnalysis == "" {
 		p.ImportMetaAnalysis = defaults.ImportMetaAnalysis

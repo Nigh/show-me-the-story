@@ -58,6 +58,20 @@ func TestStreamIntegrity(t *testing.T) {
 	}
 }
 
+func TestPromptContextBudgetIsFatal(t *testing.T) {
+	cfg := &config.APIConfig{ContextBudgetTokens: 10000, MaxTokens: 4000}
+	if got := PromptInputBudget(cfg); got != 1904 {
+		t.Fatalf("input budget = %d", got)
+	}
+	if err := validateContextBudget(cfg, []Message{{Role: "user", Content: strings.Repeat("x", 1269)}}); err != nil {
+		t.Fatal("small prompt rejected", err)
+	}
+	err := validateContextBudget(cfg, []Message{{Role: "user", Content: strings.Repeat("x", 1270)}})
+	if err == nil || !IsFatalAPIError(err) {
+		t.Fatal("oversized prompt was not a fatal error", err)
+	}
+}
+
 func TestBufferedCompletionErrors(t *testing.T) {
 	for _, mode := range []string{"partial", "length", "fallback", "fallback length", "timeout"} {
 		t.Run(mode, func(t *testing.T) {
