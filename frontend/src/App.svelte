@@ -67,7 +67,6 @@
   let appVersion = '';
   let latestVersion = '';
   let hasUpdate = false;
-  const releasesURL = 'https://github.com/Nigh/show-me-the-story/releases';
   const latestReleaseURL = 'https://github.com/Nigh/show-me-the-story/releases/latest';
 
   $: $contextPage = $currentPage;
@@ -213,9 +212,9 @@
         {#if $currentPage === 'config'}
           <Config {sendToChat} />
         {:else if $currentPage === 'outline'}
-          <Outline {sendToChat} />
+          <Outline />
         {:else if $currentPage === 'writing'}
-          <Writing {sendToChat} />
+          <Writing />
         {:else if $currentPage === 'proofread'}
           <Proofread />
         {:else if $currentPage === 'foreshadows'}

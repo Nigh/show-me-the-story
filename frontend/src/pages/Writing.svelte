@@ -50,9 +50,6 @@
 
   const OUTLINE_FOCUS_KEY = 'showmethestory.outlineFocusChapter';
 
-  // 保留 prop 以兼容 App 传参
-  export const sendToChat = async () => {};
-
   onMount(async () => {
     try {
       const res = await api('GET', '/api/autoconfirm');
