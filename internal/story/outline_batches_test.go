@@ -43,8 +43,40 @@ func batchAnswer(start, count int) string {
 	for i := range chapters {
 		chapters[i] = OutlineChapter{Num: start + i, Title: fmt.Sprint(start + i), Outline: strings.Repeat("具体情节", 100)}
 	}
-	b, _ := json.Marshal(map[string]any{"chapters": chapters})
+	b, _ := json.Marshal(map[string]any{"title": "Generated Title", "chapters": chapters})
 	return string(b)
+}
+
+func TestFirstOutlineBatchFillsEmptyTitle(t *testing.T) {
+	cfg := config.DefaultConfigForLang("zh")
+	cfg.Prompts.ContinuationOutlineGeneration = "CUSTOM"
+	state := &Progress{}
+	api := batchAPI(t, func(prompt string) string {
+		if !strings.Contains(prompt, "CUSTOM") {
+			return `{}`
+		}
+		if !strings.Contains(prompt, "title") {
+			t.Fatal("prompt did not request a title")
+		}
+		var response map[string]any
+		if err := json.Unmarshal([]byte(batchAnswer(1, 1)), &response); err != nil {
+			t.Fatal(err)
+		}
+		response["title"] = "自动书名"
+		b, _ := json.Marshal(response)
+		return string(b)
+	})
+	path := filepath.Join(t.TempDir(), "progress.json")
+	if err := GenerateOutlineBatch(context.Background(), api, cfg, state, nil, OutlineBatchRequest{ChapterCount: 1, Synopsis: "故事开端"}, path, sse.NewLogBroadcaster()); err != nil {
+		t.Fatal(err)
+	}
+	if state.Title != "自动书名" {
+		t.Fatalf("title = %q", state.Title)
+	}
+	loaded, err := LoadProgress(path)
+	if err != nil || loaded.Title != "自动书名" {
+		t.Fatalf("persisted title = %q, err = %v", loaded.Title, err)
+	}
 }
 
 func TestOutlineBatchAppendReplaceAndRoundTrip(t *testing.T) {

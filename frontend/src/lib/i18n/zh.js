@@ -2,6 +2,9 @@
 // is replaced with $t('...') in a Svelte component.
 export default {
  "task.knowledge_sync": "同步事实与设定",
+ "task.planning_review": "规划复盘",
+ "task.proofread_analyze": "完稿分析",
+ "task.proofread_apply": "自动校订",
 "facts.field.name": "名称",
 "facts.field.age": "年龄",
 "facts.field.appearance": "外貌",
