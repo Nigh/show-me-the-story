@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -355,7 +356,12 @@ func (h *Handlers) PostProjectSelect(w http.ResponseWriter, r *http.Request) {
 			h.writeErrorReq(w, r, http.StatusConflict, "project_incompatible")
 			return
 		}
-		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
+		var chapterErr *story.ChapterLoadError
+		if errors.As(err, &chapterErr) {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "chapter_load_failed", chapterErr.Num, chapterErr.Path, chapterErr.Err)
+			return
+		}
+		h.writeErrorReq(w, r, http.StatusBadRequest, "project_load_failed", err)
 		return
 	}
 

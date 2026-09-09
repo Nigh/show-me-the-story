@@ -1041,16 +1041,19 @@ func (h *Handlers) PostForeshadowOutlineCheck(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	go func() {
-		defer h.endTask()
-		h.logger.TaskStart("foreshadow_outline_check")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeForeshadowPlan, true)
-		story.RunForeshadowOutlineCheckAndSave(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
-		h.logger.TaskEnd("foreshadow_outline_check", true)
-		h.broadcastProgress()
-	}()
+	go h.runForeshadowOutlineCheck()
 
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// The caller owns tryStartTask's reservation before starting this goroutine.
+func (h *Handlers) runForeshadowOutlineCheck() {
+	defer h.endTask()
+	h.logger.TaskStart("foreshadow_outline_check")
+	ctx := h.activateSkills(h.taskCtx, story.SkillScopeForeshadowPlan, true)
+	err := story.RunForeshadowOutlineCheckAndSave(ctx, h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
+	h.logger.TaskEnd("foreshadow_outline_check", err == nil)
+	h.broadcastProgress()
 }
 
 func (h *Handlers) PostChapterConfirm(w http.ResponseWriter, r *http.Request) {
@@ -1335,10 +1338,16 @@ func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
-	if h.isTaskRunning() {
+	if !h.tryStartTask() {
 		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
 		return
 	}
+	background := false
+	defer func() {
+		if !background {
+			h.endTask()
+		}
+	}()
 
 	numStr := r.PathValue("num")
 	var num int
@@ -1357,20 +1366,24 @@ func (h *Handlers) PutChapterOutline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	before := append([]story.ChapterState(nil), h.state.Chapters...)
 	if err := story.EditChapterOutline(h.state, num, body.Title, body.Outline, body.Characters); err != nil {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
+		h.state.Chapters = before
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 
-	go story.RunForeshadowOutlineCheckAndSave(context.Background(), h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
-
 	h.logger.SuccessKey("log.chapter_outline_updated", num)
 	h.writeJSON(w, http.StatusOK, story.ProgressView(h.state))
+	if len(h.state.Foreshadows) > 0 {
+		background = true
+		go h.runForeshadowOutlineCheck()
+	}
 }
 
 func (h *Handlers) PostSettingsReconcile(w http.ResponseWriter, r *http.Request) {
@@ -1749,9 +1762,16 @@ func (h *Handlers) DeleteForeshadow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) PostForeshadowsConfirm(w http.ResponseWriter, r *http.Request) {
-	if h.rejectIfTaskRunning(w, r) {
+	if !h.tryStartTask() {
+		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
 		return
 	}
+	background := false
+	defer func() {
+		if !background {
+			h.endTask()
+		}
+	}()
 	var req struct {
 		Foreshadows []story.Foreshadow `json:"foreshadows"`
 	}
@@ -1768,17 +1788,22 @@ func (h *Handlers) PostForeshadowsConfirm(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	before := h.state.Foreshadows
 	h.state.Foreshadows = append(h.state.Foreshadows, req.Foreshadows...)
 
 	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
+		h.state.Foreshadows = before
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
 
 	h.persistForeshadowRoadmap()
 	h.broadcastProgress()
-	go story.RunForeshadowOutlineCheckAndSave(context.Background(), h.apiCfg, h.cfg, h.state, h.progressPath, h.logger)
 	h.writeJSON(w, http.StatusOK, h.state.Foreshadows)
+	if len(h.state.Foreshadows) > 0 {
+		background = true
+		go h.runForeshadowOutlineCheck()
+	}
 }
 
 // —— 导入流水线 handlers ——

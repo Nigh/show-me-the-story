@@ -295,6 +295,10 @@ Common files:
 
 The program may also generate Markdown chapter copies and other auxiliary files. Editing those copies does not update prose in the application; use the page editor.
 
+Prose and progress are saved together using the temporary `progress.json.rollback` journal. A failed write restores the previous files; after an abnormal exit, reopening the project first recovers any uncommitted save. Do not delete a retained journal or open the project with an older application. If recovery fails, close the program and copy the entire project before resolving permissions, disk space, or sync software problems and retrying. Missing or damaged chapters prevent opening and identify the chapter and path; restore a complete backup if repair is not possible. This is not arbitrary version history, and only one program may write a project at a time.
+
+Editing an outline or confirming foreshadows starts a consistency-check task when foreshadows need checking. Other AI tasks and project switching remain unavailable during the check; the stop button cancels it. A failed check does not undo the saved outline or foreshadows. Use the consistency-check button to retry later.
+
 For a reliable backup: stop AI tasks → wait for saving → close the program → copy the entire data directory to a dated backup location. On another computer, point the program at the copied directory. When backing up one project alone, also preserve required user skills separately. Do not publish API keys with a shared work.
 
 This program only loads v4 projects. Older projects are labeled with the appropriate program version and are not migrated automatically. The format number is a storage protocol, not an upgrade switch.
