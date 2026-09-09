@@ -1,10 +1,9 @@
 package story
 
-// v3 import pipeline: paste a published book, split it into chapters locally
+// Import pipeline: paste a published book, split it into chapters locally
 // (no AI, instant preview), then process chapters one by one with AI (outline
 // + summary), checkpointing after every chapter so the task can be stopped
-// and resumed. Long imports (>= importArcThreshold chapters) are grouped into
-// arcs and get arc summaries, plugging straight into the M2 context layering.
+// and resumed.
 
 import (
 	"context"
@@ -23,10 +22,8 @@ import (
 )
 
 const (
-	importArcThreshold = 40   // group into arcs at or above this many chapters
-	importArcSize      = 30   // chapters per auto-created arc
-	importChunkRunes   = 6000 // fallback chunk size when no headings found
-	importHeadRunes    = 6000 // max chapter content passed to per-chapter AI
+	importChunkRunes = 6000 // fallback chunk size when no headings found
+	importHeadRunes  = 6000 // max chapter content passed to per-chapter AI
 )
 
 // —— local splitting ——
@@ -270,9 +267,9 @@ func runImportPipeline(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 			return fmt.Errorf("第 %d 章分析失败：API 调用失败", ch.Num)
 		}
 		var resp struct {
-			Outline    string                     `json:"outline"`
-			Summary    string                     `json:"summary"`
-			Characters []OutlineChapterCharacter  `json:"characters"`
+			Outline    string                    `json:"outline"`
+			Summary    string                    `json:"summary"`
+			Characters []OutlineChapterCharacter `json:"characters"`
 		}
 		if err := json.Unmarshal([]byte(cleanJSONResponse(rawResp)), &resp); err != nil {
 			return fmt.Errorf("第 %d 章分析结果解析失败: %w", ch.Num, err)
@@ -292,20 +289,6 @@ func runImportPipeline(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 		st.Cursor = i + 1
 		SaveImportState(importPath, st)
 		logger.InfoKey("log.import_chapter_done", ch.Num, st.Total)
-	}
-
-	// Step 3: arc grouping + summaries for long imports.
-	if len(state.Chapters) >= importArcThreshold && len(state.Arcs) == 0 {
-		createImportArcs(state)
-		if err := SaveProgress(progressPath, state); err != nil {
-			return fmt.Errorf("保存进度失败: %w", err)
-		}
-		logger.InfoKey("log.import_arcs_created", len(state.Arcs))
-		EnsureArcSummaries(ctx, apiCfg, cfg, state, progressPath, logger)
-		if ctx.Err() != nil {
-			logger.WarnKey("log.import_cancelled", st.Cursor, st.Total)
-			return ctx.Err()
-		}
 	}
 
 	fsutil.Delete(importPath)
@@ -335,12 +318,11 @@ func importMetaAnalysis(ctx context.Context, apiCfg *config.APIConfig, cfg *conf
 		return fmt.Errorf("API 调用失败或被取消")
 	}
 	var meta struct {
-		Title         string `json:"title"`
-		StoryType     string `json:"story_type"`
-		CorePrompt    string `json:"core_prompt"`
-		StorySynopsis string `json:"story_synopsis"`
-		WritingStyle  string `json:"writing_style"`
-		WritingPOV    string `json:"writing_pov"`
+		Title        string `json:"title"`
+		StoryType    string `json:"story_type"`
+		CorePrompt   string `json:"core_prompt"`
+		WritingStyle string `json:"writing_style"`
+		WritingPOV   string `json:"writing_pov"`
 	}
 	if err := json.Unmarshal([]byte(cleanJSONResponse(rawResp)), &meta); err != nil {
 		return fmt.Errorf("元信息解析失败: %w", err)
@@ -348,7 +330,6 @@ func importMetaAnalysis(ctx context.Context, apiCfg *config.APIConfig, cfg *conf
 
 	state.Title = meta.Title
 	state.CorePrompt = meta.CorePrompt
-	state.StorySynopsis = meta.StorySynopsis
 	// User-filled config wins (config guard rule): only fill empty fields.
 	fill := func(dst *string, v string) {
 		if strings.TrimSpace(*dst) == "" {
@@ -357,10 +338,8 @@ func importMetaAnalysis(ctx context.Context, apiCfg *config.APIConfig, cfg *conf
 	}
 	fill(&cfg.Story.Title, meta.Title)
 	fill(&cfg.Story.Type, meta.StoryType)
-	fill(&cfg.Story.StorySynopsis, meta.StorySynopsis)
 	fill(&cfg.Story.WritingStyle, meta.WritingStyle)
 	fill(&cfg.Story.WritingPOV, meta.WritingPOV)
-	cfg.Story.ChapterCount = len(state.Chapters)
 	snapshot := cfg.Story
 	state.StoryConfigSnapshot = &snapshot
 
@@ -372,29 +351,4 @@ func importMetaAnalysis(ctx context.Context, apiCfg *config.APIConfig, cfg *conf
 	}
 	logger.InfoKey("log.import_meta_done", meta.Title)
 	return nil
-}
-
-// createImportArcs groups chapters into fixed-size arcs with placeholder
-// titles; goals stay empty (EnsureArcSummaries provides the real context).
-func createImportArcs(state *Progress) {
-	n := len(state.Chapters)
-	for start := 1; start <= n; start += importArcSize {
-		end := start + importArcSize - 1
-		if end > n {
-			end = n
-		}
-		// Avoid a runt final arc: merge trailing < 10 chapters into the previous one.
-		if n-end < 10 && n-end > 0 {
-			end = n
-		}
-		state.Arcs = append(state.Arcs, Arc{
-			ID:      len(state.Arcs) + 1,
-			Title:   fmt.Sprintf("第%d卷", len(state.Arcs)+1),
-			StartCh: start,
-			EndCh:   end,
-		})
-		if end == n {
-			break
-		}
-	}
 }

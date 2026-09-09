@@ -1,9 +1,7 @@
 package story
 
-// v3 project storage: progress metadata lives in project.json (chapter list
-// WITHOUT prose content), each chapter's prose lives in chapters/NNNNNN.json.
-// LoadProgress/SaveProgress keep their v2 signatures (path = project.json) so
-// every caller stays untouched; the split happens inside.
+// Project storage: progress metadata lives in progress.json (without prose),
+// and chapter prose lives in chapters/NNNNNN.json.
 
 import (
 	"encoding/json"
@@ -203,18 +201,14 @@ func ProgressView(p *Progress) *Progress {
 	if len(p.MemoryEntries) > 0 {
 		entries := make([]MemoryEntry, len(p.MemoryEntries))
 		for i, m := range p.MemoryEntries {
-			m.Snippet = extractSnippet(p, m.Chapter, m.Position, 100)
-			if len(m.References) > 0 {
-				m.Snippet = ""
-				for _, ref := range m.References {
-					if ReferenceLive(p, ref) {
-						r := []rune(ref.Quote)
-						if len(r) > 100 {
-							r = r[:100]
-						}
-						m.Snippet = string(r)
-						break
+			for _, ref := range m.References {
+				if ReferenceLive(p, ref) {
+					r := []rune(ref.Quote)
+					if len(r) > 100 {
+						r = r[:100]
 					}
+					m.Snippet = string(r)
+					break
 				}
 			}
 			m.References = nil // Evidence is loaded on demand via the facts endpoint.

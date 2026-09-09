@@ -2,7 +2,6 @@ package story
 
 import (
 	"fmt"
-	"regexp"
 	"showmethestory/internal/config"
 	"showmethestory/internal/i18n"
 	"strings"
@@ -169,11 +168,6 @@ type outlineCharacterStub struct {
 	Description string
 }
 
-var (
-	firstAppearanceZH = regexp.MustCompile(`([^，。；：\n（(【\[]+?)[（(【\[]?首次登场[）)】\]]?`)
-	firstAppearanceEN = regexp.MustCompile(`(?i)([\p{Han}A-Za-z·\s]{2,20}?)\s*[\(（]?\s*first appearance\s*[\)）]?`)
-)
-
 // stubsFromStructuredCharacters builds stubs from the chapter cast field.
 func stubsFromStructuredCharacters(chars []OutlineChapterCharacter) []outlineCharacterStub {
 	chars = normalizeOutlineCharacters(chars)
@@ -187,57 +181,8 @@ func stubsFromStructuredCharacters(chars []OutlineChapterCharacter) []outlineCha
 	return stubs
 }
 
-// characterStubsForChapter prefers structured cast; falls back to「首次登场」prose scan for legacy outlines.
 func characterStubsForChapter(ch ChapterState) []outlineCharacterStub {
-	if stubs := stubsFromStructuredCharacters(ch.Characters); len(stubs) > 0 {
-		return stubs
-	}
-	return extractFirstAppearanceStubs(ch.Outline)
-}
-
-func extractFirstAppearanceStubs(outline string) []outlineCharacterStub {
-	outline = strings.TrimSpace(outline)
-	if outline == "" {
-		return nil
-	}
-	var stubs []outlineCharacterStub
-	seen := make(map[string]bool)
-
-	addStub := func(name string) {
-		name = strings.TrimSpace(StripNameMarks(name))
-		name = strings.Trim(name, "：:、 ")
-		if name == "" || seen[name] {
-			return
-		}
-		seen[name] = true
-		desc := extractStubDescription(outline, name)
-		stubs = append(stubs, outlineCharacterStub{Name: name, Description: desc})
-	}
-
-	for _, m := range firstAppearanceZH.FindAllStringSubmatch(outline, -1) {
-		if len(m) > 1 {
-			addStub(m[1])
-		}
-	}
-	for _, m := range firstAppearanceEN.FindAllStringSubmatch(outline, -1) {
-		if len(m) > 1 {
-			addStub(m[1])
-		}
-	}
-	return stubs
-}
-
-func extractStubDescription(outline, name string) string {
-	idx := strings.Index(outline, name)
-	if idx < 0 {
-		return ""
-	}
-	rest := outline[idx+len(name):]
-	rest = strings.TrimLeft(rest, "（(【[")
-	if cut := strings.IndexAny(rest, "。.\n"); cut >= 0 && cut < 120 {
-		return strings.TrimSpace(rest[:cut])
-	}
-	return truncateRunes(strings.TrimSpace(rest), 80)
+	return stubsFromStructuredCharacters(ch.Characters)
 }
 
 func buildOutlineDerivedCharacterContext(ch ChapterState, settings *ProjectSettings, lang string) string {

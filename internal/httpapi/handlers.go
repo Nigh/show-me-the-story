@@ -112,12 +112,6 @@ func (h *Handlers) switchProject(name string) error {
 	if err != nil {
 		return fmt.Errorf("加载项目配置失败: %w", err)
 	}
-	if cfg.ProjectFormatVersion != config.ProjectFormatVersion {
-		cfg.ProjectFormatVersion = config.ProjectFormatVersion
-		if err := config.SaveConfig(configPath, cfg); err != nil {
-			return fmt.Errorf("标记项目格式失败: %w", err)
-		}
-	}
 
 	state, err := story.LoadProgress(progressPath)
 	if err != nil {
@@ -132,7 +126,7 @@ func (h *Handlers) switchProject(name string) error {
 		return fmt.Errorf("加载项目设定失败: %w", err)
 	}
 
-	skills := story.LoadAllSkills(cfg, h.progDir, projectDir)
+	skills := story.LoadAllSkills(cfg, h.progDir)
 
 	postprocessPath := filepath.Join(projectDir, "postprocess.json")
 	postprocess, err := story.LoadPostProcess(postprocessPath)
@@ -441,7 +435,6 @@ func (h *Handlers) PutConfig(w http.ResponseWriter, r *http.Request) {
 		newCfg.Language = h.cfg.Language
 	}
 	newCfg.ProjectFormatVersion = config.ProjectFormatVersion
-	newCfg.CompatibleAppLine = config.CompatibleAppLine
 	newCfg.CreatedWithVersion = h.cfg.CreatedWithVersion
 	newCfg.Prompts.ApplyDefaults(newCfg.Language)
 
@@ -556,7 +549,7 @@ func (h *Handlers) GetChapterContent(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, ch)
 }
 
-// —— story.Block 编辑（v3）——
+// —— story.Block 编辑 ——
 
 // parseChapterBlockIDs extracts {num} and {id} path values.
 func parseChapterBlockIDs(r *http.Request) (num, id int, err error) {
@@ -775,81 +768,6 @@ func (h *Handlers) DeleteProgress(w http.ResponseWriter, r *http.Request) {
 
 	h.state = &story.Progress{Phase: "outline"}
 	h.writeJSON(w, http.StatusOK, story.ProgressView(h.state))
-}
-
-func (h *Handlers) PostOutlineGenerate(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	// 检查是否有写作中/审核中/已确认的章节，如果有则拒绝
-	for _, ch := range h.state.Chapters {
-		if ch.Status == story.StatusWriting || ch.Status == story.StatusReview {
-			h.writeErrorReq(w, r, http.StatusConflict, "writing_chapter_present")
-			return
-		}
-		if ch.Status == story.StatusAccepted {
-			h.writeErrorReq(w, r, http.StatusConflict, "accepted_chapter_present")
-			return
-		}
-	}
-
-	if !h.tryStartTask() {
-		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
-		return
-	}
-
-	go func() {
-		defer h.endTask()
-
-		// 自动清除旧的大纲（仅 pending 章节，保留 accepted 的通过正常流程处理）
-		hasPending := false
-		for _, ch := range h.state.Chapters {
-			if ch.Status == story.StatusPending {
-				hasPending = true
-				break
-			}
-		}
-		if hasPending {
-			var kept []story.ChapterState
-			for _, ch := range h.state.Chapters {
-				if ch.Status != story.StatusPending {
-					kept = append(kept, ch)
-				}
-			}
-			h.state.Chapters = kept
-			if len(h.state.Chapters) == 0 {
-				h.state.Title = ""
-				h.state.CorePrompt = ""
-				h.state.StorySynopsis = ""
-				h.state.OutlineBatches = nil
-				h.state.StoryConfigSnapshot = nil
-				h.state.CurrentChapterIndex = 0
-			}
-			h.logger.InfoKey("log.outline_cleared_pending")
-		}
-		h.logger.TaskStart("outline_generation")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
-
-		h.logger.InfoKey("log.outline_generating")
-		err := story.GenerateOutlineAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.cfgPath, h.logger)
-
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.outline_generate_cancelled")
-				h.logger.TaskEnd("outline_generation", false)
-			} else {
-				h.logger.ErrorKey("log.outline_generate_failed", err)
-				h.logger.TaskEnd("outline_generation", false)
-			}
-			return
-		}
-
-		h.logger.SuccessKey("log.outline_generate_done")
-		h.logger.TaskEnd("outline_generation", true)
-		h.broadcastProgress()
-	}()
-
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
 func (h *Handlers) PostOutlineConfirm(w http.ResponseWriter, r *http.Request) {
@@ -1303,7 +1221,7 @@ func (h *Handlers) PostChapterReviseSpecific(w http.ResponseWriter, r *http.Requ
 	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
-// PostChaptersSmoothTransitions 批量优化已确认章节之间的衔接（修补旧项目用）。
+// PostChaptersSmoothTransitions 批量优化已确认章节之间的衔接。
 // 逐章检查上一章结尾与本章开头的衔接，仅在生硬时最小化重写本章开头片段。
 func (h *Handlers) PostChaptersSmoothTransitions(w http.ResponseWriter, r *http.Request) {
 	if !h.ensureProject(w, r) {
@@ -1397,10 +1315,8 @@ func (h *Handlers) DeleteOutline(w http.ResponseWriter, r *http.Request) {
 
 	h.state.Title = ""
 	h.state.CorePrompt = ""
-	h.state.StorySynopsis = ""
 	h.state.OutlineBatches = nil
 	h.state.Chapters = nil
-	h.state.Arcs = nil
 	h.state.StoryConfigSnapshot = nil
 	h.state.CurrentChapterIndex = 0
 
@@ -1853,7 +1769,7 @@ func (h *Handlers) PostForeshadowsConfirm(w http.ResponseWriter, r *http.Request
 	h.writeJSON(w, http.StatusOK, h.state.Foreshadows)
 }
 
-// —— v3 导入流水线 handlers ——
+// —— 导入流水线 handlers ——
 
 // PostImportSplit 本地切章预览（同步，无 AI）。不持久化任何内容。
 func (h *Handlers) PostImportSplit(w http.ResponseWriter, r *http.Request) {
@@ -2793,137 +2709,4 @@ func saveAgentSteps(session *story.ChatSession, steps []agent.AgentStep) {
 			})
 		}
 	}
-}
-
-// —— v3 层级大纲（卷）handlers ——
-
-// PostArcSkeleton 生成全书卷级骨架（异步）。
-func (h *Handlers) PostArcSkeleton(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	for _, ch := range h.state.Chapters {
-		if ch.Status == story.StatusAccepted || ch.Status == story.StatusWriting || ch.Status == story.StatusReview {
-			h.writeErrorReq(w, r, http.StatusConflict, "accepted_chapter_present")
-			return
-		}
-	}
-	if !h.tryStartTask() {
-		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
-		return
-	}
-	go func() {
-		defer h.endTask()
-		h.logger.TaskStart("arc_skeleton")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
-		h.logger.InfoKey("log.arc_skeleton_generating")
-		err := story.GenerateArcSkeletonAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, h.progressPath, h.cfgPath, h.logger)
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.arc_task_cancelled")
-			} else {
-				h.logger.ErrorKey("log.arc_task_failed", err)
-			}
-			h.logger.TaskEnd("arc_skeleton", false)
-			return
-		}
-		h.state.Phase = "outline"
-		if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-			h.logger.ErrorKey("log.arc_task_failed", err)
-		}
-		h.logger.TaskEnd("arc_skeleton", true)
-		h.broadcastProgress()
-	}()
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
-}
-
-// PostArcOutline 为指定卷生成逐章大纲（异步）。
-func (h *Handlers) PostArcOutline(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	var arcID int
-	if _, err := fmt.Sscanf(r.PathValue("id"), "%d", &arcID); err != nil {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_request_body")
-		return
-	}
-	var body struct {
-		Requirements string `json:"requirements"`
-	}
-	json.NewDecoder(r.Body).Decode(&body)
-	if !h.tryStartTask() {
-		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
-		return
-	}
-	go func() {
-		defer h.endTask()
-		h.logger.TaskStart("arc_outline")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
-		ai := story.ArcIndexByID(h.state, arcID)
-		h.logger.InfoKey("log.arc_outline_generating", ai+1)
-		err := story.GenerateArcOutlineAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, arcID, body.Requirements, h.progressPath, h.logger)
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.arc_task_cancelled")
-			} else {
-				h.logger.ErrorKey("log.arc_task_failed", err)
-			}
-			h.logger.TaskEnd("arc_outline", false)
-			return
-		}
-		h.logger.TaskEnd("arc_outline", true)
-		h.broadcastProgress()
-	}()
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
-}
-
-// PostArcAppend 追加新卷并生成其章纲（异步）：超长篇/无限连载的增量续写入口。
-func (h *Handlers) PostArcAppend(w http.ResponseWriter, r *http.Request) {
-	if !h.ensureProject(w, r) {
-		return
-	}
-	var body struct {
-		Title        string `json:"title"`
-		Goal         string `json:"goal"`
-		ChapterCount int    `json:"chapter_count"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_request_body")
-		return
-	}
-	if !h.tryStartTask() {
-		h.writeErrorReq(w, r, http.StatusConflict, "task_running_wait")
-		return
-	}
-	go func() {
-		defer h.endTask()
-		h.logger.TaskStart("arc_append")
-		ctx := h.activateSkills(h.taskCtx, story.SkillScopeOutlineGenerate, true)
-		err := story.AppendArcAction(ctx, h.apiCfg, h.cfg, h.state, h.settings, body.Title, body.Goal, body.ChapterCount, h.progressPath, h.logger)
-		if err != nil {
-			if ctx.Err() != nil {
-				h.logger.WarnKey("log.arc_task_cancelled")
-			} else {
-				h.logger.ErrorKey("log.arc_task_failed", err)
-			}
-			h.logger.TaskEnd("arc_append", false)
-			return
-		}
-		// 更新全书计划章节数，保持 config 与实际结构一致。
-		last := h.state.Arcs[len(h.state.Arcs)-1]
-		if last.EndCh > h.cfg.Story.ChapterCount {
-			h.cfg.Story.ChapterCount = last.EndCh
-			if h.state.StoryConfigSnapshot != nil {
-				snapshot := h.cfg.Story
-				h.state.StoryConfigSnapshot = &snapshot
-			}
-			if err := config.SaveConfig(h.cfgPath, h.cfg); err != nil {
-				h.logger.ErrorKey("log.arc_task_failed", err)
-			}
-			story.SaveProgress(h.progressPath, h.state)
-		}
-		h.logger.TaskEnd("arc_append", true)
-		h.broadcastProgress()
-	}()
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }

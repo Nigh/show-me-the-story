@@ -33,20 +33,12 @@ func TestProofreadAnchorRefreshAndUndo(t *testing.T) {
 	}
 }
 
-func TestLegacyPostprocessIsIgnoredWithoutWriteOnLoad(t *testing.T) {
+func TestUnsupportedPostprocessVersionIsRejected(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "postprocess.json")
 	if err := os.WriteFile(path, []byte(`{"diagnosis_report":"legacy","roadmap":[{"id":"old"}]}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	pp, err := LoadPostProcess(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, readErr := os.ReadFile(path)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	if pp.SchemaVersion != ProofreadSchemaVersion || string(data) != `{"diagnosis_report":"legacy","roadmap":[{"id":"old"}]}` {
-		t.Fatalf("legacy state was loaded or overwritten: %#v", pp)
+	if _, err := LoadPostProcess(path); err == nil {
+		t.Fatal("unsupported postprocess schema was accepted")
 	}
 }

@@ -3,8 +3,6 @@ package story
 import (
 	"embed"
 	"fmt"
-	"os"
-	"path/filepath"
 	"showmethestory/internal/config"
 	"showmethestory/internal/i18n"
 	"strings"
@@ -86,39 +84,6 @@ func LoadBuiltinSkills() []Skill {
 		skill, err := parseSkillFile(string(data), "builtin")
 		if err != nil {
 			fmt.Printf(" [警告] 解析内置技能文件 %s 失败: %v\n", entry.Name(), err)
-			continue
-		}
-
-		skills = append(skills, skill)
-	}
-
-	return skills
-}
-
-func LoadProjectSkills(dir string) []Skill {
-	skillsDir := filepath.Join(dir, "skills")
-	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
-		return nil
-	}
-
-	entries, err := os.ReadDir(skillsDir)
-	if err != nil {
-		return nil
-	}
-
-	var skills []Skill
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-
-		data, err := os.ReadFile(filepath.Join(skillsDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-
-		skill, err := parseSkillFile(string(data), "project")
-		if err != nil {
 			continue
 		}
 
@@ -232,11 +197,10 @@ func ResolveSkills(skills []Skill, sc *config.SkillConfig, action, projectLang s
 	return out
 }
 
-func LoadAllSkills(cfg *config.Config, progDir, projectDir string) []Skill {
+func LoadAllSkills(cfg *config.Config, progDir string) []Skill {
 	builtin := LoadBuiltinSkills()
 	global := LoadGlobalSkills(progDir)
-	project := LoadProjectSkills(projectDir)
-	merged := MergeSkills(MergeSkills(builtin, global), project)
+	merged := MergeSkills(builtin, global)
 	if cfg == nil {
 		return merged
 	}

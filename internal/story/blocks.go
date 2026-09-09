@@ -1,6 +1,6 @@
 package story
 
-// v3 block model: chapter prose is exposed as an ordered list of editable
+// Chapter prose is exposed as an ordered list of editable
 // blocks (one per natural paragraph). In-memory ch.Content stays the single
 // source of truth for all AI flows; blocks are (re)derived from content at
 // save time with stable IDs, and block edits rebuild content from blocks.

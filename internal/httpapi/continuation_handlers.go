@@ -102,7 +102,7 @@ func (h *Handlers) PostContinuationProject(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	next := &story.Progress{Phase: "writing", BookStatus: story.BookStatusActive, Title: h.state.Title, CorePrompt: h.state.CorePrompt, StorySynopsis: h.state.StorySynopsis, LongTermDirection: h.state.LongTermDirection, StoryConfigSnapshot: h.state.StoryConfigSnapshot, NextMemoryID: h.state.NextMemoryID, Foreshadows: append([]story.Foreshadow(nil), h.state.Foreshadows...), NarrativeCheckpoints: append([]story.NarrativeCheckpoint(nil), h.state.NarrativeCheckpoints...)}
+	next := &story.Progress{Phase: "writing", BookStatus: story.BookStatusActive, Title: h.state.Title, CorePrompt: h.state.CorePrompt, LongTermDirection: h.state.LongTermDirection, StoryConfigSnapshot: h.state.StoryConfigSnapshot, NextMemoryID: h.state.NextMemoryID, Foreshadows: append([]story.Foreshadow(nil), h.state.Foreshadows...), NarrativeCheckpoints: append([]story.NarrativeCheckpoint(nil), h.state.NarrativeCheckpoints...)}
 	next.OutlineBatches = append([]story.OutlineBatch(nil), h.state.OutlineBatches...)
 	for i := range next.OutlineBatches {
 		next.OutlineBatches[i].PlannedFinal = false
@@ -113,6 +113,7 @@ func (h *Handlers) PostContinuationProject(w http.ResponseWriter, r *http.Reques
 	for _, old := range h.state.MemoryEntries {
 		old.References = nil
 		old.Snippet = ""
+		old.Inherited = true
 		next.MemoryEntries = append(next.MemoryEntries, old)
 	}
 	next.CurrentChapterIndex = len(next.Chapters)

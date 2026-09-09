@@ -51,7 +51,6 @@ func TestOutlineBatchAppendReplaceAndRoundTrip(t *testing.T) {
 	for _, lang := range []string{"zh", "en"} {
 		t.Run(lang, func(t *testing.T) {
 			cfg := config.DefaultConfigForLang(lang)
-			cfg.Story.StorySynopsis = "obsolete whole book"
 			// Simulate a saved custom template with none of the new placeholders.
 			cfg.Prompts.ContinuationOutlineGeneration = "CUSTOM {{.Title}} {{.ExistingOutline}}"
 			state := &Progress{CorePrompt: "permanent writing rules"}
@@ -63,9 +62,6 @@ func TestOutlineBatchAppendReplaceAndRoundTrip(t *testing.T) {
 				} // postprocessing checks
 				if !strings.Contains(prompt, synopsis) || !strings.Contains(prompt, "DIRECTION_MARKER") {
 					t.Errorf("missing batch input: %s", prompt)
-				}
-				if strings.Contains(prompt, "obsolete whole book") {
-					t.Error("legacy synopsis leaked into new batch")
 				}
 				return batchAnswer(start, count)
 			})
@@ -93,7 +89,7 @@ func TestOutlineBatchAppendReplaceAndRoundTrip(t *testing.T) {
 			if len(state.Chapters) != 17 || state.Chapters[0].Outline != first.Outline || state.OutlineBatches[1].Revision != 2 {
 				t.Fatal("replacement altered prior batch or failed to update revision")
 			}
-			if state.CorePrompt != "permanent writing rules" || cfg.Story.StorySynopsis != "obsolete whole book" {
+			if state.CorePrompt != "permanent writing rules" {
 				t.Fatal("batch overwrote permanent settings")
 			}
 			loaded, err := LoadProgress(path)
@@ -178,22 +174,12 @@ func TestOutlineBatchFailurePreservesState(t *testing.T) {
 	}
 }
 
-func TestLegacyChapterSynopsisFallback(t *testing.T) {
-	cfg := config.DefaultConfigForLang("zh")
-	cfg.Story.StorySynopsis = "legacy"
-	state := &Progress{OutlineBatches: []OutlineBatch{{ID: 1, StartCh: 10, EndCh: 12, Synopsis: "batch"}}}
-	if ChapterSynopsis(cfg, state, 1) != "legacy" || !strings.Contains(ChapterSynopsis(cfg, state, 10), "batch") {
-		t.Fatal("legacy fallback or batch selection broken")
-	}
-}
-
 func TestBatchDefaultTemplatesUseCurrentInputs(t *testing.T) {
 	for _, lang := range []string{"zh", "en"} {
 		t.Run(lang, func(t *testing.T) {
 			cfg := config.DefaultConfigForLang(lang)
 			cfg.Story.Title = "SAVED_TITLE"
-			cfg.Story.StorySynopsis = "STALE_SYNOPSIS"
-			state := &Progress{Title: "STALE_TITLE", StorySynopsis: "STALE_SYNOPSIS", CorePrompt: "CORE_RULES"}
+			state := &Progress{Title: "STALE_TITLE", CorePrompt: "CORE_RULES"}
 			captured := false
 			api := batchAPI(t, func(prompt string) string {
 				if !captured {

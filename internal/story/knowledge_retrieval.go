@@ -267,14 +267,12 @@ func retrieveMemories(state *Progress, ch ChapterState, budget int, evidence boo
 	docs := []knowledgeDocument{}
 	entries := []MemoryEntry{}
 	for _, m := range state.MemoryEntries {
-		if m.Chapter > ch.Num {
-			continue
-		}
-		live, linked := len(m.References) == 0, false
+		live, linked, latestChapter := m.Inherited, false, 0
 		for _, r := range m.References {
 			if r.Chapter <= ch.Num && ReferenceLive(state, r) {
 				live = true
 				linked = linked || r.Chapter == ch.Num
+				latestChapter = max(latestChapter, r.Chapter)
 			}
 		}
 		if !live {
@@ -283,7 +281,7 @@ func retrieveMemories(state *Progress, ch ChapterState, budget int, evidence boo
 		priority := 0.0
 		if linked {
 			priority = 1000
-		} else if m.Chapter >= ch.Num-3 {
+		} else if latestChapter >= ch.Num-3 {
 			priority = 1
 		}
 		copy := m

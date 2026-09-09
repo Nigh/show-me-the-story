@@ -38,7 +38,7 @@ func TestContinuationProjectCopiesPlanningWithoutProofreadProse(t *testing.T) {
 	if got.BookStatus != story.BookStatusActive || got.CurrentChapterIndex != 1 || got.Chapters[0].Content != "" || got.Chapters[0].Outline != "outline" {
 		t.Fatalf("unexpected continuation state: %+v", got)
 	}
-	if got.OutlineBatches[0].PlannedFinal || len(got.MemoryEntries[0].References) != 0 {
+	if got.OutlineBatches[0].PlannedFinal || len(got.MemoryEntries[0].References) != 0 || !got.MemoryEntries[0].Inherited {
 		t.Fatal("continuation retained terminal marker or stale prose anchors")
 	}
 }

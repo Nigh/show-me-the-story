@@ -11,11 +11,10 @@ import (
 )
 
 type ReconciliationResult struct {
-	Type          string `json:"type"`
-	WritingStyle  string `json:"writing_style"`
-	WritingPOV    string `json:"writing_pov"`
-	StorySynopsis string `json:"story_synopsis"`
-	Explanation   string `json:"explanation"`
+	Type         string `json:"type"`
+	WritingStyle string `json:"writing_style"`
+	WritingPOV   string `json:"writing_pov"`
+	Explanation  string `json:"explanation"`
 }
 
 func ReconcileSettingsAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress,
@@ -47,7 +46,6 @@ func ReconcileSettingsAction(ctx context.Context, apiCfg *config.APIConfig, cfg 
 		"NewType":           newSettings.Type,
 		"NewWritingStyle":   newSettings.WritingStyle,
 		"NewWritingPOV":     newSettings.WritingPOV,
-		"NewStorySynopsis":  newSettings.StorySynopsis,
 		"ExistingSummaries": acceptedSummaries,
 	})
 
