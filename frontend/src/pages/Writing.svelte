@@ -7,6 +7,25 @@
   import { countProseUnits } from '../lib/proseUnits.js';
   import TaskTokenBadge from '../components/TaskTokenBadge.svelte';
   import KnowledgePanel from '../components/KnowledgePanel.svelte';
+  import { settings } from '../lib/stores.js';
+  let showKnowledge = false;
+  let knowledgeName = '', knowledgeDescription = '', knowledgeTags = '';
+  let selectedSettings = [];
+  let savingKnowledge = false;
+  async function saveKnowledge(revise = false) {
+    if (!knowledgeName.trim() || !knowledgeDescription.trim() || savingKnowledge) return;
+    savingKnowledge = true;
+    const target = ch?.num;
+    try {
+      const entry = await api('POST', '/api/worldview', {name: knowledgeName.trim(), description: knowledgeDescription.trim(), tags: knowledgeTags.trim(), category: 'knowledge'});
+      settings.update(s => ({...s, worldview: [...(s?.worldview || []).filter(w => w.id !== entry.id), entry]}));
+      knowledgeName = ''; knowledgeDescription = ''; knowledgeTags = '';
+      if (ch?.num === target) selectedSettings = [...new Set([...selectedSettings, entry.id])];
+      addToast($t('writing.knowledge.saved'), 'success');
+      if (revise && ch?.num === target) await doRevise();
+    } catch (e) { addToast(e.message, 'error'); }
+    finally { savingKnowledge = false; }
+  }
   let facts = [];
   let activeFact = null;
   let knowledgeExpanded = false;
@@ -340,6 +359,9 @@
   $: if (isStreamingThis && contentEl) scheduleScroll();
 
   function selectChapter(i) {
+    if (savingKnowledge) return;
+    selectedSettings = [];
+    showKnowledge = false;
     selectedChapter.set(i);
     maybeLoadContent(chapters[i]);
     showRevise = false;
@@ -368,21 +390,38 @@
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function doRevise() {
+  async function doRevise(confirmed = false) {
     const fb = reviseFeedback.trim();
-    if (!fb) { addToast($t('writing.toasts.feedbackRequired'), 'error'); return; }
+    if (!fb && !selectedSettings.length) { addToast($t('writing.toasts.feedbackRequired'), 'error'); return; }
     if (!ch) return;
+    const num = ch.num;
+    const rev = loadedRev;
+    if (selectedSettings.length && confirmed !== true) {
+      try {
+        const knowledge = await api('GET', '/api/knowledge?chapter=' + num);
+        if (ch?.num !== num || loadedRev !== rev) return;
+        if (knowledge.facts?.length) {
+          confirmAction($t('writing.knowledge.confirm') + '\n' + knowledge.facts.map(f => f.content).join('\n'), () => {
+            if (ch?.num === num && loadedRev === rev) doRevise(true);
+          });
+          return;
+        }
+      } catch (e) { addToast(e.message, 'error'); return; }
+    }
+    const body = { feedback: fb, worldview_ids: selectedSettings };
     try {
-      if (isCurrent && ch.status === 'review') {
+      if (!selectedSettings.length && isCurrent && ch.status === 'review') {
         // 当前审核中章节：完整修订流程
-        await api('POST', '/api/chapter/revise', { feedback: fb });
+        await api('POST', '/api/chapter/revise', body, factHeaders(confirmed === true));
       } else {
         // 其他章节（含已确认）：定向最小化修订，不影响其他章节
-        await api('POST', '/api/chapter/revise/' + ch.num, { feedback: fb });
+        await api('POST', '/api/chapter/revise/' + ch.num, body, factHeaders(confirmed === true));
       }
       addToast($t('writing.toasts.reviseStarted', { num: ch.num }), 'info');
       reviseFeedback = '';
       showRevise = false;
+      showKnowledge = false;
+      selectedSettings = [];
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -701,6 +740,7 @@
                 {/if}
                 {#if hasContent && ch.status !== 'writing'}
                   <button class="btn btn-outline btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('writing.btn.revise')}</button>
+                  <button class="btn btn-outline btn-sm" on:click={() => { showKnowledge = !showKnowledge; showRevise = true; if (!showKnowledge) selectedSettings = []; }} disabled={$taskRunning || savingKnowledge}>{$t('writing.knowledge.title')}</button>
                   {#if hasPolishSkills}
                     <button class="btn btn-outline btn-sm" on:click={doPolish} disabled={$taskRunning} title={$t('writing.btn.polish.tip')}>{$t('writing.btn.polish')}</button>
                   {/if}
@@ -715,6 +755,26 @@
 
               {#if showRevise}
                 <div class="bg-base-300 rounded-lg p-3 space-y-2">
+                    {#if showKnowledge}
+                      <fieldset class="border border-base-content/20 rounded-lg p-3 space-y-3" disabled={$taskRunning || savingKnowledge}>
+                        <legend>{$t('writing.knowledge.title')}</legend>
+                        <p class="text-sm">{$t('writing.knowledge.hint')}</p>
+                        <label class="block text-sm">{$t('config.wv.name')}<input class="input input-sm w-full" bind:value={knowledgeName} /></label>
+                        <label class="block text-sm">{$t('config.wv.description')}<textarea class="textarea w-full" rows="4" bind:value={knowledgeDescription}></textarea></label>
+                        <label class="block text-sm">{$t('config.wv.tags')}<input class="input input-sm w-full" bind:value={knowledgeTags} /></label>
+                        <div class="flex gap-2 flex-wrap">
+                          <button class="btn btn-outline btn-sm" on:click={() => saveKnowledge()} disabled={!knowledgeName.trim() || !knowledgeDescription.trim()}>{$t('common.save')}</button>
+                          <button class="btn btn-primary btn-sm" on:click={() => saveKnowledge(true)} disabled={!knowledgeName.trim() || !knowledgeDescription.trim()}>{$t('writing.knowledge.saveRevise')}</button>
+                        </div>
+                        <p class="text-sm">{$t('writing.knowledge.select')}</p>
+                        <div class="max-h-48 overflow-y-auto space-y-2">
+                          {#each ($settings?.worldview || []) as entry (entry.id)}
+                            <label class="flex items-start gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" value={entry.id} bind:group={selectedSettings} /><span>{entry.name}</span></label>
+                            {#if selectedSettings.includes(entry.id)}<p class="text-sm whitespace-pre-wrap pl-6">{entry.description}</p>{/if}
+                          {/each}
+                        </div>
+                      </fieldset>
+                    {/if}
                   <textarea
                     class="textarea textarea-sm w-full h-20 text-sm"
                     bind:value={reviseFeedback}
@@ -724,7 +784,7 @@
                   ></textarea>
                   <div class="flex justify-between items-center gap-2 flex-wrap">
                     <span class="text-xs text-base-content/40">
-                      {#if !(isCurrent && ch.status === 'review')}
+                        {#if selectedSettings.length || !(isCurrent && ch.status === 'review')}
                         {$t('writing.revise.hintTargeted')}
                       {:else}
                         {$t('writing.revise.hintCurrent')}
@@ -732,8 +792,8 @@
                       <span class="ml-1 text-base-content/30">· {$t('writing.revise.quoteHint')}</span>
                     </span>
                     <div class="flex gap-2">
-                      <button class="btn btn-ghost btn-xs" on:click={() => { showRevise = false; reviseFeedback = ''; }}>{$t('common.cancel')}</button>
-                      <button class="btn btn-primary btn-xs" on:click={doRevise} disabled={$taskRunning || !reviseFeedback.trim()}>{$t('writing.revise.submit')}</button>
+                      <button class="btn btn-ghost btn-xs" on:click={() => { showRevise = false; reviseFeedback = ''; selectedSettings = []; showKnowledge = false; }} disabled={savingKnowledge}>{$t('common.cancel')}</button>
+                      <button class="btn btn-primary btn-xs" on:click={() => doRevise()} disabled={$taskRunning || savingKnowledge || (!reviseFeedback.trim() && !selectedSettings.length)}>{selectedSettings.length ? $t('writing.knowledge.revise') : $t('writing.revise.submit')}</button>
                     </div>
                   </div>
                 </div>

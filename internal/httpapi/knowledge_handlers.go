@@ -4,10 +4,67 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"showmethestory/internal/i18n"
 	"showmethestory/internal/story"
 	"strconv"
 	"strings"
 )
+
+type chapterRevisionRequest struct {
+	Feedback     string   `json:"feedback"`
+	WorldviewIDs []string `json:"worldview_ids"`
+}
+
+// Explicit selections are included in full, independently of relevance retrieval.
+func (h *Handlers) prepareSettingRevision(w http.ResponseWriter, r *http.Request, num int, body *chapterRevisionRequest) bool {
+	if len(body.WorldviewIDs) == 0 {
+		return true
+	}
+	idx := story.FindChapterIdx(h.state, num)
+	if idx < 0 {
+		h.writeErrorReq(w, r, http.StatusNotFound, "chapter_n_not_found", num)
+		return false
+	}
+	before := h.state.Chapters[idx]
+	if r.Header.Get("X-Content-Rev") != story.ChapterRevision(before) {
+		h.writeErrorReq(w, r, http.StatusConflict, "content_version_conflict")
+		return false
+	}
+	after := before
+	after.Blocks = nil
+	opts := story.FactEditOptions{ContentRev: r.Header.Get("X-Content-Rev"), ConfirmFactImpact: r.Header.Get("X-Confirm-Fact-Impact") == "true"}
+	if err := story.ValidateFactEdit(h.state, before, after, opts, i18n.FromRequest(r)); err != nil {
+		h.writeErrorReq(w, r, http.StatusConflict, "invalid_json", err)
+		return false
+	}
+	selected := []story.WorldviewEntry{}
+	seen := map[string]bool{}
+	for _, id := range body.WorldviewIDs {
+		if seen[id] {
+			continue
+		}
+		found := false
+		for _, entry := range h.settings.Worldview {
+			if entry.ID == id {
+				selected = append(selected, entry)
+				found = true
+				break
+			}
+		}
+		if !found {
+			h.writeErrorReq(w, r, http.StatusNotFound, "worldview_not_found")
+			return false
+		}
+		seen[id] = true
+	}
+	data, _ := json.Marshal(selected)
+	instruction := "\n[Author-selected story settings]\nThese are authoritative rules of this novel, whether fictional or realistic. Correct this chapter and related descriptions to follow them, including conflicting extracted facts. Preserve unrelated plot and style. Do not replace these rules with real-world assumptions.\n"
+	if i18n.NormalizeLanguage(h.cfg.Language) == i18n.LangZH {
+		instruction = "\n【作者指定的小说设定】\n以下是本小说的明确规则，可以是虚构或现实知识。请据此修正本章及连带描述，包括与之冲突的已提取事实；保留无关剧情和文风，不得用现实常识替换这些规则。\n"
+	}
+	body.Feedback += instruction + string(data)
+	return true
+}
 
 func (h *Handlers) knowledgeVersion() string {
 	// ponytail: linear scan of tracked prose; cache revisions if task startup becomes costly on very large books.

@@ -1130,12 +1130,20 @@ func (h *Handlers) PostChapterRevise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		Feedback string `json:"feedback"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Feedback == "" {
+	var body chapterRevisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || (strings.TrimSpace(body.Feedback) == "" && len(body.WorldviewIDs) == 0) {
 		h.endTask()
 		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_feedback")
+		return
+	}
+	idx := h.state.CurrentChapterIndex
+	if idx < 0 || idx >= len(h.state.Chapters) {
+		h.endTask()
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_chapter_num")
+		return
+	}
+	if !h.prepareSettingRevision(w, r, h.state.Chapters[idx].Num, &body) {
+		h.endTask()
 		return
 	}
 
@@ -1181,12 +1189,14 @@ func (h *Handlers) PostChapterReviseSpecific(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var body struct {
-		Feedback string `json:"feedback"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Feedback == "" {
+	var body chapterRevisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || (strings.TrimSpace(body.Feedback) == "" && len(body.WorldviewIDs) == 0) {
 		h.endTask()
 		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_feedback")
+		return
+	}
+	if !h.prepareSettingRevision(w, r, num, &body) {
+		h.endTask()
 		return
 	}
 
@@ -2069,18 +2079,22 @@ func (h *Handlers) PostWorldview(w http.ResponseWriter, r *http.Request) {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
+	wv.Name, wv.Description = strings.TrimSpace(wv.Name), strings.TrimSpace(wv.Description)
 	if wv.Name == "" || wv.Description == "" {
 		h.writeErrorReq(w, r, http.StatusBadRequest, "worldview_field_empty")
 		return
 	}
 
 	wv.ID = h.settings.NextWorldviewID()
-	h.settings.Worldview = append(h.settings.Worldview, wv)
+	next := *h.settings
+	next.Worldview = append(append([]story.WorldviewEntry(nil), h.settings.Worldview...), wv)
 
-	if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
+	if err := story.SaveProjectSettings(h.settingsPath, &next); err != nil {
 		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 		return
 	}
+	*h.settings = next
+	h.logger.SettingsUpdated()
 
 	h.writeJSON(w, http.StatusOK, wv)
 }
@@ -2099,23 +2113,27 @@ func (h *Handlers) PutWorldview(w http.ResponseWriter, r *http.Request) {
 
 	for i, wv := range h.settings.Worldview {
 		if wv.ID == id {
+			next := *h.settings
+			next.Worldview = append([]story.WorldviewEntry(nil), h.settings.Worldview...)
 			if req.Name != "" {
-				h.settings.Worldview[i].Name = req.Name
+				next.Worldview[i].Name = req.Name
 			}
 			if req.Category != "" {
-				h.settings.Worldview[i].Category = req.Category
+				next.Worldview[i].Category = req.Category
 			}
 			if req.Description != "" {
-				h.settings.Worldview[i].Description = req.Description
+				next.Worldview[i].Description = req.Description
 			}
 			if req.Tags != "" {
-				h.settings.Worldview[i].Tags = req.Tags
+				next.Worldview[i].Tags = req.Tags
 			}
 
-			if err := story.SaveProjectSettings(h.settingsPath, h.settings); err != nil {
+			if err := story.SaveProjectSettings(h.settingsPath, &next); err != nil {
 				h.writeErrorReq(w, r, http.StatusInternalServerError, "save_failed", err)
 				return
 			}
+			*h.settings = next
+			h.logger.SettingsUpdated()
 
 			h.writeJSON(w, http.StatusOK, h.settings.Worldview[i])
 			return

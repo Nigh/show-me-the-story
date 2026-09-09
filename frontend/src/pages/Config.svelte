@@ -101,6 +101,7 @@
     ['geography', $t('config.wv.cat.geography')],
     ['faction', $t('config.wv.cat.faction')],
     ['rule', $t('config.wv.cat.rule')],
+    ['knowledge', $t('config.wv.cat.knowledge')],
     ['history', $t('config.wv.cat.history')],
     ['other', $t('config.wv.cat.other')],
   ];
@@ -688,6 +689,7 @@
                   <option value="geography">{$t('config.wv.cat.geography')}</option>
                   <option value="faction">{$t('config.wv.cat.faction')}</option>
                   <option value="rule">{$t('config.wv.cat.rule')}</option>
+                  <option value="knowledge">{$t('config.wv.cat.knowledge')}</option>
                   <option value="history">{$t('config.wv.cat.history')}</option>
                   <option value="other">{$t('config.wv.cat.other')}</option>
                 </select>

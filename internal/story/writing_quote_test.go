@@ -1,9 +1,42 @@
 package story
 
 import (
+	"context"
+	"showmethestory/internal/config"
+	"showmethestory/internal/sse"
 	"strings"
 	"testing"
 )
+
+func TestRevisionCustomTemplatePreservesAuthorFeedback(t *testing.T) {
+	for _, lang := range []string{"zh", "en"} {
+		for _, quote := range []bool{false, true} {
+			cfg := config.DefaultConfigForLang(lang)
+			cfg.Prompts.ChapterRevision = "Custom revision"
+			cfg.Prompts.ChapterSegmentRevision = "Custom segment"
+			feedback := "Moon coffee grows on clouds, not in soil."
+			request := feedback
+			if quote {
+				request = "> Coffee grows in soil.\n" + feedback
+			}
+			state := &Progress{Chapters: []ChapterState{factChapter(1, "Coffee grows in soil.")}}
+			calls := 0
+			api := batchAPI(t, func(prompt string) string {
+				calls++
+				if !strings.Contains(prompt, feedback) {
+					t.Error("custom template dropped author knowledge")
+				}
+				return "Coffee grows on clouds."
+			})
+			logger := sse.NewLogBroadcaster()
+			result, err := reviseChapterContentStream(context.Background(), api, cfg, state, 0, request, &ProjectSettings{}, logger)
+			logger.Close()
+			if err != nil || result != "Coffee grows on clouds." || calls != 1 {
+				t.Fatalf("revision failed: %q %v (%d calls)", result, err, calls)
+			}
+		}
+	}
+}
 
 func TestExtractQuotedSentences(t *testing.T) {
 	tests := []struct {
