@@ -153,6 +153,12 @@ const (
 
 // LoadProgress loads project metadata and chapter prose.
 func LoadProgress(path string) (*Progress, error) {
+	progressStorageMu.Lock()
+	defer progressStorageMu.Unlock()
+	if err := recoverProgress(path, fsutil.WriteFileAtomic); err != nil {
+		return nil, err
+	}
+	resetCache(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -166,7 +172,9 @@ func LoadProgress(path string) (*Progress, error) {
 		return nil, fmt.Errorf("解析进度文件失败: %w", err)
 	}
 
-	loadChapterContents(path, &p)
+	if err := loadChapterContents(path, &p); err != nil {
+		return nil, err
+	}
 	return &p, nil
 }
 
@@ -174,7 +182,16 @@ func LoadProgress(path string) (*Progress, error) {
 // whose content changed since load/last save are rewritten), then writes the
 // metadata file without prose content.
 func SaveProgress(path string, p *Progress) error {
-	if err := saveChapterFiles(path, p); err != nil {
+	progressStorageMu.Lock()
+	defer progressStorageMu.Unlock()
+	if err := recoverProgress(path, fsutil.WriteFileAtomic); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(chaptersDir(path), 0755); err != nil {
+		return &fsutil.SaveError{Path: path, Stage: "create_chapters", OriginalPreserved: true, Err: err}
+	}
+	files, err := prepareChapterFiles(path, p)
+	if err != nil {
 		return err
 	}
 
@@ -191,9 +208,16 @@ func SaveProgress(path string, p *Progress) error {
 	if err != nil {
 		return fmt.Errorf("序列化进度失败: %w", err)
 	}
-	if err := fsutil.WriteFileAtomic(path, data); err != nil {
+	files = append(files, progressFile{Num: 0, Data: data})
+	if err := commitProgressFiles(path, files, fsutil.WriteFileAtomic); err != nil {
 		return fmt.Errorf("保存进度文件失败: %w", err)
 	}
+	cache := cacheFor(path)
+	contentHashCache.Lock()
+	for _, ch := range p.Chapters {
+		cache[ch.Num] = HashContent(ch.Content)
+	}
+	contentHashCache.Unlock()
 	cleanupChapterFiles(path, p)
 	return nil
 }

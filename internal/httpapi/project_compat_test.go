@@ -3,14 +3,59 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"showmethestory/internal/config"
 	"showmethestory/internal/story"
+	"strings"
 	"testing"
 )
+
+func TestProjectSelectPreservesCurrentProjectOnStorageFailure(t *testing.T) {
+	for _, lang := range []string{"zh", "en"} {
+		for _, recovery := range []bool{false, true} {
+			t.Run(lang+fmt.Sprint(recovery), func(t *testing.T) {
+				root := t.TempDir()
+				writeProjectFile(t, root, "storys/broken/config.json", `{"project_format_version":4}`)
+				writeProjectFile(t, root, "storys/broken/progress.json", `{"chapters":[{"num":1,"status":"accepted","word_count":10}]}`)
+				if recovery {
+					writeProjectFile(t, root, "storys/broken/progress.json.rollback", `{`)
+				}
+				h := NewHandlers(nil, "", nil, root, "test")
+				h.projectName = "current"
+				before := h.state
+				r := httptest.NewRequest("POST", "/api/projects/select", strings.NewReader(`{"name":"broken"}`))
+				r.Header.Set("X-UI-Locale", lang)
+				res := httptest.NewRecorder()
+				h.PostProjectSelect(res, r)
+				if res.Code != http.StatusBadRequest || h.projectName != "current" || h.state != before {
+					t.Fatal("failed load switched project", res.Code)
+				}
+				var response map[string]any
+				if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				if recovery {
+					if response["code"] != "storage_save_failed" || response["storage_error"] == nil {
+						t.Fatal("recovery error lost diagnostics", response)
+					}
+				} else {
+					message := response["error"].(string)
+					want := "第 1 章"
+					if lang == "en" {
+						want = "Chapter 1"
+					}
+					if !strings.Contains(message, want) || !strings.Contains(message, filepath.Join(root, "storys", "broken", "chapters", "000001.json")) {
+						t.Fatal("missing localized chapter diagnostic", message)
+					}
+				}
+			})
+		}
+	}
+}
 
 func TestDetectProjectCompatibility(t *testing.T) {
 	root := t.TempDir()

@@ -2,11 +2,214 @@ package story
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"showmethestory/internal/fsutil"
 	"strings"
 	"testing"
 )
+
+func TestProgressTransactionRollsBackEveryFile(t *testing.T) {
+	for _, failNum := range []int{2, 0} {
+		t.Run(fmt.Sprintf("fail_%d", failNum), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "progress.json")
+			p := &Progress{Title: "old", Chapters: []ChapterState{{Num: 1, Content: "original", Status: StatusAccepted}}}
+			if err := SaveProgress(path, p); err != nil {
+				t.Fatal(err)
+			}
+			oldChapter, err := os.ReadFile(chapterFilePath(path, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldMeta, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			files := []progressFile{{Num: 1, Data: []byte(`{"num":1,"content":"new"}`)}, {Num: 2, Data: []byte(`{"num":2,"content":"new chapter"}`)}, {Num: 0, Data: []byte(`{"title":"new"}`)}}
+			failed := false
+			err = commitProgressFiles(path, files, func(target string, data []byte) error {
+				if !failed && target == progressFilePath(path, failNum) {
+					failed = true
+					return errors.New("injected disk failure")
+				}
+				return fsutil.WriteFileAtomic(target, data)
+			})
+			saveErr, ok := fsutil.AsSaveError(err)
+			if !ok || !saveErr.OriginalPreserved {
+				t.Fatalf("missing safe rollback diagnostic: %v", err)
+			}
+			for target, want := range map[string][]byte{path: oldMeta, chapterFilePath(path, 1): oldChapter} {
+				got, err := os.ReadFile(target)
+				if err != nil || string(got) != string(want) {
+					t.Fatal("partial save survived rollback", target, err)
+				}
+			}
+			if _, err := os.Stat(chapterFilePath(path, 2)); !os.IsNotExist(err) {
+				t.Fatal("new chapter survived rollback", err)
+			}
+			if _, err := os.Stat(path + ".rollback"); !os.IsNotExist(err) {
+				t.Fatal("completed rollback retained journal", err)
+			}
+			// A retry must rewrite the new prose rather than trust stale hashes.
+			p.Chapters[0].Content = "retry"
+			if err := SaveProgress(path, p); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := LoadProgress(path)
+			if err != nil || loaded.Chapters[0].Content != "retry" {
+				t.Fatal("retry lost prose", err)
+			}
+		})
+	}
+}
+
+func TestProgressRecoveryAfterInterruptedOrFailedRollback(t *testing.T) {
+	for _, interrupted := range []bool{true, false} {
+		t.Run(fmt.Sprint(interrupted), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "progress.json")
+			p := &Progress{Title: "old", Chapters: []ChapterState{{Num: 1, Content: "original", Status: StatusAccepted}}}
+			if err := SaveProgress(path, p); err != nil {
+				t.Fatal(err)
+			}
+			oldChapter, err := os.ReadFile(chapterFilePath(path, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldMeta, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if interrupted {
+				journal, err := json.Marshal(progressJournal{Version: 1, Files: []progressFile{{Num: 1, Data: oldChapter}, {Num: 0, Data: oldMeta}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := fsutil.WriteFileAtomic(path+".rollback", journal); err != nil {
+					t.Fatal(err)
+				}
+				if err := fsutil.WriteFileAtomic(chapterFilePath(path, 1), []byte(`{"num":1,"content":"uncommitted"}`)); err != nil {
+					t.Fatal(err)
+				}
+				if err := fsutil.WriteFileAtomic(path, []byte(`{"title":"uncommitted"}`)); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				err = commitProgressFiles(path, []progressFile{{Num: 1, Data: []byte(`{"num":1,"content":"uncommitted"}`)}, {Num: 0, Data: []byte(`{}`)}}, func(target string, data []byte) error {
+					if target == path || string(data) == string(oldChapter) {
+						return errors.New("disk unavailable")
+					}
+					return fsutil.WriteFileAtomic(target, data)
+				})
+				saveErr, ok := fsutil.AsSaveError(err)
+				if !ok || saveErr.OriginalPreserved || saveErr.RestoreErr == nil || saveErr.BackupPath != path+".rollback" {
+					t.Fatalf("missing retained journal diagnostic: %v", err)
+				}
+			}
+			resetCache(path)
+			loaded, err := LoadProgress(path)
+			if err != nil || loaded.Title != "old" || loaded.Chapters[0].Content != "original" {
+				t.Fatal("recovery did not restore a complete save", err)
+			}
+			if _, err := os.Stat(path + ".rollback"); !os.IsNotExist(err) {
+				t.Fatal("recovered journal retained", err)
+			}
+		})
+	}
+}
+
+func TestInvalidRecoveryJournalBlocksLoadAndSave(t *testing.T) {
+	for _, journal := range []string{`{`, `{"version":2,"files":[{"num":0,"data":null}]}`, `{"version":1,"files":[{"num":-1,"data":null},{"num":0,"data":null}]}`, `{"version":1,"files":[{"num":0,"data":null},{"num":0,"data":null}]}`, `{"version":1,"files":[{"num":1,"data":null}]}`, `{"version":1,"files":[{"num":0}]}`, `{"version":1,"files":[{"data":null}]}`} {
+		path := filepath.Join(t.TempDir(), "progress.json")
+		if err := os.WriteFile(path, []byte(`{"title":"original"}`), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path+".rollback", []byte(journal), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := LoadProgress(path); err == nil || got != nil {
+			t.Fatal("invalid recovery allowed load")
+		}
+		if err := SaveProgress(path, &Progress{}); err == nil {
+			t.Fatal("invalid recovery allowed save")
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != `{"title":"original"}` {
+			t.Fatal("invalid journal changed original", err)
+		}
+	}
+}
+
+func TestLoadProgressRejectsUnreadableChapters(t *testing.T) {
+	for _, damage := range []string{"missing", "invalid JSON", "directory", "wrong number", "missing content", "empty content"} {
+		t.Run(damage, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "progress.json")
+			p := &Progress{Chapters: []ChapterState{{Num: 1, Content: "original prose", Status: StatusAccepted}}}
+			if err := SaveProgress(path, p); err != nil {
+				t.Fatal(err)
+			}
+			chapterPath := chapterFilePath(path, 1)
+			if err := os.Remove(chapterPath); err != nil {
+				t.Fatal(err)
+			}
+			var damaged []byte
+			switch damage {
+			case "directory":
+				if err := os.Mkdir(chapterPath, 0755); err != nil {
+					t.Fatal(err)
+				}
+			case "invalid JSON":
+				damaged = []byte(`{"num":1,"content":"recoverable prose`)
+			case "wrong number":
+				damaged = []byte(`{"num":2,"content":"other chapter"}`)
+			case "missing content":
+				damaged = []byte(`{"num":1}`)
+			case "empty content":
+				damaged = []byte(`{"num":1,"content":""}`)
+			}
+			if damaged != nil {
+				if err := os.WriteFile(chapterPath, damaged, 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			resetCache(path) // A fresh process must not turn read errors into empty prose.
+			got, err := LoadProgress(path)
+			if err == nil || got != nil || !strings.Contains(err.Error(), chapterPath) {
+				t.Fatalf("loaded damaged chapter: progress=%v error=%v", got, err)
+			}
+			if damaged != nil {
+				data, err := os.ReadFile(chapterPath)
+				if err != nil || string(data) != string(damaged) {
+					t.Fatal("damaged original changed", err)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadProgressAllowsOnlyUnwrittenMissingChapter(t *testing.T) {
+	for _, status := range []string{StatusPending, StatusWriting, StatusReview, StatusAccepted} {
+		t.Run(status, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "progress.json")
+			data, err := json.Marshal(&Progress{Chapters: []ChapterState{{Num: 1, Status: status}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0644); err != nil {
+				t.Fatal(err)
+			}
+			got, err := LoadProgress(path)
+			if status == StatusPending {
+				if err != nil || got.Chapters[0].Content != "" {
+					t.Fatal("unwritten chapter rejected", err)
+				}
+			} else if err == nil || !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("missing written chapter accepted", err)
+			}
+		})
+	}
+}
 
 func TestStorageRoundtrip(t *testing.T) {
 	dir := t.TempDir()

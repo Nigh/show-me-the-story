@@ -61,6 +61,8 @@ main.go
 
 - v4 的 `progress.json` 只存元数据，正文存于 `chapters/NNNNNN.json`；API 通过 `ProgressView` 返回无正文视图和派生字段。
 - 配置、进度、设定、会话及校订状态写入必须复用 `fsutil.WriteFileAtomic` 或现有领域保存函数；先提交元数据，再清理孤儿章节文件。
+- 正文与进度保存由进程内存储锁串行执行；覆盖前以 `progress.json.rollback` 保存本次涉及文件的旧字节，删除回滚日志后才视为提交并清理孤儿文件。加载、保存或重置前先恢复未完成事务；恢复失败保留日志、阻止操作并返回结构化 `SaveError`。该日志不提供历史版本，也不支持多个程序同时写同一项目。
+- 章节读取、JSON 或身份校验失败必须阻止项目加载并保留章号、路径和原因；仅完全未写的 pending 章节允许文件缺失，不得把已有正文的读取失败当作空章节。
 - 当前程序只打开 `project_format_version: 4`。v2/v3/未知格式仅可只读探测并提示对应版本，不加载、不迁移、不写回。
 - 运行时配置/项目 JSON、`storys/`、`frontend/dist/`、二进制和 `dev.log` 均是本地/生成内容，不提交；已跟踪的 `frontend/package-lock.json` 例外。
 - 章节 `Content` 是正文事实源；`Blocks` 从正文派生并保持稳定 ID，块编辑后重建 `Content`。
@@ -71,6 +73,7 @@ main.go
 ### 异步任务
 
 - AI 端点统一走 `tryStartTask()`，后台执行并 `defer endTask()`；同一时间只允许一个 AI 任务。
+- 章纲编辑及伏笔确认附带的一致性检查同样在修改前预留任务锁，沿用 `taskCtx`、Skill 激活与任务事件；失败或取消不得发布新报告，保存失败必须保留存储诊断，所有提前返回释放预留。
 - `taskCtx` 承载取消与任务 token 统计；SSE 提供日志、流式片段、任务状态和领域刷新事件。
 - `endTask` 在释放互斥前同步本任务改动且已跟踪的正文知识；校订任务显式跳过该流程。
 - 存储失败必须保留 `fsutil.SaveError` 的结构化诊断，不得用普通成功 Toast 覆盖。

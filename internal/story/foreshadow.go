@@ -369,23 +369,29 @@ func applyForeshadowOutlineReport(state *Progress, report *ForeshadowOutlineRepo
 	state.LastForeshadowOutlineReport = report
 }
 
-func RunForeshadowOutlineCheckAndSave(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, progressPath string, logger *sse.LogBroadcaster) {
+func RunForeshadowOutlineCheckAndSave(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, progressPath string, logger *sse.LogBroadcaster) error {
 	if len(state.Foreshadows) == 0 {
-		return
+		return nil
 	}
 	report, err := CheckForeshadowOutlineConsistency(ctx, apiCfg, cfg, state, logger)
 	if err != nil {
 		logger.WarnKey("log.foreshadow_outline_check_failed", err)
-		return
+		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	before := state.LastForeshadowOutlineReport
 	applyForeshadowOutlineReport(state, report)
 	if err := SaveProgress(progressPath, state); err != nil {
-		logger.WarnKey("log.foreshadow_outline_report_save_failed", err)
-		return
+		state.LastForeshadowOutlineReport = before
+		logger.ErrorKey("log.foreshadow_outline_report_save_failed", err)
+		return err
 	}
 	if report.HasConflicts {
 		logger.ForeshadowOutlineConflicts(report)
 	} else {
 		logger.InfoKey("log.foreshadow_outline_check_pass")
 	}
+	return nil
 }
