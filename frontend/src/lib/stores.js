@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 
 export const apiConfig = writable(null);
 export const config = writable(null);
@@ -28,7 +28,6 @@ export const autoConfirm = writable(false);
 export const chatSessions = writable(null);
 export const currentChatSession = writable(null);
 
-export const editingChapterNum = writable(-1);
 export const editingCharID = writable(null);
 export const editingWvID = writable(null);
 export const wvFilter = writable('all');
@@ -51,17 +50,13 @@ export function addLog(entry) {
 
 export function addToast(msg, type = 'info') {
   const id = Date.now();
-  const unsub = toastStore.subscribe(() => {});
   toastStore.update(t => [...t, { id, msg, type }]);
-  unsub();
   setTimeout(() => {
     toastStore.update(t => t.filter(x => x.id !== id));
   }, 3000);
 }
 
 export const toastStore = writable([]);
-
-export const taskNotification = writable(null);
 
 export const confirmModal = writable(null);
 

@@ -1,6 +1,9 @@
 package story
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCalcOutlineLengthRange(t *testing.T) {
 	tests := []struct {
@@ -57,19 +60,11 @@ func TestNormalizeOutlineCharacters(t *testing.T) {
 
 func TestValidateOutlineChapterLengths(t *testing.T) {
 	chapters := []OutlineChapter{
-		{Num: 1, Outline: stringsRepeat("情节", 50)},
+		{Num: 1, Outline: strings.Repeat("情节", 50)},
 		{Num: 2, Outline: "太短"},
 	}
 	short := validateOutlineChapterLengths(chapters, 80)
 	if len(short) != 1 || short[0] != 2 {
 		t.Fatalf("validateOutlineChapterLengths() = %v, want [2]", short)
 	}
-}
-
-func stringsRepeat(s string, n int) string {
-	out := ""
-	for i := 0; i < n; i++ {
-		out += s
-	}
-	return out
 }
