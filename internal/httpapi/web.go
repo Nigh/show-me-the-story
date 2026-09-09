@@ -231,7 +231,7 @@ func (h *Handlers) GetProjects(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Project language: read config.json's "language" field; default zh for old projects.
+		// Project language comes from config.json; old projects default to zh.
 		lang := i18n.LangZH
 		if data, err := os.ReadFile(filepath.Join(projectDir, "config.json")); err == nil {
 			var probe struct {

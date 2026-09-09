@@ -47,7 +47,6 @@
 
   // 重试 API 端点映射
   const retryEndpoints = {
-    'outline_generation': { method: 'POST', url: '/api/outline/generate' },
     'outline_revision': { method: 'POST', url: '/api/outline/revise' },
     'chapter_generation': { method: 'POST', url: '/api/chapter/generate' },
     'chapter_revision': { method: 'POST', url: '/api/chapter/revise' },

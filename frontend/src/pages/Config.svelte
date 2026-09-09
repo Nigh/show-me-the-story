@@ -37,7 +37,7 @@
   $: cfgTimeout = $apiConfig?.http_timeout_seconds || 600;
 
   let localApiCfg = { base_url: '', url_strict: false, model: '', api_key: '', http_timeout_seconds: 600, max_tokens: 32768, context_budget_tokens: 900000 };
-  let localStoryCfg = { type: '', title: '', chapter_count: 30, target_words_per_chapter: 2500, writing_style: '', writing_pov: '', story_synopsis: '' };
+  let localStoryCfg = { type: '', title: '', target_words_per_chapter: 2500, writing_style: '', writing_pov: '' };
   let testingApi = false;
 
   $: resolvedChatURL = resolveChatCompletionsURL(localApiCfg.base_url, !!localApiCfg.url_strict);

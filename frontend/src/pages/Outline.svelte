@@ -74,7 +74,7 @@
     return out;
   }
 
-  // 导入续写（v3 流水线）
+  // 导入续写
   let showImport = false;
   let importContent = '';
   let importPreview = null; // [{num,title,word_count,preview}]
@@ -444,7 +444,7 @@
           {#each groups as group (group.id)}
             <section class="border border-base-content/10 rounded-lg p-3 space-y-2">
               <div class="flex items-center justify-between gap-2">
-                <h4 class="font-semibold text-sm">{group.id ? $t('outline.batch.range', { start: group.start_ch, end: group.end_ch }) : $t('outline.batch.legacy')}</h4>
+                <h4 class="font-semibold text-sm">{group.id ? $t('outline.batch.range', { start: group.start_ch, end: group.end_ch }) : $t('outline.batch.imported')}</h4>
                 {#if group.planned_final}<span class="badge badge-info">{$t('ending.marker', {num: group.end_ch})}</span>{/if}
                 {#if canReplan(group)}<button class="btn btn-ghost btn-xs" disabled={batchBlocked} on:click={() => replan(group)}>{$t('outline.batch.replan')}</button>{/if}
               </div>

@@ -34,7 +34,7 @@
    <td><button class="link link-hover font-medium text-left" on:click={()=>showDetail(sv.skill.id)}>{sv.skill.name}</button><div class="text-xs opacity-50 max-w-xs">{sv.skill.description}</div></td>
    <td><div class="flex flex-wrap gap-1">{#each sv.skill.applies_to||[] as scope}<span class="badge badge-outline badge-xs">{scope}</span>{/each}</div></td>
    <td><span class="badge badge-sm {statusClass(sv.validation_status)}" title={$t(`skills.status.${sv.validation_status}`)}>{statusIcon(sv.validation_status)}</span></td>
-   <td>{sv.skill.source==='builtin'?$t('skills.source.builtin'):sv.skill.source==='project'?$t('skills.source.legacy'):$t('skills.source.user')}</td>
+   <td>{sv.skill.source==='builtin'?$t('skills.source.builtin'):$t('skills.source.user')}</td>
    <td><div class="flex gap-1">{#if sv.can_validate}<button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={()=>validateSkill(sv.skill.id)}>{$t('skills.validate.button')}</button>{/if}{#if sv.validation_status==='failed'||sv.validation_status==='needs_optimization'}<button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={()=>optimizeSkill(sv.skill.id)}>{$t('skills.optimize.button')}</button>{/if}{#if sv.can_delete}<button class="btn btn-error btn-outline btn-xs" disabled={$taskRunning} on:click={()=>removeSkill(sv.skill.id)}>{$t('common.delete')}</button>{/if}</div></td>
    <td><input type="checkbox" class="toggle toggle-primary toggle-sm" checked={sv.enabled} disabled={$taskRunning||blocked(sv.validation_status)} on:change={e=>toggleSkill(sv.skill.id,e.target.checked)}/></td>
   </tr>{/each}</tbody></table></div></div></div>
