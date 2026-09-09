@@ -908,6 +908,7 @@ export default {
   'proofread.started': 'Task started', 'proofread.applyConfirm': 'Proofread every chapter while preserving paragraph structure? This project cannot resume writing after prose changes.',
   'proofread.analyzeConfirm': 'Analyze the manuscript and generate issues for manual review?', 'proofread.someFailed': 'Some chapters failed and were left unchanged. You can run proofreading again later.',
   'proofread.allStatus': 'All statuses', 'proofread.allCategory': 'All categories', 'proofread.pending': 'Pending', 'proofread.resolved': 'Resolved', 'proofread.ignored': 'Ignored',
+  'proofread.category.logic': 'Logic', 'proofread.category.fact': 'Facts', 'proofread.category.structure': 'Structure', 'proofread.category.rhythm': 'Pacing', 'proofread.category.foreshadow': 'Foreshadowing', 'proofread.category.character': 'Characters', 'proofread.category.other': 'Other',
   'proofread.suggestion': 'Suggestion', 'proofread.noIssues': 'No reported issues', 'proofread.anchor': 'Chapter {chapter} · block {block}',
   'proofread.anchorMissing': 'This report location is stale; the block may have been deleted', 'proofread.reportOutdated': 'The prose changed after this report was generated; verify that the issue still exists',
   'proofread.chapter': 'Chapter {n}: {title}', 'proofread.undo': 'Undo this chapter', 'proofread.deleteConfirm': 'Deleting this paragraph can invalidate report links. Delete it?',

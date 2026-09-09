@@ -8,7 +8,7 @@
   $: complete = $progress?.book_status === 'completed';
   let downloadedBook = false, downloadedOutline = false, backupChecked = false;
   let preferences = '', selectedStatus = 'all', selectedCategory = 'all';
-  let chapter = null, highlighted = 0, editing = 0, editText = '', insertAfter = 0, insertText = '';
+  let chapter = null, highlighted = 0, selectedBlock = 0, editing = 0, editText = '', insertAfter = 0, insertText = '';
   let continuationName = '';
 
   async function load() {
@@ -31,8 +31,13 @@
 
   $: filtered = (pp.issues || []).filter(i => (selectedStatus === 'all' || i.status === selectedStatus) && (selectedCategory === 'all' || i.category === selectedCategory));
   $: categories = [...new Set((pp.issues || []).map(i => i.category))];
+  function selectBlock(id) {
+    if (editing || insertAfter) return;
+    highlighted = 0;
+    selectedBlock = selectedBlock === id ? 0 : id;
+  }
   async function jump(a) {
-    try { chapter = await api('GET','/api/chapters/'+a.chapter_num); const block=(chapter.blocks||[]).find(b=>b.id===a.block_id); if(!block){addToast($t('proofread.anchorMissing'),'warning');return;} if(a.content_rev&&chapter.content_rev&&a.content_rev!==chapter.content_rev)addToast($t('proofread.reportOutdated'),'warning'); highlighted = a.block_id; await tick(); document.getElementById('proofread-block-'+a.block_id)?.scrollIntoView({block:'center',behavior:'smooth'}); }
+    try { chapter = await api('GET','/api/chapters/'+a.chapter_num); const block=(chapter.blocks||[]).find(b=>b.id===a.block_id); if(!block){addToast($t('proofread.anchorMissing'),'warning');return;} if(a.content_rev&&chapter.content_rev&&a.content_rev!==chapter.content_rev)addToast($t('proofread.reportOutdated'),'warning'); selectedBlock = 0; highlighted = a.block_id; await tick(); document.getElementById('proofread-block-'+a.block_id)?.scrollIntoView({block:'center',behavior:'smooth'}); }
     catch(e) { addToast(e.message,'error'); }
   }
   async function setStatus(issue,status) { try { const value=await api('PUT','/api/proofread/issues/'+encodeURIComponent(issue.id),{status}); postprocess.set({book_complete:true,state:value}); } catch(e){addToast(e.message,'error');} }
@@ -59,28 +64,28 @@
 {:else}
   <div class="space-y-3">
     <div class="card bg-base-200"><div class="card-body p-4 gap-3">
-      <div class="flex gap-2 items-center flex-wrap"><h2 class="card-title flex-1">{$t('proofread.title')}</h2><button class="btn btn-ghost btn-sm" on:click={()=>download('/api/export/txt',()=>{})}>{$t('proofread.downloadBook')}</button><button class="btn btn-ghost btn-sm" on:click={()=>download('/api/export/outline',()=>{})}>{$t('proofread.downloadOutline')}</button><button class="btn btn-ghost btn-sm" on:click={()=>download('/api/proofread/export',()=>{})}>{$t('proofread.downloadReport')}</button></div>
+      <div class="flex gap-2 items-center flex-wrap"><h2 class="card-title flex-1">{$t('proofread.title')}</h2><button class="btn btn-outline btn-sm" on:click={()=>download('/api/export/txt',()=>{})}>{$t('proofread.downloadBook')}</button><button class="btn btn-outline btn-sm" on:click={()=>download('/api/export/outline',()=>{})}>{$t('proofread.downloadOutline')}</button><button class="btn btn-outline btn-sm" on:click={()=>download('/api/proofread/export',()=>{})}>{$t('proofread.downloadReport')}</button></div>
       <p class="text-xs opacity-60">{$t('proofread.boundary')}</p>
-      <textarea class="textarea textarea-bordered textarea-sm" bind:value={preferences} placeholder={$t('proofread.preferences')}></textarea>
+      <textarea class="textarea textarea-bordered textarea-sm w-full" bind:value={preferences} placeholder={$t('proofread.preferences')}></textarea>
       <div class="flex gap-2"><button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={applyAll}>{$t('proofread.apply')}</button><button class="btn btn-secondary btn-sm" disabled={$taskRunning} on:click={analyze}>{$t('proofread.analyze')}</button></div>
       {#if Object.keys(pp.apply_errors||{}).length}<div class="alert alert-warning text-xs">{$t('proofread.someFailed')}</div>{/if}
     </div></div>
 
     <div class="grid grid-cols-[345px_minmax(0,1fr)] gap-3 min-h-[520px]">
       <div class="card bg-base-200"><div class="card-body p-3 gap-2 overflow-y-auto max-h-[70vh]">
-        <div class="flex gap-1"><select class="select select-xs flex-1" bind:value={selectedStatus}><option value="all">{$t('proofread.allStatus')}</option><option value="pending">{$t('proofread.pending')}</option><option value="resolved">{$t('proofread.resolved')}</option><option value="ignored">{$t('proofread.ignored')}</option></select><select class="select select-xs flex-1" bind:value={selectedCategory}><option value="all">{$t('proofread.allCategory')}</option>{#each categories as c}<option value={c}>{c}</option>{/each}</select></div>
+        <div class="flex gap-1"><select class="select select-xs flex-1" bind:value={selectedStatus}><option value="all">{$t('proofread.allStatus')}</option><option value="pending">{$t('proofread.pending')}</option><option value="resolved">{$t('proofread.resolved')}</option><option value="ignored">{$t('proofread.ignored')}</option></select><select class="select select-xs flex-1" bind:value={selectedCategory}><option value="all">{$t('proofread.allCategory')}</option>{#each categories as c}<option value={c}>{$t('proofread.category.' + c)}</option>{/each}</select></div>
         {#each filtered as issue}
           <div class="border border-base-300 rounded p-2 space-y-1"><div class="font-medium text-sm">{issue.title}</div><div class="text-xs opacity-70">{issue.detail}</div><div class="text-xs">{$t('proofread.suggestion')}：{issue.suggestion}</div>
-            <div class="flex flex-wrap gap-1">{#each issue.anchors as a}<button class="btn btn-ghost btn-xs" on:click={()=>jump(a)}>{$t('proofread.anchor',{chapter:a.chapter_num,block:a.block_id})}</button>{/each}</div>
-            <div class="join"><button class="btn btn-xs join-item" class:btn-success={issue.status==='resolved'} on:click={()=>setStatus(issue,'resolved')}>{$t('proofread.resolved')}</button><button class="btn btn-xs join-item" class:btn-ghost={issue.status==='ignored'} on:click={()=>setStatus(issue,'ignored')}>{$t('proofread.ignored')}</button><button class="btn btn-xs join-item" on:click={()=>setStatus(issue,'pending')}>{$t('proofread.pending')}</button></div>
+            <div class="flex flex-wrap gap-1">{#each issue.anchors as a}<button class="btn btn-outline btn-xs" on:click={()=>jump(a)}>{$t('proofread.anchor',{chapter:a.chapter_num,block:a.block_id})}</button>{/each}</div>
+            <div class="tabs tabs-box tabs-xs w-fit"><button class="tab" class:tab-active={issue.status==='resolved'} on:click={()=>setStatus(issue,'resolved')}>{$t('proofread.resolved')}</button><button class="tab" class:tab-active={issue.status==='ignored'} on:click={()=>setStatus(issue,'ignored')}>{$t('proofread.ignored')}</button><button class="tab" class:tab-active={issue.status==='pending'} on:click={()=>setStatus(issue,'pending')}>{$t('proofread.pending')}</button></div>
           </div>
         {:else}<p class="text-sm opacity-50 text-center py-6">{$t('proofread.noIssues')}</p>{/each}
       </div></div>
       <div class="card bg-base-200"><div class="card-body p-4 overflow-y-auto max-h-[70vh]">
         {#if chapter}<div class="flex items-center"><h3 class="font-bold flex-1">{$t('proofread.chapter',{n:chapter.num,title:chapter.title})}</h3>{#if (pp.revisions||[]).some(r=>r.chapter_num===chapter.num)}<button class="btn btn-warning btn-xs" on:click={()=>undo(chapter.num)}>{$t('proofread.undo')}</button>{/if}</div>
-          <div class="space-y-3 mt-3">{#each chapter.blocks||[] as b (b.id)}<div id={'proofread-block-'+b.id} class="rounded px-2 py-1" class:ring-2={highlighted===b.id}>
+          <div class="space-y-3 mt-3">{#each chapter.blocks||[] as b (b.id)}<div id={'proofread-block-'+b.id} class="relative rounded px-2 py-1 -mx-2 cursor-pointer transition-colors hover:bg-base-100/40 {highlighted===b.id ? 'bg-info/20' : selectedBlock===b.id ? 'bg-primary/10' : ''}" role="button" tabindex="0" aria-pressed={selectedBlock===b.id} on:click={() => selectBlock(b.id)} on:keydown={(e) => { if (e.currentTarget === e.target && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectBlock(b.id); } }}>
             {#if editing===b.id}<textarea class="textarea w-full" rows="5" bind:value={editText}></textarea><div class="flex gap-1 justify-end"><button class="btn btn-xs" on:click={()=>editing=0}>{$t('common.cancel')}</button><button class="btn btn-primary btn-xs" on:click={()=>saveBlock(b.id)}>{$t('common.save')}</button></div>
-            {:else}<p class="whitespace-pre-wrap leading-relaxed">{b.text}</p><div class="opacity-0 hover:opacity-100 flex gap-1"><button class="btn btn-ghost btn-xs" on:click={()=>{editing=b.id;editText=b.text}}>{$t('common.edit')}</button><button class="btn btn-ghost btn-xs" on:click={()=>{insertAfter=b.id;insertText=''}}>{$t('proofread.insert')}</button><button class="btn btn-ghost btn-xs btn-error" on:click={()=>deleteBlock(b.id)}>{$t('common.delete')}</button></div>{/if}
+            {:else}<p class="whitespace-pre-wrap leading-relaxed">{b.text}</p>{#if selectedBlock===b.id}<div class="absolute right-1 top-1 flex gap-1 bg-base-200 border border-base-content/20 rounded px-1 py-0.5"><button class="btn btn-outline btn-xs" on:click|stopPropagation={()=>{editing=b.id;editText=b.text}}>{$t('common.edit')}</button><button class="btn btn-outline btn-xs" on:click|stopPropagation={()=>{insertAfter=b.id;insertText=''}}>{$t('proofread.insert')}</button><button class="btn btn-error btn-outline btn-xs" on:click|stopPropagation={()=>deleteBlock(b.id)}>{$t('common.delete')}</button></div>{/if}{/if}
             {#if insertAfter===b.id}<div class="mt-2"><textarea class="textarea w-full" bind:value={insertText}></textarea><button class="btn btn-primary btn-xs" disabled={!insertText.trim()} on:click={addBlock}>{$t('proofread.add')}</button></div>{/if}
           </div>{/each}</div>
         {:else}<p class="opacity-50 text-center py-12">{$t('proofread.pickIssue')}</p>{/if}

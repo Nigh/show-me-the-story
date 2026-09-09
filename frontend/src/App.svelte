@@ -239,7 +239,7 @@
   <!-- Toasts -->
   <div class="fixed top-5 right-5 z-50 flex flex-col gap-2">
     {#each $toastStore as t (t.id)}
-      <div class="alert alert-sm {t.type === 'success' ? 'alert-success' : t.type === 'error' ? 'alert-error' : 'alert-info'} toast-enter shadow-lg max-w-sm">
+      <div class="alert alert-sm {t.type === 'success' ? 'alert-success' : t.type === 'error' ? 'alert-error' : 'alert-info'} toast-enter  max-w-sm">
         <span>{t.msg}</span>
       </div>
     {/each}

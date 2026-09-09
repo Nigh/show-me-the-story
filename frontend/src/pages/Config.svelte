@@ -448,7 +448,7 @@
   <ConfigChangePanel />
   <!-- API + Story Config: side by side -->
   <div class="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <h3 class="card-title text-base">{$t('config.api.title')}</h3>
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
@@ -493,7 +493,7 @@
           </div>
         {/if}
         <div class="flex justify-end gap-2">
-          <button class="btn btn-xs {$apiTestResult ? ($apiTestResult.ok ? 'btn-success btn-outline' : 'btn-error btn-outline') : 'btn-outline'}" on:click={testAPIConfig} disabled={$taskRunning || testingApi}>
+          <button class="btn btn-xs {$apiTestResult ? ($apiTestResult.ok ? 'btn-success btn-outline' : 'btn-error btn-outline') : 'btn-outline border-base-content/35 hover:border-primary hover:bg-primary hover:text-primary-content'}" on:click={testAPIConfig} disabled={$taskRunning || testingApi}>
             {#if testingApi}
               <span class="loading loading-spinner loading-xs"></span>{$t('config.api.testing')}
             {:else}
@@ -505,7 +505,7 @@
       </div>
     </div>
 
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <h3 class="card-title text-base">{$t('config.story.title')}</h3>
         {#if hasAccepted}
@@ -535,7 +535,7 @@
   </div>
 
   <!-- Writing Style & POV -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <h3 class="card-title text-base">{$t('config.style.title')}</h3>
       <div>
@@ -553,7 +553,7 @@
   </div>
 
   <!-- Characters -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -574,8 +574,8 @@
                   <div class="text-xs text-base-content/40 line-clamp-1">{c.personality || c.background || c.age || ''}</div>
                 </div>
                 <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openCharForm(c)} disabled={$taskRunning}>{$t('common.edit')}</button>
-                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteCharacter(c.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
+                  <button class="btn btn-outline btn-xs px-1" on:click={() => openCharForm(c)} disabled={$taskRunning}>{$t('common.edit')}</button>
+                  <button class="btn btn-error btn-outline btn-xs px-1" on:click={() => deleteCharacter(c.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
               </div>
             {/each}
@@ -638,7 +638,7 @@
   </div>
 
   <!-- Worldview -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -667,8 +667,8 @@
                   <div class="text-xs text-base-content/40 line-clamp-1">{w.description}</div>
                 </div>
                 <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openWvForm(w)} disabled={$taskRunning}>{$t('common.edit')}</button>
-                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteWorldview(w.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
+                  <button class="btn btn-outline btn-xs px-1" on:click={() => openWvForm(w)} disabled={$taskRunning}>{$t('common.edit')}</button>
+                  <button class="btn btn-error btn-outline btn-xs px-1" on:click={() => deleteWorldview(w.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
               </div>
             {/each}
@@ -719,7 +719,7 @@
   </div>
 
   <!-- Organizations -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -743,8 +743,8 @@
                   {/if}
                 </div>
                 <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openOrgForm(o)} disabled={$taskRunning}>{$t('common.edit')}</button>
-                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteOrganization(o.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
+                  <button class="btn btn-outline btn-xs px-1" on:click={() => openOrgForm(o)} disabled={$taskRunning}>{$t('common.edit')}</button>
+                  <button class="btn btn-error btn-outline btn-xs px-1" on:click={() => deleteOrganization(o.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
               </div>
             {/each}
@@ -795,7 +795,7 @@
   </div>
 
   <!-- Relations -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -817,8 +817,8 @@
                   <span class="font-medium">{entityIcons[r.target_type] || ''} {nameById[r.target_id] || r.target_id}</span>
                 </div>
                 <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openRelForm(r)} disabled={$taskRunning}>{$t('common.edit')}</button>
-                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteRelation(r.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
+                  <button class="btn btn-outline btn-xs px-1" on:click={() => openRelForm(r)} disabled={$taskRunning}>{$t('common.edit')}</button>
+                  <button class="btn btn-error btn-outline btn-xs px-1" on:click={() => deleteRelation(r.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
               </div>
             {/each}

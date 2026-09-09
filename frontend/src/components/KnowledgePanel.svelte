@@ -61,7 +61,7 @@
     {#if facts.length === 0}<p class="text-base-content/60">{$t('facts.empty')}</p>{/if}
     <div class="flex flex-col items-start gap-2">
       {#each facts as f}
-        <button class="btn btn-sm h-auto min-h-8 max-w-full py-2 text-left justify-start whitespace-normal break-words font-normal" aria-pressed={activeFact?.id === f.id} class:btn-primary={activeFact?.id === f.id} on:click={() => activeFact = activeFact?.id === f.id ? null : f}>#{f.id} {f.content}</button>
+        <button class="btn btn-outline btn-sm h-auto min-h-8 max-w-full py-2 text-left justify-start whitespace-normal break-words font-normal" aria-pressed={activeFact?.id === f.id} class:btn-primary={activeFact?.id === f.id} on:click={() => activeFact = activeFact?.id === f.id ? null : f}>#{f.id} {f.content}</button>
       {/each}
     </div>
     {#if activeFact}

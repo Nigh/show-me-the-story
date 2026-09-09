@@ -272,7 +272,7 @@
 </script>
 
 <div class="space-y-3">
-  <div id="batch-planning" class="card bg-base-200 shadow-sm">
+  <div id="batch-planning" class="card bg-base-200">
     <div class="card-body p-4 gap-3">
       <h3 class="card-title text-base">{$t(batchActionKey)}</h3>
       <label class="block text-sm" for="batch-count">{$t('outline.batch.count')}</label>
@@ -317,11 +317,11 @@
       <div class="text-5xl mb-3">📝</div>
       <p class="text-base mb-1">{$t('outline.empty.title')}</p>
       <p class="text-sm text-base-content/35 mb-6">{$t('outline.empty.hint')}</p>
-      <button class="btn btn-ghost btn-sm" on:click={() => showImport = !showImport} disabled={$taskRunning}>{$t('outline.btn.import')}</button>
+      <button class="btn btn-outline btn-sm" on:click={() => showImport = !showImport} disabled={$taskRunning}>{$t('outline.btn.import')}</button>
     </div>
 
     {#if showImport}
-      <div class="card bg-base-200 shadow-sm">
+      <div class="card bg-base-200">
         <div class="card-body p-4 gap-2">
           <h3 class="card-title text-base">{$t('outline.import.title')}</h3>
           <p class="text-xs text-base-content/50">{$t('outline.import.hint')}</p>
@@ -363,7 +363,7 @@
     <ConfigChangePanel />
 
     {#if $outlineCharacterShowSuggestions && $outlineCharacterSuggestions.length > 0}
-      <div class="card bg-base-200 border border-primary/30 shadow-sm">
+      <div class="card bg-base-200 border border-primary/30 ">
         <div class="card-body py-4 gap-3">
           <h3 class="font-semibold">{$t('outline.charSuggestions.title', { n: $outlineCharacterSuggestions.length })}</h3>
           <p class="text-sm text-base-content/60">{$t('outline.charSuggestions.hint')}</p>
@@ -392,7 +392,7 @@
     {/if}
 
     <!-- 操作栏 -->
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <div class="flex items-center gap-2 flex-wrap">
           <h3 class="text-base font-semibold flex-1 min-w-0 truncate">📖 {displayTitle || $t('common.untitled')}</h3>
@@ -400,9 +400,9 @@
             <button class="btn btn-success btn-xs" on:click={confirmOutline} disabled={$taskRunning || chapters.length === 0}>{$t('outline.btn.confirm')}</button>
           {/if}
           <button class="btn btn-secondary btn-xs" on:click={reviewStory} disabled={$taskRunning || !hasAccepted}>{$t('outline.dynamic.review')}</button>
-          <button class="btn btn-ghost btn-xs" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('outline.btn.revise')}</button>
+          <button class="btn btn-outline btn-xs" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('outline.btn.revise')}</button>
           {#if !hasAccepted}
-            <button class="btn btn-ghost btn-xs text-error" on:click={deleteOutline} disabled={$taskRunning}>{$t('outline.btn.deleteOutline')}</button>
+            <button class="btn btn-error btn-outline btn-xs" on:click={deleteOutline} disabled={$taskRunning}>{$t('outline.btn.deleteOutline')}</button>
           {/if}
         </div>
 
@@ -434,7 +434,7 @@
     </div>
 
     <!-- 章节大纲列表 -->
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <div class="flex items-center justify-between">
           <h4 class="text-sm font-semibold text-base-content/60">{$t('outline.chapterList')} <span class="font-normal text-base-content/35">{$t('outline.chapterList.summary', { total: chapters.length, suffix: pendingCount ? $t('outline.chapterList.pendingSuffix', { n: pendingCount }) : '' })}</span></h4>
@@ -446,7 +446,7 @@
               <div class="flex items-center justify-between gap-2">
                 <h4 class="font-semibold text-sm">{group.id ? $t('outline.batch.range', { start: group.start_ch, end: group.end_ch }) : $t('outline.batch.imported')}</h4>
                 {#if group.planned_final}<span class="badge badge-info">{$t('ending.marker', {num: group.end_ch})}</span>{/if}
-                {#if canReplan(group)}<button class="btn btn-ghost btn-xs" disabled={batchBlocked} on:click={() => replan(group)}>{$t('outline.batch.replan')}</button>{/if}
+                {#if canReplan(group)}<button class="btn btn-outline btn-xs" disabled={batchBlocked} on:click={() => replan(group)}>{$t('outline.batch.replan')}</button>{/if}
               </div>
               {#if group.synopsis}<p class="whitespace-pre-wrap text-sm text-base-content/70 mb-3">{group.synopsis}</p>{/if}
           {#each group.chapters as ch (ch.num)}
@@ -472,7 +472,7 @@
               <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div
                 data-outline-chapter={ch.num}
-                class="bg-base-300 rounded-lg p-2.5 group {isOutlineEditable(ch.status) && !$taskRunning ? 'cursor-pointer hover:ring-1 hover:ring-primary/40' : ''} transition-shadow"
+                class="bg-base-300 rounded-lg p-2.5 group {isOutlineEditable(ch.status) && !$taskRunning ? 'cursor-pointer hover:ring-1 hover:ring-primary/40' : ''}"
                 on:click={() => isOutlineEditable(ch.status) && !$taskRunning && startEdit(ch)}
               >
                 <div class="flex items-center gap-2">

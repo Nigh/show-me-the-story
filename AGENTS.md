@@ -4,6 +4,9 @@
 
 ## UI 样式约定
 
+- 中文导航菜单使用“校订”作为完稿校订页的短标签，与其他导航项长度对齐；页面内仍使用完整名称。
+- 完稿校订页的类型筛选保留英文枚举值用于 API 与存储，并通过 `proofread.category.*` 词条显示中英文标签。
+- 会话任务状态中的 token 计数器独占标题下方一行且不折行，避免助理栏变窄时与任务名、展开按钮互相挤压。
 - WebUI 启动立即恢复服务端当前项目，不等待 GitHub 版本检查或配置读取；初始化时不显示项目选择页。SSE 恢复／收到任务开始后，选择页自动进入服务端当前项目；返回项目列表前再次查询任务状态，任务期间禁止返回。恢复失败自动重试，切换项目数据清空后并行加载；`node frontend/src/lib/projectRestore.check.js` 用模拟 API 执行 App 脚本，覆盖阻塞更新检查、配置读取失败、返回拦截与任务开始自动恢复。
 
 - 写作页章节列表宽度为 345px（原 230px 增宽 50%），正文列使用 `minmax(0,1fr)` 避免长内容撑开网格。
@@ -13,7 +16,8 @@
 - TXT 导出的下载文件名与首行优先使用配置中的小说标题（进度标题兜底）；首行使用 Markdown 一级标题，各章使用 Markdown 二级标题。
 - 事实与设定同步面板位于章节正文卡片内，默认折叠；摘要常驻显示事实、待同步与待确认数量，点击正文事实标记自动展开。长事实按钮换行，来源与设定差异保留可读间距。
 - 写作页点击章节时会显式触发按需正文加载；即使首次请求未完成或失败，再次点击当前章节也能重试，无需先切换到其他章节。
-- 辅助字号 `text-xs` 统一为 13px，面板标题为 16px；页签使用 DaisyUI 5 的 `tabs-box`。
+- 字号、行高、字重、字体与色彩均使用 `@xianii/design-system` 主题 token；正文默认 16px，`text-sm` 用于紧凑 UI，`text-xs` 仅用于元数据等辅助信息；页签使用 DaisyUI 5 的 `tabs-box`。
+- UI 采用全局平面风格：主题 `--depth: 0`，按钮、卡片、弹窗、Toast 与浮动工具栏不使用阴影；主操作用实心语义色，普通操作用 `btn-outline`，取消／关闭等弱操作用 `btn-ghost`，危险操作用 `btn-error btn-outline`。`tabs-box` 统一为描边分段控件，活动项主色填充；写作与校订正文段落统一为 hover 淡底、点击选中，且仅选中后显示右侧文字操作栏；描边按钮 hover 保留语义色外框并使用同色淡背景；项目语言选择也使用同一 tab 语义与外观；校订报告跳转定位使用 info 淡色背景，与 primary 淡色选中态区分。
 - 中间工作区与助理约 2:1 分配，助理宽度 18–28rem；配置双栏根据工作区容器宽度（48rem）切换，事实差异在容器达到 24rem 时并排。项目删除入口始终可见，长项目名截断并保留完整悬浮提示。
 
 ## 结尾控制与事实／设定同步
@@ -690,7 +694,7 @@ Skill 文件格式：YAML frontmatter（`---` 分隔，含 `lang: zh|en`，无 `
 
 ## 前端架构
 
-前端使用 Vite 5 + Svelte 4 + Tailwind CSS 4 + DaisyUI 5 构建，产物输出到 `frontend/dist/`，通过 `//go:embed frontend/dist` 内嵌到 Go 二进制。主题使用 xianii 暗色主题（定义在 `src/app.css` 的 `@plugin "daisyui/theme"` 块中）。
+前端使用 Vite 5 + Svelte 4 + Tailwind CSS 4 + DaisyUI 5 构建，产物输出到 `frontend/dist/`，通过 `//go:embed frontend/dist` 内嵌到 Go 二进制。`src/app.css` 导入 `@xianii/design-system/theme.css`，统一提供 xianii 暗色主题、Tailwind 字号／行高／字重映射与字体 token；正文使用主题的 `--font-size-body` 和 `--line-height-relaxed`。
 
 - **页面**：`config`（配置直接保存 + 角色管理 + 世界观管理 + 组织管理（卡片 + 角色成员勾选）+ 关系管理（卡片 + 源/目标实体下拉，实体覆盖角色/组织/世界观，值编码为 `type:id`））、`outline`（大纲直接操作 + 内联编辑 + 导入续写）、`writing`（写作直接操作 + 定向修订 + 自动确认模式开关 + 伏笔追踪摘要 + 导出 TXT）、`foreshadows`（伏笔 CRUD + AI 建议确认 + 列表/时间线/路线图三视图）、`memory`（叙事记忆只读观测）、`relations`（关系图谱 Canvas）、`skills`（技能管理）
 - **状态管理**：Svelte stores（`src/lib/stores.js`），包含 progress、config、settings、taskRunning、taskTokenUsage（任务 token 累计）、autoConfirm（自动确认模式）、foreshadowSuggestions/foreshadowShowSuggestions（AI 伏笔建议待确认）、pendingConfigChanges/showConfigChangePanel（AI 配置变更待确认）等全局状态

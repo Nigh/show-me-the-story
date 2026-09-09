@@ -2,46 +2,41 @@
 
 @plugin "daisyui";
 
-@plugin "daisyui/theme" {
-  name: "xianii";
-  default: true;
-  color-scheme: dark;
-  --color-base-100: oklch(26% 0 0);
-  --color-base-200: oklch(20% 0 0);
-  --color-base-300: oklch(37% 0 0);
-  --color-base-content: oklch(96% 0.001 286.375);
-  --color-primary: oklch(81% 0.117 11.638);
-  --color-primary-content: oklch(26% 0 0);
-  --color-secondary: oklch(82% 0.119 306.383);
-  --color-secondary-content: oklch(26% 0 0);
-  --color-accent: oklch(83% 0.128 66.29);
-  --color-accent-content: oklch(26% 0 0);
-  --color-neutral: #44403c;
-  --color-neutral-content: oklch(98% 0 0);
-  --color-info: oklch(50% 0.134 242.749);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(52% 0.154 150.069);
-  --color-success-content: oklch(98% 0.031 120.757);
-  --color-warning: oklch(76% 0.188 70.08);
-  --color-warning-content: oklch(14% 0 0);
-  --color-error: oklch(63% 0.237 25.331);
-  --color-error-content: oklch(14% 0 0);
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.3125rem;
-  --border: 1px;
-  --depth: 1;
-  --noise: 0;
+@import "@xianii/design-system/theme.css";
+
+:root, [data-theme="xianii"] {
+  --depth: 0;
 }
 
-@theme {
-  --text-xs: 0.8125rem;
-  --text-xs--line-height: 1.5;
-  --font-sans: "Inter", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-  --font-serif: "Noto Serif", "Noto Serif SC", ui-serif, Georgia, serif;
-  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "Cascadia Code", monospace;
+.btn, .modal-box, .alert, .card, .tabs-box {
+  box-shadow: none;
+}
+
+@media (hover: hover) {
+  .btn-outline:hover:not(:disabled, [disabled], .btn-disabled) {
+    --btn-bg: color-mix(in oklch, var(--btn-color, var(--color-base-content)) 14%, transparent);
+    --btn-fg: var(--btn-color, var(--color-base-content));
+    --btn-border: var(--btn-color, var(--color-base-content));
+  }
+}
+
+.tabs-box {
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 20%, transparent);
+  background: transparent;
+  padding: 0.2rem;
+}
+.tabs-box > .tab {
+  border: 1px solid transparent;
+  border-radius: var(--radius-field);
+}
+.tabs-box > .tab:hover:not(.tab-active) {
+  background: var(--color-base-300);
+  color: var(--color-base-content);
+}
+.tabs-box > .tab.tab-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-content);
 }
 
 html, body, #app {
@@ -51,8 +46,8 @@ html, body, #app {
 
 body {
   font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-relaxed);
 }
 
 /* Toast animation */
