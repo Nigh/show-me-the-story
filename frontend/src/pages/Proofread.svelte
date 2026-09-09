@@ -33,6 +33,7 @@
 
   $: filtered = (pp.issues || []).filter(i => (selectedStatus === 'all' || i.status === selectedStatus) && (selectedCategory === 'all' || i.category === selectedCategory));
   $: categories = [...new Set((pp.issues || []).map(i => i.category))];
+  $: revisedBlocks = (pp.revisions || []).reduce((n, revision) => n + (revision.changes || []).length, 0);
   function selectBlock(id) {
     if (editing || insertAfter) return;
     highlighted = 0;
@@ -72,6 +73,35 @@
       <div class="flex gap-2"><button class="btn btn-primary btn-sm" disabled={$taskRunning} on:click={applyAll}>{$t('proofread.apply')}</button><button class="btn btn-secondary btn-sm" disabled={$taskRunning} on:click={analyze}>{$t('proofread.analyze')}</button></div>
       {#if Object.keys(pp.apply_errors||{}).length}<div class="alert alert-warning text-xs">{$t('proofread.someFailed')}</div>{/if}
     </div></div>
+
+    {#if pp.proofread_applied_at}
+      <div class="card bg-base-200"><div class="card-body p-4 gap-3">
+        <h3 class="font-bold">{$t('proofread.resultTitle')}</h3>
+        {#if (pp.revisions || []).length}
+          <p class="text-sm">{$t('proofread.resultSummary', {chapters:(pp.revisions || []).length, blocks:revisedBlocks})}</p>
+          <div class="space-y-2">
+            {#each pp.revisions || [] as revision}
+              <details class="border border-base-300 rounded">
+                <summary class="cursor-pointer px-3 py-2 text-sm font-medium">{$t('proofread.resultChapter', {chapter:revision.chapter_num, blocks:(revision.changes || []).length})}</summary>
+                <div class="border-t border-base-300 p-3 space-y-3">
+                  {#each revision.changes || [] as change}
+                    <div class="space-y-2">
+                      <div class="text-xs opacity-60">{$t('proofread.resultBlock', {block:change.block_id})}</div>
+                      <div class="grid gap-2 min-[48rem]:grid-cols-2">
+                        <div><div class="text-xs font-medium mb-1">{$t('proofread.before')}</div><p class="text-sm whitespace-pre-wrap rounded bg-error/10 p-2">{change.before}</p></div>
+                        <div><div class="text-xs font-medium mb-1">{$t('proofread.after')}</div><p class="text-sm whitespace-pre-wrap rounded bg-success/10 p-2">{change.after}</p></div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </details>
+            {/each}
+          </div>
+        {:else}
+          <p class="text-sm opacity-60">{$t('proofread.noChanges')}</p>
+        {/if}
+      </div></div>
+    {/if}
 
     <div class="grid grid-cols-[345px_minmax(0,1fr)] gap-3 min-h-[520px]">
       <div class="card bg-base-200"><div class="card-body p-3 gap-2 overflow-y-auto max-h-[70vh]">
