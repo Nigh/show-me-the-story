@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var protectedStoryFields = []string{"type", "title", "writing_style", "writing_pov", "story_synopsis"}
+var protectedStoryFields = []string{"type", "title", "writing_style", "writing_pov"}
 
 type ConfigFieldChange struct {
 	Field    string `json:"field"`
@@ -40,8 +40,6 @@ func storyFieldValue(story config.StoryConfig, field string) string {
 		return story.WritingStyle
 	case "writing_pov":
 		return story.WritingPOV
-	case "story_synopsis":
-		return story.StorySynopsis
 	default:
 		return ""
 	}
@@ -57,8 +55,6 @@ func setStoryFieldValue(story *config.StoryConfig, field, value string) {
 		story.WritingStyle = value
 	case "writing_pov":
 		story.WritingPOV = value
-	case "story_synopsis":
-		story.StorySynopsis = value
 	}
 }
 
@@ -75,9 +71,6 @@ func storyConfigFromOutline(resp OutlineResponse, current config.StoryConfig) co
 	if resp.Title != "" {
 		proposed.Title = resp.Title
 	}
-	if resp.StorySynopsis != "" {
-		proposed.StorySynopsis = resp.StorySynopsis
-	}
 	return proposed
 }
 
@@ -91,9 +84,6 @@ func storyConfigFromReconciliation(result ReconciliationResult, base config.Stor
 	}
 	if result.WritingPOV != "" {
 		adjusted.WritingPOV = result.WritingPOV
-	}
-	if result.StorySynopsis != "" {
-		adjusted.StorySynopsis = result.StorySynopsis
 	}
 	return adjusted
 }
@@ -233,9 +223,6 @@ func RemovePendingFields(pendingPath string, fields ...string) error {
 func SyncProgressMetaFromStory(state *Progress, story config.StoryConfig) {
 	if story.Title != "" {
 		state.Title = story.Title
-	}
-	if story.StorySynopsis != "" {
-		state.StorySynopsis = story.StorySynopsis
 	}
 }
 

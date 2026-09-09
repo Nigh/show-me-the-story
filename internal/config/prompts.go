@@ -13,48 +13,6 @@ func RenderPrompt(template string, data map[string]string) string {
 // DefaultPromptsZH is the Chinese default prompt set.
 // EN version lives in prompts_en.go.
 var DefaultPromptsZH = PromptsConfig{
-	OutlineGeneration: `你是一位专业的小说策划编辑。请根据以下约束生成小说大纲。
-
-请以JSON格式返回，结构如下：
-{
-  "title": "小说标题",
-  "core_prompt": "核心写作提示词（用于指导后续各章创作的系统级提示）",
-  "story_synopsis": "故事梗概",
-  "chapters": [
-    {
-      "num": 1,
-      "title": "章节标题",
-      "outline": "本章大纲",
-      "characters": [
-        {"name": "已有角色名"},
-        {"name": "新角色专名", "first_appearance": true, "note": "身份或与主角关系（一行）"}
-      ]
-    },
-    ...
-  ]
-}
-
-【故事类型】{{.StoryType}}
-【章节数量】{{.ChapterCount}}
-【每章正文字数】{{.TargetWords}}
-【写作风格】{{.WritingStyle}}
-【叙述视角】{{.WritingPOV}}
-【故事梗概】{{.StorySynopsis}}
-
-【已登记角色】
-{{.CharacterList}}
-
-注意：
-1. 大纲需要覆盖完整的故事弧线，从开端到结局
-2. 每章 outline 字段须为 {{.OutlineMinWords}}–{{.OutlineMaxWords}} 字（不含章节标题），包含具体情节发展，禁止笼统描述或一两句话敷衍
-3. 每章大纲须依次包含：开场场景/地点；本章核心冲突或目标；关键转折或信息点；出场人物（及作用）；章末走向或悬念钩子
-4. 每章必须填写 characters 数组：列出本章出场的具名人物专名；name 只写专名本身（如「吕红梅」「亚历山大·伊万诺夫」），禁止把职务、动词、引号或整句情节写进 name；忽略「村民」「守卫」等群体称谓
-5. 优先使用【已登记角色】；新增角色仅在其首次出场章设 first_appearance=true，并在 note 写一行身份/关系，且不得出现在更早章节的 characters 中
-6. 初遇、身份揭示等一次性事件只能安排在一个章节中发生，避免重复
-7. core_prompt 应包含指导整部小说写作的核心提示词，包括写作风格与叙述视角，并明确要求全书视角统一
-8. 若【故事类型】【写作风格】【叙述视角】【故事梗概】等字段已由用户提供且非空，JSON 中对应字段请原样返回，不要改写或扩写
-9. 请严格以JSON格式输出，不要添加任何额外文字`,
-
 	ChapterWriting: `请为小说《{{.Title}}》创作第 {{.ChapterNum}} 章的正文。
 
 【核心写作提示词】
@@ -206,7 +164,6 @@ var DefaultPromptsZH = PromptsConfig{
 {
   "title": "小说标题",
   "core_prompt": "核心写作提示词",
-  "story_synopsis": "故事梗概",
   "chapters": [
     {
       "num": 1,
@@ -502,7 +459,6 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
 故事类型：{{.NewType}}
 写作风格：{{.NewWritingStyle}}
 叙述视角：{{.NewWritingPOV}}
-故事梗概：{{.NewStorySynopsis}}
 
 【已有已确认章节摘要】
 {{.ExistingSummaries}}
@@ -512,7 +468,6 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
   "type": "...",
   "writing_style": "...",
   "writing_pov": "...",
-  "story_synopsis": "...",
   "explanation": "说明做了哪些调整及原因"
 }
 
@@ -647,99 +602,6 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
 返回本章新事实和再次提及的已有事实；只有无相关事实时返回 {"new_memories": []}。
 请严格以JSON格式输出，不要添加任何额外文字。`,
 
-	ArcSkeleton: `你是一位擅长超长篇小说结构设计的资深策划编辑。请为以下小说设计全书的卷级骨架（每卷是一个相对完整的故事阶段，章节大纲会在之后按卷分批生成）。
-
-【故事类型】{{.StoryType}}
-【故事梗概】{{.StorySynopsis}}
-【写作风格】{{.WritingStyle}}
-【叙述视角】{{.WritingPOV}}
-【全书计划章节数】{{.ChapterCount}} 章（每章约 {{.TargetWords}} 字）
-
-【已登记角色】
-{{.CharacterList}}
-
-设计要求：
-1. 每卷要有明确的阶段目标：主角从什么状态出发、经历什么核心冲突、卷末达到什么状态，并留出卷末钩子
-2. 各卷 chapter_count 之和必须精确等于 {{.ChapterCount}}；单卷建议 10~50 章，篇幅越长的书卷数越多
-3. 卷与卷之间层层递进：力量/地位/视野的升级、矛盾的转移与升级要有清晰的主线逻辑
-4. goal 字段 100~250 字，要具体到该卷的关键事件、关键人物与因果链，禁止空泛描述
-
-请以JSON格式返回：
-{
-  "title": "书名",
-  "story_synopsis": "故事梗概（若已提供则保持原意，可适度完善）",
-  "arcs": [
-    {"title": "卷名", "goal": "该卷阶段目标与主线", "chapter_count": 30}
-  ]
-}
-请严格以JSON格式输出，不要添加任何额外文字。`,
-
-	ArcChapterOutline: `你是一位专业的小说策划编辑。这是一部按卷分批推进的长篇小说，请为其中一卷生成逐章大纲。
-
-【小说标题】{{.Title}}
-【故事类型】{{.StoryType}}
-【核心写作提示词】{{.CorePrompt}}
-【故事梗概】{{.StorySynopsis}}
-【写作风格】{{.WritingStyle}}
-【叙述视角】{{.WritingPOV}}
-
-【前情回顾（此前各卷/章节的进展）】
-{{.PreviousContext}}
-
-【本卷信息】第 {{.ArcIndex}} 卷《{{.ArcTitle}}》
-【本卷阶段目标】{{.ArcGoal}}
-
-【后续各卷安排（本卷不得提前透支后续卷的关键事件）】
-{{.FutureArcs}}
-
-【已登记角色】
-{{.CharacterList}}
-
-【用户补充要求】
-{{.UserRequirements}}
-
-请为本卷的 {{.NewChapterCount}} 章生成大纲，从第 {{.StartNum}} 章到第 {{.EndNum}} 章。
-
-请以JSON格式返回：
-{
-  "chapters": [
-    {
-      "num": {{.StartNum}},
-      "title": "章节标题",
-      "outline": "本章大纲",
-      "characters": [
-        {"name": "角色专名"},
-        {"name": "新角色", "first_appearance": true, "note": "身份说明"}
-      ]
-    },
-    ...
-  ]
-}
-
-注意：
-1. 大纲须承接【前情回顾】的故事线，卷内完成【本卷阶段目标】，卷末落在能自然衔接下一卷的状态
-2. 每章 outline 字段须为 {{.OutlineMinWords}}–{{.OutlineMaxWords}} 字，包含具体情节发展，禁止笼统描述
-3. 每章大纲须包含：开场场景；核心冲突；关键转折；出场人物及作用；章末走向或钩子
-4. 每章必须填写 characters（专名列表；name 不含职务/动词；新增角色 first_appearance=true 并写 note）
-5. 优先使用【已登记角色】
-6. 前情中已发生的初遇、身份揭示等一次性事件不得重复安排；后续卷安排的关键事件不得提前发生
-7. 请严格以JSON格式输出，不要添加任何额外文字`,
-
-	ArcSummary: `你是一位精准的小说叙事分析师。以下是一卷已完成章节的逐章摘要，请把它们压缩为一份卷级摘要，供后续卷的写作与大纲生成作为前情参考。
-
-【小说标题】{{.Title}}
-【第 {{.ArcIndex}} 卷】《{{.ArcTitle}}》（第 {{.StartNum}}~{{.EndNum}} 章）
-【本卷阶段目标】{{.ArcGoal}}
-
-【逐章摘要】
-{{.ChapterSummaries}}
-
-要求：
-1. 400~800 字，按时间顺序梳理本卷主线：起点状态 → 关键事件链 → 卷末状态
-2. 必须保留：一次性事件（初遇、身份揭示、关系确立、重要人物死亡）、主角能力/地位/认知的变化、卷末遗留的悬念与未回收伏笔线索
-3. 次要支线一笔带过，无叙事延续价值的细节直接省略
-4. 只输出摘要正文，不要任何额外说明`,
-
 	ImportMetaAnalysis: `你是一位专业的小说编辑。用户正在导入一部已发表的小说，以下是开篇节选与章节标题列表，请分析并提取作品元信息。
 
 【开篇节选】
@@ -753,7 +615,6 @@ reconcilable 为 false 时 extra_constraints 留空；suggested_actions 至少�
   "title": "书名（从文本推断，无法确定时留空）",
   "story_type": "故事类型（如：都市异能、西幻史诗、悬疑推理）",
   "core_prompt": "核心写作提示词：用 100~200 字概括这部作品的核心设定与卖点，供 AI 续写时参考",
-  "story_synopsis": "故事梗概（200~400 字，基于已有内容概括）",
   "writing_style": "写作风格描述（50~150 字：语言特点、节奏、氛围）",
   "writing_pov": "叙述视角（如：第三人称限知、第一人称男主）"
 }

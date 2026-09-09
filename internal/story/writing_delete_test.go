@@ -128,7 +128,7 @@ func TestDeleteFrontierChapterAdjustsPointer(t *testing.T) {
 			{Num: 3, Status: StatusAccepted, Content: "c", Summary: "s"},
 			{Num: 4, Status: StatusPending},
 		},
-		MemoryEntries: []MemoryEntry{{ID: 1, Chapter: 3, Content: "detail"}},
+		MemoryEntries: []MemoryEntry{{ID: 1, Content: "detail", References: []MemoryReference{{Chapter: 3}}}},
 	}
 
 	num, err := DeleteFrontierChapter(state, t.TempDir())

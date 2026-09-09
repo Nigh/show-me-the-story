@@ -23,11 +23,11 @@ func TestKnowledgeRetrievalLargeBook(t *testing.T) {
 			state := &Progress{MemoryMaxTokens: 2000}
 			settings := &ProjectSettings{Characters: []Character{{ID: "c_1", Name: name, Notes: fact}, {ID: "c_2", Name: "Keeper", Notes: "Knows the bridge password."}}, Relations: []Relation{{ID: "r_1", SourceID: "c_1", TargetID: "c_2", Label: "trust"}}}
 			state.Chapters = append(state.Chapters, factChapter(1, fact))
-			state.MemoryEntries = append(state.MemoryEntries, MemoryEntry{ID: 1, Chapter: 1, Content: fact, Category: "character", References: []MemoryReference{{Chapter: 1, BlockID: 1, Quote: fact}}})
+			state.MemoryEntries = append(state.MemoryEntries, MemoryEntry{ID: 1, Content: fact, Category: "character", References: []MemoryReference{{Chapter: 1, BlockID: 1, Quote: fact}}})
 			for n := 2; n <= 600; n++ {
 				text := fmt.Sprintf("Unrelated merchant %d sells vegetables in a distant village.", n)
 				state.Chapters = append(state.Chapters, factChapter(n, text))
-				state.MemoryEntries = append(state.MemoryEntries, MemoryEntry{ID: n, Chapter: n, Content: text, Category: "event"})
+				state.MemoryEntries = append(state.MemoryEntries, MemoryEntry{ID: n, Content: text, Category: "event", References: []MemoryReference{{Chapter: n, BlockID: 1, Quote: text}}})
 				settings.Characters = append(settings.Characters, Character{ID: fmt.Sprintf("c_%d", n+1), Name: fmt.Sprintf("Merchant%d", n), Background: strings.Repeat(text, 10)})
 			}
 			ch := ChapterState{Num: 600, Outline: query}
@@ -73,9 +73,9 @@ func TestKnowledgeRetrievalBoundaries(t *testing.T) {
 		t.Fatal("no-match fell back to full registry")
 	}
 	state := &Progress{Chapters: []ChapterState{factChapter(1, "old evidence"), factChapter(2, "future evidence")}, MemoryEntries: []MemoryEntry{
-		{ID: 1, Chapter: 1, Content: "Alice future-only evidence", References: []MemoryReference{{Chapter: 2, BlockID: 1, Quote: "future evidence"}}},
-		{ID: 2, Chapter: 1, Content: "Alice stale evidence", References: []MemoryReference{{Chapter: 1, BlockID: 1, Quote: "wrong"}}},
-		{ID: 3, Chapter: 2, Content: "Alice future fact"},
+		{ID: 1, Content: "Alice future-only evidence", References: []MemoryReference{{Chapter: 2, BlockID: 1, Quote: "future evidence"}}},
+		{ID: 2, Content: "Alice stale evidence", References: []MemoryReference{{Chapter: 1, BlockID: 1, Quote: "wrong"}}},
+		{ID: 3, Content: "Alice future fact", References: []MemoryReference{{Chapter: 2, BlockID: 1, Quote: "future evidence"}}},
 	}}
 	if got := retrieveMemories(state, ChapterState{Num: 1, Outline: "Alice"}, 1000, true); len(got) != 0 {
 		t.Fatal("future/stale fact leaked", got)

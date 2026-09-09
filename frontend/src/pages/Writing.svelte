@@ -92,7 +92,7 @@
   $: isCurrent = ch && currentIdx === $selectedChapter;
   $: isStreamingThis = $streamingChapterIdx === $selectedChapter && $streamingContent;
 
-  // v3: /api/progress 不再携带正文，选中章节的正文按需拉取，content_rev 变化时刷新
+  // /api/progress 不携带正文，选中章节的正文按需拉取，content_rev 变化时刷新
   let chapterContent = '';
   let chapterBlocks = [];
   let loadedNum = -1;
@@ -117,7 +117,7 @@
   }
   $: hasContent = !!(ch?.content_rev);
 
-  // —— Block 编辑（v3）——
+  // —— Block 编辑 ——
   let editingBlockId = null;   // 正在内联编辑的 block
   let editingText = '';
   let revisingBlockId = null;  // 正在填写 AI 修订意见的 block

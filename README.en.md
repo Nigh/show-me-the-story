@@ -16,6 +16,7 @@ The program ships with no story content of its own — the genre, world, charact
 
 - **Single executable**: one binary plus a browser, no database or other dependencies
 - **Multi-project**: each novel lives in its own project; switch / create / delete freely
+- **v4 project format**: only explicitly marked v4 projects open; the project list marks older formats and recommends the matching app version
 - **Dynamic batch planning**: plan 1–36 chapters at a time and replan the last entirely unwritten batch; a long-term direction is optional
 - **Chapter review**: after each chapter, confirm or request revisions; the AI does targeted, minimal edits without disturbing other chapters
 - **Auto-confirm mode**: optional toggle that lets the AI confirm each chapter and continue automatically to the end of the current plan; it can be flipped on or off at any time
@@ -87,13 +88,13 @@ The project language is fixed at creation time. The UI language defaults to the 
 
 ### Continue an existing novel
 
-On the empty Outline page, import existing text. Imported chapters appear under “Legacy / imported chapters”. Enter a new batch synopsis and chapter count to continue. A completed project can resume directly only before final-proofreading edits; afterward, create a continuation project from the proofreading page.
+On the empty Outline page, import existing text. Imported chapters appear under “Imported chapters”. Enter a new batch synopsis and chapter count to continue. A completed project can resume directly only before final-proofreading edits; afterward, create a continuation project from the proofreading page.
 
 ### Batch planning and replanning
 
 The Config page no longer edits a whole-book synopsis. Each batch has a required synopsis and its own chapter range. New batches append even when earlier outlines are still unwritten.
 
-Only the last entirely unwritten batch can be replanned. Choose “Replan this batch”, edit its synopsis and count, then confirm replacement; earlier batches remain intact. Failed generation preserves the old batch and form input. Legacy synopsis data is retained for compatibility and is not assigned to a batch automatically. The header displays the saved novel title, or “Untitled”.
+Only the last entirely unwritten batch can be replanned. Choose “Replan this batch”, edit its synopsis and count, then confirm replacement; earlier batches remain intact. Failed generation preserves the old batch and form input. The header displays the saved novel title, or “Untitled”.
 
 The assistant’s `generate_outline` accepts `chapter_count` and `outline_synopsis` directly; it appends by default. Replanning uses `mode=replace_last`, the batch ID from `read_outline`, and explicit confirmation.
 
@@ -142,7 +143,7 @@ On the Skills page you can enable built-in skills:
 
 All skills are disabled by default. Enabled skills are injected only into their declared scopes (chapter generation, polish, outline, final proofreading, and so on), and the live log lists the skills actually activated for each task.
 
-The Skills page can install pasted Markdown, one `.md` file, a ZIP, or a browser-selected folder. User skills live in the global `skills/<id>/` library and can be enabled independently per novel project. A standard package contains `skill.json`, `SKILL.md`, and optional text resources under `references/`, `templates/`, or `assets/`; scripts and binaries are never executed. Legacy `skills/*.md` files inside a project remain available read-only.
+The Skills page can install pasted Markdown, one `.md` file, a ZIP, or a browser-selected folder. User skills live in the global `skills/<id>/` library and can be enabled independently per novel project. A standard package contains `skill.json`, `SKILL.md`, and optional text resources under `references/`, `templates/`, or `assets/`; scripts and binaries are never executed.
 
 Non-built-in skills show an AI validation state. An unvalidated skill displays `!` and may still be enabled; skills marked as needing optimization or failed cannot be enabled. AI Optimize creates a separate copy and immediately revalidates it. Any content change invalidates the previous report.
 
@@ -331,7 +332,7 @@ task dev:frontend   # start the Vite dev server (:5173, HMR, proxies /api → :4
 
 ### Project layout
 
-The backend is organized into layered Go packages under `internal/`: `httpapi` (routes and handlers), `agent` (the assistant agent loop), `story` (domain logic: outlines, writing, foreshadows, arcs, import, ...), `llm` (OpenAI-compatible client), `config` (configuration and prompt templates), `sse` (event broadcasting), `i18n` (bilingual messages), plus `prose` / `fsutil` utilities. Frontend pages live under `frontend/src/pages/`.
+The backend is organized into layered Go packages under `internal/`: `httpapi` (routes and handlers), `agent` (the assistant agent loop), `story` (domain logic: outlines, writing, foreshadows, import, ...), `llm` (OpenAI-compatible client), `config` (configuration and prompt templates), `sse` (event broadcasting), `i18n` (bilingual messages), plus `prose` / `fsutil` utilities. Frontend pages live under `frontend/src/pages/`.
 
 The full architecture, API endpoint list, SSE event reference, design patterns, and development guidelines are in [AGENTS.md](AGENTS.md).
 

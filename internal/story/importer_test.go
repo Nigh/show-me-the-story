@@ -25,7 +25,6 @@ func TestSplitImportContentHeadings(t *testing.T) {
 		t.Fatalf("english title wrong: %q", chs[2].Title)
 	}
 }
-
 func TestSplitImportContentNoHeadings(t *testing.T) {
 	// Heading-less text falls back to size-based chunks.
 	para := strings.Repeat("这是一个没有章节标题的段落。", 30) // ~390 runes
@@ -41,7 +40,6 @@ func TestSplitImportContentNoHeadings(t *testing.T) {
 		t.Fatal("empty content should split to nil")
 	}
 }
-
 func TestBuildImportPreview(t *testing.T) {
 	chs := []importedChapter{{Title: "第一章 觉醒", Content: "第一章 觉醒\n林凡睁开眼睛，" + strings.Repeat("很长的内容。", 30)}}
 	pv := BuildImportPreview(chs)
@@ -74,23 +72,5 @@ func TestImportStateRoundtrip(t *testing.T) {
 	SaveImportState(path, st)
 	if LoadImportState(path) != nil {
 		t.Fatal("inactive state should load as nil")
-	}
-}
-
-func TestCreateImportArcs(t *testing.T) {
-	state := &Progress{Chapters: make([]ChapterState, 65)}
-	for i := range state.Chapters {
-		state.Chapters[i].Num = i + 1
-	}
-	createImportArcs(state)
-	// 65 chapters: 1-30, 31-65 (trailing 5 merged into second arc, no runt).
-	if len(state.Arcs) != 2 {
-		t.Fatalf("expected 2 arcs, got %d: %+v", len(state.Arcs), state.Arcs)
-	}
-	if state.Arcs[0].StartCh != 1 || state.Arcs[0].EndCh != 30 {
-		t.Fatalf("arc 1 range wrong: %+v", state.Arcs[0])
-	}
-	if state.Arcs[1].StartCh != 31 || state.Arcs[1].EndCh != 65 {
-		t.Fatalf("arc 2 range wrong: %+v", state.Arcs[1])
 	}
 }

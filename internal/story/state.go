@@ -16,7 +16,6 @@ type ChapterState struct {
 	Title            string `json:"title"`
 	Outline          string `json:"outline"`
 	// Characters is the structured cast for this chapter's outline (proper names only).
-	// Used for unregistered-character suggestions; optional on legacy projects.
 	Characters []OutlineChapterCharacter `json:"characters,omitempty"`
 	Content    string                    `json:"content,omitempty"`
 	Summary    string                    `json:"summary"`
@@ -97,25 +96,10 @@ type MemoryEntry struct {
 	ID         int               `json:"id"`
 	Content    string            `json:"content"`
 	Category   string            `json:"category"` // character | location | item | event | promise | other
-	Chapter    int               `json:"chapter"`
-	Position   int               `json:"position"`
+	Inherited  bool              `json:"inherited,omitempty"`
 	// Snippet is resolved server-side for API responses (chapter content no
 	// longer travels with /api/progress); never persisted.
 	Snippet string `json:"snippet,omitempty"`
-}
-
-// Arc is a volume-level unit of the hierarchical outline (v3). Chapter
-// outlines are generated arc by arc so books with 1000+ chapters never need
-// a single outline call. Status is derived from the chapters in range.
-type Arc struct {
-	ID      int    `json:"id"`
-	Title   string `json:"title"`
-	Goal    string `json:"goal"`
-	StartCh int    `json:"start_ch"`
-	EndCh   int    `json:"end_ch"`
-	// Summary is filled by AI once every chapter in range is accepted; it
-	// replaces per-chapter context for completed arcs in later prompts.
-	Summary string `json:"summary,omitempty"`
 }
 
 type Progress struct {
@@ -124,9 +108,7 @@ type Progress struct {
 	Phase                       string                   `json:"phase"`
 	Title                       string                   `json:"title"`
 	CorePrompt                  string                   `json:"core_prompt"`
-	StorySynopsis               string                   `json:"story_synopsis"`
 	Chapters                    []ChapterState           `json:"chapters"`
-	Arcs                        []Arc                    `json:"arcs,omitempty"`
 	CurrentChapterIndex         int                      `json:"current_chapter_index"`
 	StoryConfigSnapshot         *config.StoryConfig      `json:"story_config_snapshot,omitempty"`
 	Foreshadows                 []Foreshadow             `json:"foreshadows,omitempty"`
@@ -165,8 +147,7 @@ const (
 	StatusAccepted = "accepted"
 )
 
-// LoadProgress loads project metadata from path (progress.json) and chapter
-// prose from the chapters/ directory next to it (v3 storage layout).
+// LoadProgress loads project metadata and chapter prose.
 func LoadProgress(path string) (*Progress, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

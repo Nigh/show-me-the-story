@@ -28,7 +28,7 @@ func TestMemoryIdentityRetry(t *testing.T) {
 		} {
 			t.Run(lang+invalid, func(t *testing.T) {
 				for _, recover := range []bool{true, false} {
-					state := &Progress{Chapters: []ChapterState{factChapter(1, "Alice has a scar.")}, MemoryEntries: []MemoryEntry{{ID: 7, Content: "Alice has a scar", Category: "character", Chapter: 1}}, NextMemoryID: 8}
+					state := &Progress{Chapters: []ChapterState{factChapter(1, "Alice has a scar.")}, MemoryEntries: []MemoryEntry{{ID: 7, Content: "Alice has a scar", Category: "character", References: []MemoryReference{{Chapter: 1, BlockID: 1, Quote: "Alice has a scar."}}}}, NextMemoryID: 8}
 					before, _ := json.Marshal(state.MemoryEntries)
 					calls := 0
 					api := batchAPI(t, func(prompt string) string {

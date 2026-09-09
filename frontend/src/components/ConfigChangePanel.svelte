@@ -12,7 +12,6 @@
   import { t } from '../lib/i18n/index.js';
 
   const sourceKeys = {
-    outline_generation: 'configChange.source.outline_generation',
     outline_revision: 'configChange.source.outline_revision',
     reconcile: 'configChange.source.reconcile',
     agent: 'configChange.source.agent',

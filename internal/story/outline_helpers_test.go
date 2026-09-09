@@ -21,18 +21,8 @@ func TestCalcOutlineLengthRange(t *testing.T) {
 	}
 }
 
-func TestExtractFirstAppearanceStubs(t *testing.T) {
-	outline := "张三与李四在码头会面。王五（首次登场）是码头管事，告知密信下落。"
-	stubs := extractFirstAppearanceStubs(outline)
-	if len(stubs) != 1 || stubs[0].Name != "王五" {
-		t.Fatalf("extractFirstAppearanceStubs() = %+v, want 王五", stubs)
-	}
-}
-
-func TestCharacterStubsPreferStructuredOverProse(t *testing.T) {
-	// Prose regex would greedily capture a long clause before「首次登场」; structured cast wins.
+func TestCharacterStubsUseStructuredCast(t *testing.T) {
 	ch := ChapterState{
-		Outline: "想起班主任吕红梅（首次登场）匆匆走进教室。",
 		Characters: []OutlineChapterCharacter{
 			{Name: "吕红梅", FirstAppearance: true, Note: "班主任"},
 			{Name: "亚历山大·伊万诺夫"},

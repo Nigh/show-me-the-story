@@ -21,29 +21,8 @@ func buildOutlineConstraintsForLang(state *Progress, idx int, lang string) strin
 	if idx >= 0 && idx < len(state.Chapters) {
 		past.WriteString(chapterEnding(state, state.Chapters[idx].Num, lang))
 	}
-	// Arc-aware compression: chapters inside a summarized arc collapse to one
-	// arc-summary line, so 1000-chapter books don't inject every past outline.
-	summarized := func(num int) *Arc {
-		arc := arcForChapterNum(state, num)
-		if arc != nil && arc.Summary != "" {
-			return arc
-		}
-		return nil
-	}
-	var lastArc *Arc
 	for i := 0; i < idx && i < len(state.Chapters); i++ {
 		ch := state.Chapters[i]
-		if arc := summarized(ch.Num); arc != nil {
-			if arc != lastArc {
-				if i18n.NormalizeLanguage(lang) == i18n.LangEN {
-					past.WriteString(fmt.Sprintf("[Arc \"%s\" (ch.%d-%d) summary] %s\n", arc.Title, arc.StartCh, arc.EndCh, arc.Summary))
-				} else {
-					past.WriteString(fmt.Sprintf("【《%s》卷（第%d~%d章）卷摘要】%s\n", arc.Title, arc.StartCh, arc.EndCh, arc.Summary))
-				}
-				lastArc = arc
-			}
-			continue
-		}
 		if strings.TrimSpace(ch.Outline) == "" {
 			continue
 		}
@@ -194,34 +173,6 @@ func buildMemoryForLang(state *Progress, idx int, lang string, query ...string) 
 	return notice + string(data)
 }
 
-// extractSnippet extracts approximately maxRunes characters from the chapter content
-// starting at the given paragraph position (1-indexed, split by double newlines).
-func extractSnippet(state *Progress, chapterNum, position, maxRunes int) string {
-	if position <= 0 || chapterNum <= 0 {
-		return ""
-	}
-	for i := range state.Chapters {
-		if state.Chapters[i].Num == chapterNum {
-			content := state.Chapters[i].Content
-			if content == "" {
-				return ""
-			}
-			paragraphs := strings.Split(content, "\n\n")
-			idx := position - 1
-			if idx < 0 || idx >= len(paragraphs) {
-				return ""
-			}
-			para := strings.TrimSpace(paragraphs[idx])
-			runes := []rune(para)
-			if len(runes) > maxRunes {
-				return string(runes[:maxRunes]) + "…"
-			}
-			return para
-		}
-	}
-	return ""
-}
-
 // formatMemoryForUpdatePrompt renders the existing memory list for the memory update prompt.
 func formatMemoryForUpdatePrompt(entries []MemoryEntry, lang string) string {
 	if len(entries) == 0 {
@@ -234,9 +185,9 @@ func formatMemoryForUpdatePrompt(entries []MemoryEntry, lang string) string {
 	var sb strings.Builder
 	for _, m := range entries {
 		if en {
-			sb.WriteString(fmt.Sprintf("#%d [%s] Ch.%d: %s\n", m.ID, m.Category, m.Chapter, m.Content))
+			sb.WriteString(fmt.Sprintf("#%d [%s]: %s\n", m.ID, m.Category, m.Content))
 		} else {
-			sb.WriteString(fmt.Sprintf("#%d [%s] 第%d章: %s\n", m.ID, m.Category, m.Chapter, m.Content))
+			sb.WriteString(fmt.Sprintf("#%d [%s]: %s\n", m.ID, m.Category, m.Content))
 		}
 	}
 	return sb.String()
@@ -423,10 +374,7 @@ func settingUpdatePrompt(lang string) string {
 }
 
 func BookSynopsis(cfg *config.Config, state *Progress) string {
-	if len(state.OutlineBatches) > 0 {
-		return BatchSynopses(state, cfg.Language)
-	}
-	return preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
+	return BatchSynopses(state, cfg.Language)
 }
 
 func ChapterSynopsis(cfg *config.Config, state *Progress, num int) string {
@@ -438,7 +386,7 @@ func ChapterSynopsis(cfg *config.Config, state *Progress, num int) string {
 			return fmt.Sprintf("【第 %d–%d 章大纲梗概；仅按本章章纲推进，不得提前展开后续情节】\n%s", b.StartCh, b.EndCh, b.Synopsis)
 		}
 	}
-	return preferUserValue(cfg.Story.StorySynopsis, state.StorySynopsis)
+	return ""
 }
 
 func batchScopeTemplate(lang string) string {

@@ -41,7 +41,7 @@ func LoadPostProcess(path string) (*PostProcessState, error) {
 		return nil, fmt.Errorf("解析完稿校订文件失败: %w", err)
 	}
 	if pp.SchemaVersion != ProofreadSchemaVersion {
-		return NewProofreadState(), nil
+		return nil, fmt.Errorf("不支持的完稿校订文件版本: %d", pp.SchemaVersion)
 	}
 	if pp.ApplyErrors == nil {
 		pp.ApplyErrors = map[int]string{}

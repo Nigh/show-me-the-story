@@ -48,7 +48,7 @@ func factHandlers(t *testing.T) *Handlers {
 	h.progressPath = filepath.Join(t.TempDir(), "progress.json")
 	h.state.Chapters = []story.ChapterState{{Num: 1, Content: "Alice has a scar.", Status: story.StatusReview, KnowledgeTracked: true}}
 	story.SyncChapterBlocks(&h.state.Chapters[0])
-	h.state.MemoryEntries = []story.MemoryEntry{{ID: 1, Chapter: 1, Content: "Alice has a scar", References: []story.MemoryReference{{Chapter: 1, BlockID: 1, Quote: "Alice has a scar.", ContentRev: story.ChapterRevision(h.state.Chapters[0])}}}}
+	h.state.MemoryEntries = []story.MemoryEntry{{ID: 1, Content: "Alice has a scar", References: []story.MemoryReference{{Chapter: 1, BlockID: 1, Quote: "Alice has a scar.", ContentRev: story.ChapterRevision(h.state.Chapters[0])}}}}
 	return h
 }
 func TestFactEditHTTPGuards(t *testing.T) {

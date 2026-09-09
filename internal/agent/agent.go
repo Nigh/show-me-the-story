@@ -1219,11 +1219,9 @@ func getBuiltinTools() []Tool {
 				var params struct {
 					Type                  string `json:"type"`
 					Title                 string `json:"title"`
-					ChapterCount          int    `json:"chapter_count"`
 					TargetWordsPerChapter int    `json:"target_words_per_chapter"`
 					WritingStyle          string `json:"writing_style"`
 					WritingPOV            string `json:"writing_pov"`
-					StorySynopsis         string `json:"story_synopsis"`
 					ConfirmOverwrite      bool   `json:"confirm_overwrite"`
 				}
 				if err := json.Unmarshal(args, &params); err != nil {
@@ -1243,9 +1241,6 @@ func getBuiltinTools() []Tool {
 				if params.WritingPOV != "" {
 					proposed.WritingPOV = params.WritingPOV
 				}
-				if params.StorySynopsis != "" {
-					proposed.StorySynopsis = params.StorySynopsis
-				}
 
 				conflicts := story.CollectStoryConfigConflicts(ctx.Config.Story, proposed, "agent", "")
 				if len(conflicts) > 0 && !params.ConfirmOverwrite {
@@ -1258,9 +1253,6 @@ func getBuiltinTools() []Tool {
 				if params.Title != "" {
 					ctx.Config.Story.Title = params.Title
 				}
-				if params.ChapterCount > 0 {
-					ctx.Config.Story.ChapterCount = params.ChapterCount
-				}
 				if params.TargetWordsPerChapter > 0 {
 					ctx.Config.Story.TargetWordsPerChapter = params.TargetWordsPerChapter
 				}
@@ -1269,9 +1261,6 @@ func getBuiltinTools() []Tool {
 				}
 				if params.WritingPOV != "" {
 					ctx.Config.Story.WritingPOV = params.WritingPOV
-				}
-				if params.StorySynopsis != "" {
-					ctx.Config.Story.StorySynopsis = params.StorySynopsis
 				}
 
 				story.SyncProgressMetaFromStory(ctx.State, ctx.Config.Story)
@@ -1397,7 +1386,6 @@ func getBuiltinTools() []Tool {
 				}
 				ctx.State.Title = ""
 				ctx.State.CorePrompt = ""
-				ctx.State.StorySynopsis = ""
 				ctx.State.OutlineBatches = nil
 				ctx.State.Chapters = nil
 				ctx.State.StoryConfigSnapshot = nil

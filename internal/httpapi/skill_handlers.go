@@ -15,9 +15,8 @@ import (
 )
 
 func (h *Handlers) reloadSkills() {
-	projectDir := h.projectDir()
 	h.projectMu.Lock()
-	h.skills = story.LoadAllSkills(h.cfg, h.progDir, projectDir)
+	h.skills = story.LoadAllSkills(h.cfg, h.progDir)
 	h.projectMu.Unlock()
 }
 

@@ -135,7 +135,7 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 	}
 	*state = next
 	if next.MemoryMaxTokens <= 0 {
-		next.MemoryMaxTokens = calcMemoryMaxTokens(cfg.Story.ChapterCount, cfg.Story.TargetWordsPerChapter)
+		next.MemoryMaxTokens = calcMemoryMaxTokens(len(state.Chapters), cfg.Story.TargetWordsPerChapter)
 	}
 	existing := retrieveMemories(state, ch, memoryContextRunes, false)
 	visibleFacts := map[int]bool{}
@@ -160,7 +160,7 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 		}
 		next = *state
 		if next.MemoryMaxTokens <= 0 {
-			next.MemoryMaxTokens = calcMemoryMaxTokens(cfg.Story.ChapterCount, cfg.Story.TargetWordsPerChapter)
+			next.MemoryMaxTokens = calcMemoryMaxTokens(len(state.Chapters), cfg.Story.TargetWordsPerChapter)
 		}
 		syncErr = applyChapterMemoryResult(&next, ch, visibleFacts, raw)
 		if syncErr == nil {
@@ -227,7 +227,7 @@ func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[
 				target = j
 				break
 			}
-			if nm.ID == 0 && m.Chapter <= ch.Num && m.Content == nm.Content {
+			if nm.ID == 0 && m.Content == nm.Content {
 				target = j
 				break
 			}
@@ -237,7 +237,6 @@ func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[
 		}
 		refs := []MemoryReference{}
 		seen := map[int]bool{}
-		position := 0
 		for _, id := range nm.BlockIDs {
 			bi := FindBlockIdx(&ch, id)
 			if bi < 0 {
@@ -247,13 +246,10 @@ func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[
 				continue
 			}
 			seen[id] = true
-			if position == 0 {
-				position = bi + 1
-			}
 			refs = append(refs, MemoryReference{Chapter: ch.Num, BlockID: id, Quote: ch.Blocks[bi].Text, ContentRev: rev})
 		}
 		if target < 0 {
-			next.MemoryEntries = append(next.MemoryEntries, MemoryEntry{ID: next.NextMemoryID, Content: nm.Content, Category: nm.Category, Chapter: ch.Num, Position: position})
+			next.MemoryEntries = append(next.MemoryEntries, MemoryEntry{ID: next.NextMemoryID, Content: nm.Content, Category: nm.Category})
 			next.NextMemoryID++
 			target = len(next.MemoryEntries) - 1
 		}

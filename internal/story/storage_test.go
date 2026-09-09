@@ -21,7 +21,7 @@ func TestStorageRoundtrip(t *testing.T) {
 		},
 		CurrentChapterIndex: 1,
 		MemoryEntries: []MemoryEntry{
-			{ID: 1, Content: "主角捡到怀表", Category: "item", Chapter: 1, Position: 2},
+			{ID: 1, Content: "主角捡到怀表", Category: "item", References: []MemoryReference{{Chapter: 1, BlockID: 2, Quote: "第二段。"}}},
 		},
 	}
 
