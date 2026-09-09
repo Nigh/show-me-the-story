@@ -176,9 +176,9 @@ func buildChapterSettingsContexts(settings *ProjectSettings, ch ChapterState, la
 // An explicit notice prevents a retrieved subset being mistaken for the full registry.
 func knowledgeSelectionNotice(lang string) string {
 	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
-		return "\n[Retrieved original records; this is a budgeted subset, not the complete registry. Missing records do not imply absence of a fact/entity. Do not infer new identities or overwrite unseen fields. Evidence snippets may be excerpts.]\n"
+		return "\n[Retrieved original records; this is a budgeted subset, not the complete registry. Missing records do not imply absence of a fact/entity. Do not infer new identities or overwrite unseen fields. Evidence snippets may be excerpts. Worldview knowledge entries are rules of this novel, including fictional rules; do not replace them with real-world assumptions.]\n"
 	}
-	return "\n【检索到的原始条目：这是预算内的相关子集，并非完整资料库。未命中不代表事实或实体不存在，不得据此猜测新身份或覆盖未提供的字段；来源片段可能是节选。】\n"
+	return "\n【检索到的原始条目：这是预算内的相关子集，并非完整资料库。未命中不代表事实或实体不存在，不得据此猜测新身份或覆盖未提供的字段；来源片段可能是节选。世界观中的知识设定是本小说规则，可以虚构，不得用现实常识替换。】\n"
 }
 
 // The optional query includes freshly generated prose during fact checking.

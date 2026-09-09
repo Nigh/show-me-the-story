@@ -837,6 +837,7 @@ func reviseChapterSegment(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		"UserFeedback":     feedbackForAI,
 	})
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterSegmentRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
+	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterSegmentRevision, userPrompt, "{{.UserFeedback}}", feedbackForAI)
 	userPrompt += factProtection(state, ch.Num, lang)
 
 	systemPrompt := state.CorePrompt
@@ -900,6 +901,7 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *config.APIConfig, c
 		"UserFeedback":     userFeedback,
 	})
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
+	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterRevision, userPrompt, "{{.UserFeedback}}", userFeedback)
 	userPrompt += factProtection(state, ch.Num, lang)
 
 	systemPrompt := state.CorePrompt

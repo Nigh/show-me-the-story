@@ -360,6 +360,10 @@ func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDel
 			continue
 		}
 		conflict := d.Conflict
+		// Author knowledge describes rules, not automatic plot evolution.
+		if d.Kind == "worldview" && before != nil && before["category"] == "knowledge" {
+			conflict = true
+		}
 		if before != nil && len(visible) > 0 && !visible[0][id] {
 			// Includes name/edge collisions resolved after local $ID aliases.
 			conflict = true

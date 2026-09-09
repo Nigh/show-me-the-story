@@ -280,6 +280,17 @@ func TestSettingsSyncIgnoresUnknownModelFields(t *testing.T) {
 		t.Fatalf("safe setting fields were not applied: %v", err)
 	}
 }
+
+func TestKnowledgeRulesRequireAuthorApproval(t *testing.T) {
+	ch := factChapter(1, "Moon coffee grows on clouds.")
+	s := &ProjectSettings{Worldview: []WorldviewEntry{{ID: "w_1", Name: "Moon coffee", Category: "knowledge", Description: "Grows on clouds"}}}
+	before := entityAt(s, "worldview", "w_1")
+	s.StoryChanges = []SettingChange{{ID: 1, EntityID: "w_1", Kind: "worldview", Status: "applied", After: before}}
+	err := applySettingDeltas(s, ch, []settingDelta{{Kind: "worldview", Entity: map[string]any{"id": "w_1", "description": "Grows in soil"}, Evolution: true, BlockID: 1}})
+	if err != nil || s.Worldview[0].Description != "Grows on clouds" || s.StoryChanges[len(s.StoryChanges)-1].Status != "pending" {
+		t.Fatal("fictional rule changed automatically", err)
+	}
+}
 func TestKnowledgeSyncFailureAndNoLegacyBackfill(t *testing.T) {
 	calls := 0
 	cfg := config.DefaultConfigForLang("en")
