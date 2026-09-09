@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"showmethestory/internal/config"
+	"showmethestory/internal/story"
 	"testing"
 )
 
@@ -68,6 +70,24 @@ func TestCompatibilityVersions(t *testing.T) {
 		if format != tt.format || line != tt.line || recommended != tt.recommended {
 			t.Fatalf("compatibilityVersions(%q) = %q, %q, %q", tt.kind, format, line, recommended)
 		}
+	}
+}
+
+func TestGetProjectsUsesConfiguredTitleAndCompletedStatus(t *testing.T) {
+	root := t.TempDir()
+	writeProjectFile(t, root, "storys/done/config.json", `{"project_format_version":4,"language":"zh","story":{"title":"配置书名"}}`)
+	writeProjectFile(t, root, "storys/done/progress.json", `{"phase":"writing","title":"","book_status":"completed","chapters":[]}`)
+
+	h := NewHandlers(nil, "", nil, root, "test")
+	response := httptest.NewRecorder()
+	h.GetProjects(response, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
+
+	var projects []map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &projects); err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 1 || projects[0]["title"] != "配置书名" || projects[0]["book_status"] != story.BookStatusCompleted {
+		t.Fatalf("projects = %#v", projects)
 	}
 }
 
