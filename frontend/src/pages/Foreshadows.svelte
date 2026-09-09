@@ -231,7 +231,7 @@
 
 <div class="space-y-4">
   <!-- 统计与操作 -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body py-4 gap-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="card-title text-base">{$t('fs.title')}</h2>
@@ -242,7 +242,7 @@
           <button class="btn btn-outline btn-sm" disabled={$taskRunning} on:click={openCreate}>
             {$t('fs.addManual')}
           </button>
-          <button class="btn btn-ghost btn-sm" on:click={() => switchView('markdown')}>
+          <button class="btn btn-outline btn-sm" on:click={() => switchView('markdown')}>
             {$t('fs.viewRoadmap')}
           </button>
         </div>
@@ -262,12 +262,12 @@
   </div>
 
   {#if outlineReport?.has_conflicts}
-    <div class="card bg-warning/10 border border-warning/30 shadow-sm">
+    <div class="card bg-warning/10 border border-warning/30 ">
       <div class="card-body py-4 gap-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="font-semibold text-warning">{$t('fs.outlineConflict.title')}</h3>
           <div class="flex gap-2">
-            <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={runOutlineCheck}>{$t('fs.outlineConflict.recheck')}</button>
+            <button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click={runOutlineCheck}>{$t('fs.outlineConflict.recheck')}</button>
             <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoOutline}>{$t('fs.outlineConflict.gotoOutline')}</button>
           </div>
         </div>
@@ -289,7 +289,7 @@
 
   <!-- AI 建议确认 -->
   {#if $foreshadowShowSuggestions && $foreshadowSuggestions.length > 0}
-    <div class="card bg-base-200 border border-primary/30 shadow-sm">
+    <div class="card bg-base-200 border border-primary/30 ">
       <div class="card-body py-4 gap-3">
         <h3 class="font-semibold">{$t('fs.suggestions.title', { n: $foreshadowSuggestions.length })}</h3>
         <p class="text-sm text-base-content/60">{$t('fs.suggestions.hint')}</p>
@@ -337,7 +337,7 @@
   </div>
 
   {#if foreshadows.length === 0}
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body items-center text-center py-12 text-base-content/50">
         <p>{$t('fs.empty.title')}</p>
         <p class="text-sm">{$t('fs.empty.hint')}</p>
@@ -346,7 +346,7 @@
   {:else if viewMode === 'list'}
     <div class="grid gap-3">
       {#each foreshadows as fs}
-        <div class="card bg-base-200 shadow-sm">
+        <div class="card bg-base-200">
           <div class="card-body py-4 gap-2">
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div>
@@ -357,8 +357,8 @@
                 </span>
               </div>
               <div class="flex gap-1">
-                <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => openEdit(fs)}>{$t('common.edit')}</button>
-                <button class="btn btn-ghost btn-xs text-error" disabled={$taskRunning} on:click={() => deleteForeshadow(fs)}>{$t('common.delete')}</button>
+                <button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click={() => openEdit(fs)}>{$t('common.edit')}</button>
+                <button class="btn btn-error btn-outline btn-xs" disabled={$taskRunning} on:click={() => deleteForeshadow(fs)}>{$t('common.delete')}</button>
               </div>
             </div>
             <p class="text-sm text-base-content/70">{fs.description}</p>
@@ -388,7 +388,7 @@
   {:else if viewMode === 'timeline'}
     <div class="space-y-3">
       {#each timelineChapters as row}
-        <div class="card bg-base-200 shadow-sm">
+        <div class="card bg-base-200">
           <div class="card-body py-3 gap-2">
             <h3 class="font-medium text-sm">{$t('fs.timeline.chapter', { num: row.num })}</h3>
             {#if row.plant.length}
@@ -420,16 +420,16 @@
       {/each}
     </div>
   {:else}
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body py-4 gap-3">
         <div class="flex flex-wrap gap-2 justify-between items-center">
           <span class="text-sm text-base-content/60">
             {#if roadmapPath}{$t('fs.markdown.file', { name: roadmapPath.split('/').pop() })}{/if}
           </span>
           <div class="flex gap-2">
-            <button class="btn btn-ghost btn-xs" disabled={loadingRoadmap} on:click={loadRoadmap}>{$t('common.refresh')}</button>
-            <button class="btn btn-ghost btn-xs" disabled={!roadmapMarkdown} on:click={copyRoadmap}>{$t('common.copy')}</button>
-            <button class="btn btn-ghost btn-xs" disabled={!roadmapMarkdown} on:click={downloadRoadmap}>{$t('common.download')}</button>
+            <button class="btn btn-outline btn-xs" disabled={loadingRoadmap} on:click={loadRoadmap}>{$t('common.refresh')}</button>
+            <button class="btn btn-outline btn-xs" disabled={!roadmapMarkdown} on:click={copyRoadmap}>{$t('common.copy')}</button>
+            <button class="btn btn-outline btn-xs" disabled={!roadmapMarkdown} on:click={downloadRoadmap}>{$t('common.download')}</button>
           </div>
         </div>
         {#if loadingRoadmap}

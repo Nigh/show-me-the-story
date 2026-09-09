@@ -62,12 +62,12 @@
 </script>
 
 <div class="space-y-4">
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body py-4 gap-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="card-title text-base">{$t('memory.title')}</h2>
         <div class="flex flex-wrap gap-2">
-          <button class="btn btn-ghost btn-sm" on:click={refreshProgress}>{$t('common.refresh')}</button>
+          <button class="btn btn-outline btn-sm" on:click={refreshProgress}>{$t('common.refresh')}</button>
           <button class="btn btn-outline btn-sm" disabled={entries.length === 0} on:click={copyAll}>
             {$t('common.copy')}
           </button>
@@ -88,14 +88,14 @@
   </div>
 
   {#if entries.length === 0}
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body py-10 text-center gap-2">
         <p class="font-medium text-base-content/70">{$t('memory.empty.title')}</p>
         <p class="text-sm text-base-content/50 max-w-lg mx-auto">{$t('memory.empty.hint')}</p>
       </div>
     </div>
   {:else}
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body py-4 gap-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex flex-wrap gap-2">

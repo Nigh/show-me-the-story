@@ -12,10 +12,16 @@
   let knowledgeExpanded = false;
   let returnRef = null;
   let highlightedBlock = null;
+  let selectedBlockId = null;
   $: factsByBlock = new Map(chapterBlocks.map(b => [b.id, facts.filter(f => (f.references || []).some(r => r.chapter === ch?.num && r.block_id === b.id))]));
   const blockFacts = id => factsByBlock.get(id) || [];
   function confirmAction(message, action) {
     confirmModal.set({ message, onConfirm: action });
+  }
+  function selectBlock(id) {
+    if (editingBlockId != null || revisingBlockId != null || insertAfterId != null) return;
+    highlightedBlock = null;
+    selectedBlockId = selectedBlockId === id ? null : id;
   }
   async function jumpToFact(ref, returning = false) {
     if (editingBlockId != null || revisingBlockId != null || insertAfterId != null) {
@@ -107,6 +113,7 @@
   async function maybeLoadContent(c) {
     const rev = c.content_rev || '';
     if (c.num === loadedNum && rev === loadedRev) return;
+    if (c.num !== loadedNum) selectedBlockId = null;
     loadedNum = c.num;
     loadedRev = rev;
     if (!rev) { chapterContent = ''; chapterBlocks = []; return; }
@@ -126,14 +133,14 @@
   let insertText = '';
 
   function startBlockEdit(b) {
-    highlightedBlock = b.id;
+    selectedBlockId = b.id;
     editingBlockId = b.id;
     editingText = b.text;
     revisingBlockId = null;
     insertAfterId = null;
   }
   function startBlockRevise(b) {
-    highlightedBlock = b.id;
+    selectedBlockId = b.id;
     revisingBlockId = b.id;
     blockFeedback = '';
     editingBlockId = null;
@@ -458,7 +465,7 @@
     {/if}
 
     <!-- 进度 -->
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <div class="flex items-center gap-3">
           <h2 class="card-title text-base flex-1">{$t('writing.progress.title')}</h2>
@@ -468,9 +475,9 @@
           </label>
           <span class="text-xs text-base-content/40">{$t('writing.progress.totalWords', { n: totalWords.toLocaleString() })}</span>
           {#if accepted >= 2}
-            <button class="btn btn-ghost btn-xs" on:click={smoothTransitions} disabled={$taskRunning} title={$t('writing.btn.smoothTransitions.tip')}>{$t('writing.btn.smoothTransitions')}</button>
+            <button class="btn btn-outline btn-xs" on:click={smoothTransitions} disabled={$taskRunning} title={$t('writing.btn.smoothTransitions.tip')}>{$t('writing.btn.smoothTransitions')}</button>
           {/if}
-          <button class="btn btn-ghost btn-xs" on:click={exportBook}>{$t('writing.btn.exportTxt')}</button>
+          <button class="btn btn-outline btn-xs" on:click={exportBook}>{$t('writing.btn.exportTxt')}</button>
 			{#if p.book_status === 'completed'}
 				<button class="btn btn-warning btn-xs" on:click={() => setBookCompleted(false)} disabled={$taskRunning}>{$t('writing.book.resume')}</button>
 			{:else}
@@ -483,7 +490,7 @@
     </div>
 
     {#if writingConflict}
-      <div class="card bg-error/10 border border-error/30 shadow-sm">
+      <div class="card bg-error/10 border border-error/30 ">
         <div class="card-body p-4 gap-3">
           <h3 class="font-semibold text-error">{$t('writing.conflict.title')}</h3>
           <p class="text-sm">{$t('writing.conflict.summary')}：{writingConflict.summary}</p>
@@ -506,7 +513,7 @@
               {:else if action.id === 'retry'}
                 <button class="btn btn-primary btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('retry')}>{$t('writing.conflict.retry')}</button>
               {:else if action.id === 'force_review'}
-                <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.conflict.forceReview')}</button>
+                <button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.conflict.forceReview')}</button>
               {/if}
             {/each}
             <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('dismiss')}>{$t('writing.conflict.dismiss')}</button>
@@ -514,13 +521,13 @@
         </div>
       </div>
     {:else if orphanWriting}
-      <div class="card bg-warning/10 border border-warning/30 shadow-sm">
+      <div class="card bg-warning/10 border border-warning/30 ">
         <div class="card-body p-4 gap-3">
           <h3 class="font-semibold text-warning">{$t('writing.orphan.title')}</h3>
           <p class="text-sm text-base-content/70">{$t('writing.orphan.hint')}</p>
           <div class="flex flex-wrap gap-2">
             <button class="btn btn-primary btn-xs" disabled={$taskRunning} on:click={doGenerate}>{$t('writing.orphan.retry')}</button>
-            <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.orphan.forceReview')}</button>
+            <button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.orphan.forceReview')}</button>
             <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoOutlineForConflict}>{$t('writing.conflict.gotoOutline')}</button>
             <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoForeshadows}>{$t('writing.conflict.gotoForeshadows')}</button>
           </div>
@@ -529,11 +536,11 @@
     {/if}
 
     {#if foreshadows.length > 0}
-      <div class="card bg-base-200 shadow-sm">
+      <div class="card bg-base-200">
         <div class="card-body p-4 gap-2">
           <div class="flex items-center justify-between gap-2">
             <h3 class="font-medium text-sm">{$t('writing.fs.title')}</h3>
-            <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.goto')}</button>
+            <button class="btn btn-outline btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.goto')}</button>
           </div>
           <div class="flex flex-wrap gap-2 text-xs">
             <span class="badge badge-ghost">{$t('writing.fs.total', { n: foreshadows.length })}</span>
@@ -553,10 +560,10 @@
         </div>
       </div>
     {:else}
-      <div class="card bg-base-200 shadow-sm">
+      <div class="card bg-base-200">
         <div class="card-body p-4 flex items-center justify-between gap-2">
           <p class="text-sm text-base-content/50">{$t('writing.fs.none')}</p>
-          <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.setup')}</button>
+          <button class="btn btn-outline btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.setup')}</button>
         </div>
       </div>
     {/if}
@@ -564,7 +571,7 @@
     <!-- 章节区 -->
     <div class="grid grid-cols-[345px_minmax(0,1fr)] gap-3" style="min-height:400px">
       <!-- 章节列表 -->
-      <div class="card bg-base-200 shadow-sm overflow-y-auto max-h-[calc(100vh-280px)]">
+      <div class="card bg-base-200  overflow-y-auto max-h-[calc(100vh-280px)]">
         <ul class="menu menu-sm p-0 w-full">
           {#each chapters as c, i}
             <li>
@@ -584,7 +591,7 @@
       <!-- 内容区 -->
       <div class="min-w-0">
         {#if ch}
-          <div class="card bg-base-200 shadow-sm">
+          <div class="card bg-base-200">
             <div class="card-body p-4 gap-2">
               <div class="flex items-center gap-2 flex-wrap">
                 <h2 class="card-title text-base flex-1 min-w-0">{$t('writing.chapter.title', { num: ch.num, title: ch.title })}</h2>
@@ -597,7 +604,7 @@
               </div>
 
               <KnowledgePanel chapterNum={ch.num} bind:facts bind:activeFact bind:expanded={knowledgeExpanded} on:jump={e => jumpToFact(e.detail)} />
-              {#if returnRef}<button class="btn btn-ghost btn-xs self-start" on:click={() => jumpToFact(returnRef, true)}>{$t('facts.return')}</button>{/if}
+              {#if returnRef}<button class="btn btn-outline btn-xs self-start" on:click={() => jumpToFact(returnRef, true)}>{$t('facts.return')}</button>{/if}
 
               {#if ch.outline}
                 <details class="bg-base-300 rounded">
@@ -630,8 +637,8 @@
                   {:else if chapterBlocks.length > 0}
                     <div class="space-y-3">
                       {#each chapterBlocks as b (b.id)}
-                        <div id={'story-block-' + b.id} class="group relative rounded hover:bg-base-100/40 -mx-2 px-2 py-0.5" class:ring-2={highlightedBlock === b.id || activeFact?.references?.some(r => !r.stale && r.chapter === ch.num && r.block_id === b.id)}>
-                          {#each factsByBlock.get(b.id) || [] as fact}<button class="badge badge-warning badge-sm cursor-pointer mb-1" on:click={() => { activeFact = fact; highlightedBlock = b.id; knowledgeExpanded = true; }}>{$t('facts.marker')} #{fact.id}</button>{/each}
+                        <div id={'story-block-' + b.id} class="relative rounded -mx-2 px-2 py-1 cursor-pointer transition-colors hover:bg-base-100/40 {highlightedBlock === b.id || activeFact?.references?.some(r => !r.stale && r.chapter === ch.num && r.block_id === b.id) ? 'bg-info/20' : selectedBlockId === b.id ? 'bg-primary/10' : ''}" role="button" tabindex="0" aria-pressed={selectedBlockId===b.id} on:click={() => selectBlock(b.id)} on:keydown={(e) => { if (e.currentTarget === e.target && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectBlock(b.id); } }}>
+                          {#if blockFacts(b.id).length}<div class="flex flex-wrap gap-1 mb-2">{#each blockFacts(b.id) as fact}<button class="badge badge-warning badge-sm cursor-pointer" on:click|stopPropagation={() => { activeFact = fact; highlightedBlock = b.id; knowledgeExpanded = true; }}>{$t('facts.marker')} #{fact.id}</button>{/each}</div>{/if}
                           {#if editingBlockId === b.id}
                             <textarea class="textarea textarea-sm w-full text-[15px] leading-relaxed" rows={Math.max(3, Math.ceil(b.text.length / 40))} bind:value={editingText} disabled={$taskRunning}></textarea>
                             <div class="flex gap-2 justify-end mt-1">
@@ -640,12 +647,7 @@
                             </div>
                           {:else}
                             <div class="whitespace-pre-wrap {b.type === 'scene_break' ? 'text-center text-base-content/40' : ''}">{b.text}</div>
-                            <div class="absolute right-1 top-0.5 flex sm:opacity-0 group-hover:opacity-100 focus-within:opacity-100 gap-1 bg-base-200/90 rounded shadow px-1 py-0.5">
-                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.edit')} disabled={$taskRunning} on:click={() => startBlockEdit(b)}>✏️</button>
-                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.revise')} disabled={$taskRunning} on:click={() => startBlockRevise(b)}>🤖</button>
-                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.insertAfter')} disabled={$taskRunning} on:click={() => startBlockInsert(b.id)}>➕</button>
-                              <button class="btn btn-ghost btn-xs px-1.5 text-error" title={$t('writing.block.delete')} disabled={$taskRunning} on:click={() => deleteBlock(b)}>🗑</button>
-                            </div>
+                            {#if selectedBlockId === b.id}<div class="absolute right-1 top-1 flex gap-1 bg-base-200 border border-base-content/20 rounded px-1 py-0.5"><button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click|stopPropagation={() => startBlockEdit(b)}>{$t('writing.block.edit')}</button><button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click|stopPropagation={() => startBlockRevise(b)}>{$t('writing.block.revise')}</button><button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click|stopPropagation={() => startBlockInsert(b.id)}>{$t('writing.block.insertAfter')}</button><button class="btn btn-error btn-outline btn-xs" disabled={$taskRunning} on:click|stopPropagation={() => deleteBlock(b)}>{$t('writing.block.delete')}</button></div>{/if}
                           {/if}
                           {#if revisingBlockId === b.id}
                             <div class="bg-base-100 rounded p-2 mt-1 space-y-1">
@@ -674,7 +676,7 @@
                 </div>
                 {#if quotePopover}
                   <button type="button"
-                    class="fixed z-50 btn btn-primary btn-xs shadow-lg"
+                    class="fixed z-50 btn btn-primary btn-xs"
                     style="left: {quotePopover.x}px; top: {quotePopover.y}px; transform: translate(-50%, -100%); margin-top: -6px;"
                     on:click={insertQuoteToFeedback}
                     title={$t('writing.revise.quoteBtn.tip')}>
@@ -700,11 +702,11 @@
                   <button class="btn btn-success btn-sm" on:click={doConfirm} disabled={$taskRunning}>{$t('writing.btn.confirm')}</button>
                 {/if}
                 {#if hasContent && ch.status !== 'writing'}
-                  <button class="btn btn-ghost btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('writing.btn.revise')}</button>
+                  <button class="btn btn-outline btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('writing.btn.revise')}</button>
                   {#if hasPolishSkills}
-                    <button class="btn btn-ghost btn-sm" on:click={doPolish} disabled={$taskRunning} title={$t('writing.btn.polish.tip')}>{$t('writing.btn.polish')}</button>
+                    <button class="btn btn-outline btn-sm" on:click={doPolish} disabled={$taskRunning} title={$t('writing.btn.polish.tip')}>{$t('writing.btn.polish')}</button>
                   {/if}
-                  <button class="btn btn-ghost btn-sm" on:click={copyContent}>{$t('writing.btn.copy')}</button>
+                  <button class="btn btn-outline btn-sm" on:click={copyContent}>{$t('writing.btn.copy')}</button>
                 {/if}
                 <div class="flex-1"></div>
                 <div class="join">

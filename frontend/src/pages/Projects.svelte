@@ -108,7 +108,7 @@
     </div>
 
     <!-- Create new project -->
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4">
         <h3 class="card-title text-base">{$t('projects.create')}</h3>
         <input
@@ -123,19 +123,9 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-2">
             <span class="text-xs text-base-content/65">{$t('projects.create.lang')}</span>
-            <div class="join">
-              <button
-                type="button"
-                class="btn btn-sm join-item {newProjectLang === 'zh' ? 'btn-primary' : 'btn-ghost'}"
-                disabled={creating}
-                on:click={() => newProjectLang = 'zh'}
-              >中文</button>
-              <button
-                type="button"
-                class="btn btn-sm join-item {newProjectLang === 'en' ? 'btn-primary' : 'btn-ghost'}"
-                disabled={creating}
-                on:click={() => newProjectLang = 'en'}
-              >EN</button>
+            <div class="tabs tabs-box tabs-sm" role="tablist">
+              <button type="button" role="tab" class="tab tab-sm" class:tab-active={newProjectLang === 'zh'} aria-selected={newProjectLang === 'zh'} disabled={creating} on:click={() => newProjectLang = 'zh'}>中文</button>
+              <button type="button" role="tab" class="tab tab-sm" class:tab-active={newProjectLang === 'en'} aria-selected={newProjectLang === 'en'} disabled={creating} on:click={() => newProjectLang = 'en'}>EN</button>
             </div>
           </div>
           <button
@@ -155,7 +145,7 @@
     </div>
 
     <!-- Project list -->
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4">
         <h3 class="card-title text-base">{$t('projects.list')} <span class="text-xs font-normal text-base-content/60">({$projects.length})</span></h3>
         {#if $projects.length === 0}
@@ -199,7 +189,7 @@
                   <span class="badge badge-primary badge-xs">{$t('projects.current')}</span>
                 {:else}
                   <button
-                    class="btn btn-ghost btn-xs text-error shrink-0"
+                    class="btn btn-error btn-outline btn-xs shrink-0"
                     on:click|stopPropagation={() => deleteProject(p.name)}
                     disabled={$taskRunning}
                   >
