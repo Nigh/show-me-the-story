@@ -14,6 +14,7 @@
   $: p = $progress;
   $: displayTitle = $config?.story?.title || p?.title || '';
   $: chapters = p?.chapters || [];
+  $: projectChapterCount = chapters.filter(ch => !ch.inherited).length;
   $: hasOutline = chapters.length > 0;
   $: hasAccepted = chapters.some(c => c.status === 'accepted');
   $: inOutlinePhase = p?.phase === 'outline';
@@ -437,7 +438,7 @@
     <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <div class="flex items-center justify-between">
-          <h4 class="text-sm font-semibold text-base-content/60">{$t('outline.chapterList')} <span class="font-normal text-base-content/35">{$t('outline.chapterList.summary', { total: chapters.length, suffix: pendingCount ? $t('outline.chapterList.pendingSuffix', { n: pendingCount }) : '' })}</span></h4>
+          <h4 class="text-sm font-semibold text-base-content/60">{$t('outline.chapterList')} <span class="font-normal text-base-content/35">{$t('outline.chapterList.summary', { total: projectChapterCount, suffix: pendingCount ? $t('outline.chapterList.pendingSuffix', { n: pendingCount }) : '' })}</span></h4>
           <span class="text-xs text-base-content/35">{$t('outline.chapterList.editHint')}</span>
         </div>
         <div class="space-y-1.5">

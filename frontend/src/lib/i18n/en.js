@@ -689,6 +689,7 @@ export default {
   'fs.stats.active': '{n} active',
   'fs.stats.resolved': '{n} resolved',
   'fs.stats.overdue': '{n} overdue',
+  'fs.inherited': 'Inherited',
   'fs.hint': 'Active foreshadows are auto-injected into writing prompts; after each chapter generation/revision their status updates and {file} in the project folder is refreshed.',
   'fs.suggestions.title': 'AI foreshadow suggestions ({n})',
   'fs.suggestions.hint': 'Tick the ones to adopt; on confirm they are written to the project and tracked.',
@@ -919,6 +920,6 @@ export default {
   'proofread.anchorMissing': 'This report location is stale; the block may have been deleted', 'proofread.reportOutdated': 'The prose changed after this report was generated; verify that the issue still exists',
   'proofread.chapter': 'Chapter {n}: {title}', 'proofread.undo': 'Undo this chapter', 'proofread.deleteConfirm': 'Deleting this paragraph can invalidate report links. Delete it?',
   'proofread.insert': 'Insert after', 'proofread.add': 'Add', 'proofread.pickIssue': 'Click a report location to begin',
-  'proofread.continueTitle': 'Need to continue the story?', 'proofread.continueHint': 'Create a continuation project from the frozen settings, facts, outlines, and summaries. Proofread prose is not copied; planning resumes at the next chapter.',
+  'proofread.continueTitle': 'Need to continue the story?', 'proofread.continueHint': 'Create a continuation project from the frozen settings, facts, outlines, summaries, and a foreshadow snapshot. Proofread prose is not copied; planning resumes at the next chapter and progress counts only new chapters.',
   'proofread.continueName': 'New project name (not book title)', 'proofread.createContinuation': 'Create continuation', 'proofread.continueCreated': 'Continuation project created',
 };

@@ -158,7 +158,7 @@ Final proofreading is a separate terminal workflow after writing. Accept every c
 3. **Generate interactive report** lists logic, structure, foreshadow, and character issues that need author judgment. Click any chapter/block reference to edit the source, then mark it pending, resolved, or ignored.
 4. Automatic changes can be undone per chapter. Download the current manuscript and Markdown report separately for external editing.
 
-Once prose is changed in this workflow, the original project cannot resume writing. To continue the story, enter a new project name and choose **Create continuation**. The app copies frozen settings, facts, outlines, and summaries—but not proofread prose—and opens the new project at the next planning chapter. The original project and downloaded backups remain untouched.
+Once prose is changed in this workflow, the original project cannot resume writing. To continue the story, enter a new project name and choose **Create continuation**. The app copies frozen settings, facts, outlines, summaries, and a foreshadow snapshot—but not proofread prose—and opens the new project at the next planning chapter. Chapter progress counts only chapters added in the new project. Copied foreshadows are marked **Inherited** and remain self-contained instead of depending on the source project. The original project and downloaded backups remain untouched.
 
 ### AI assistant
 

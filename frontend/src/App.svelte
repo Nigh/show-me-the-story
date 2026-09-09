@@ -100,7 +100,7 @@
         : $progress.phase)
     : $t('app.phase.unstarted');
   $: chapterStats = (() => {
-    const chs = $progress?.chapters || [];
+    const chs = ($progress?.chapters || []).filter(c => !c.inherited);
     if (chs.length === 0) return '';
     const accepted = chs.filter(c => c.status === 'accepted').length;
     return $t('app.chapters.count', { accepted, total: chs.length });

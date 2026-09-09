@@ -12,6 +12,7 @@ import (
 type ChapterState struct {
 	KnowledgeTracked bool   `json:"knowledge_tracked,omitempty"`
 	MemoryRevision   string `json:"memory_revision,omitempty"`
+	Inherited        bool   `json:"inherited,omitempty"`
 	Num              int    `json:"num"`
 	Title            string `json:"title"`
 	Outline          string `json:"outline"`
@@ -50,6 +51,7 @@ type ForeshadowEvent struct {
 
 type Foreshadow struct {
 	ID            int               `json:"id"`
+	Inherited     bool              `json:"inherited,omitempty"`
 	Name          string            `json:"name"`
 	Description   string            `json:"description"`
 	PlantChapter  int               `json:"plant_chapter"`
