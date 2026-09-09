@@ -153,6 +153,7 @@ export default {
   'projects.list': 'Existing projects',
   'projects.empty': 'No projects yet. Create one to get started.',
   'projects.emptyProject': 'Empty project',
+  'projects.phase.completed': 'Completed',
   'projects.current': 'Current',
   'projects.incompatible.badge': 'Legacy incompatible',
   'projects.incompatible.hint': 'Use the original application version to continue',

@@ -12,6 +12,7 @@
   onMount(loadProjects);
 
   function phaseLabel(p) {
+    if (p === 'completed') return $t('projects.phase.completed');
     if (p === 'outline') return $t('app.phase.outline');
     if (p === 'writing') return $t('app.phase.writing');
     return p || '';
@@ -186,8 +187,8 @@
                       {$t('projects.incompatible.hint')}
                     {:else if p.title}
                       {$t('projects.bookTitle', { title: p.title })}
-                      {#if p.phase}
-                        · {phaseLabel(p.phase)}
+                      {#if p.phase || p.book_status === 'completed'}
+                        · {phaseLabel(p.book_status === 'completed' ? 'completed' : p.phase)}
                       {/if}
                     {:else}
                       {$t('projects.emptyProject')}

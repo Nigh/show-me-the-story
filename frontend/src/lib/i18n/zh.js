@@ -154,6 +154,7 @@ export default {
   'projects.list': '已有项目',
   'projects.empty': '暂无项目，请创建一个新项目开始。',
   'projects.emptyProject': '空项目',
+  'projects.phase.completed': '已完结',
   'projects.current': '当前',
   'projects.incompatible.badge': '旧版不兼容',
   'projects.incompatible.hint': '请使用原版本程序继续操作',

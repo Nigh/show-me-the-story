@@ -222,12 +222,14 @@ func (h *Handlers) GetProjects(w http.ResponseWriter, r *http.Request) {
 		// Get progress info if available
 		phase := ""
 		title := ""
+		bookStatus := ""
 		progressPath := filepath.Join(projectDir, "progress.json")
 		if data, err := os.ReadFile(progressPath); err == nil {
 			var p story.Progress
 			if json.Unmarshal(data, &p) == nil {
 				phase = p.Phase
 				title = p.Title
+				bookStatus = p.BookStatus
 			}
 		}
 
@@ -236,9 +238,17 @@ func (h *Handlers) GetProjects(w http.ResponseWriter, r *http.Request) {
 		if data, err := os.ReadFile(filepath.Join(projectDir, "config.json")); err == nil {
 			var probe struct {
 				Language string `json:"language"`
+				Story    struct {
+					Title string `json:"title"`
+				} `json:"story"`
 			}
-			if json.Unmarshal(data, &probe) == nil && probe.Language != "" {
-				lang = i18n.NormalizeLanguage(probe.Language)
+			if json.Unmarshal(data, &probe) == nil {
+				if probe.Language != "" {
+					lang = i18n.NormalizeLanguage(probe.Language)
+				}
+				if probe.Story.Title != "" {
+					title = probe.Story.Title
+				}
 			}
 		}
 
@@ -246,6 +256,7 @@ func (h *Handlers) GetProjects(w http.ResponseWriter, r *http.Request) {
 		info := map[string]string{
 			"name":                    name,
 			"phase":                   phase,
+			"book_status":             bookStatus,
 			"title":                   title,
 			"language":                lang,
 			"compatibility":           compatibility,
