@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { api } from '../lib/api.js';
+  import { api, apiFetch } from '../lib/api.js';
   import { config, progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
   import { navigate } from '../lib/router.js';
   import { t } from '../lib/i18n/index.js';
@@ -408,7 +408,7 @@
     const written = chapters.filter(c => c.content_rev);
     if (written.length === 0) { addToast($t('writing.toasts.exportEmpty'), 'error'); return; }
     try {
-      const r = await fetch('/api/export/txt');
+      const r = await apiFetch('/api/export/txt');
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

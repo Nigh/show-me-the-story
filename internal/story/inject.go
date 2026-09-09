@@ -391,9 +391,9 @@ func ChapterSynopsis(cfg *config.Config, state *Progress, num int) string {
 
 func batchScopeTemplate(lang string) string {
 	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
-		return "\n[Required batch synopsis: chapters {{.StartNum}}–{{.EndNum}}]\n{{.OutlineSynopsis}}\n[Long-term direction, optional]\n{{.LongTermDirection}}\nGenerate exactly {{.NewChapterCount}} consecutive chapters in this range, constrained by this batch synopsis. Start the story when there are no existing chapters; otherwise continue the existing plot. Do not treat this batch as the whole book."
+		return "\n[Required batch synopsis: chapters {{.StartNum}}–{{.EndNum}}]\n{{.OutlineSynopsis}}\n[Long-term direction, optional]\n{{.LongTermDirection}}\nGenerate exactly {{.NewChapterCount}} consecutive chapters in this range, constrained by this batch synopsis. Start the story when there are no existing chapters; otherwise continue the existing plot. Do not treat this batch as the whole book. When the supplied novel title is blank, include an inferred non-empty top-level JSON field named title."
 	} else {
-		return "\n【本批大纲梗概：第 {{.StartNum}}–{{.EndNum}} 章，必须遵循】\n{{.OutlineSynopsis}}\n【长期方向（可选）】\n{{.LongTermDirection}}\n严格生成上述范围内连续的 {{.NewChapterCount}} 章，由本批梗概约束。没有已有章节时从故事开篇开始，否则承接已有剧情。不得把本批梗概当成全书计划。"
+		return "\n【本批大纲梗概：第 {{.StartNum}}–{{.EndNum}} 章，必须遵循】\n{{.OutlineSynopsis}}\n【长期方向（可选）】\n{{.LongTermDirection}}\n严格生成上述范围内连续的 {{.NewChapterCount}} 章，由本批梗概约束。没有已有章节时从故事开篇开始，否则承接已有剧情。不得把本批梗概当成全书计划。传入的小说标题为空时，须推断标题并在顶层 JSON 的 title 字段返回非空标题。"
 	}
 }
 

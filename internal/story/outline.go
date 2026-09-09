@@ -85,7 +85,7 @@ func intSliceToStr(nums []int) []string {
 	return out
 }
 
-func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, settings *ProjectSettings, template string, baseData map[string]string, logger *sse.LogBroadcaster) ([]OutlineChapter, error) {
+func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, settings *ProjectSettings, template string, baseData map[string]string, logger *sse.LogBroadcaster) (OutlineResponse, error) {
 	data := mergeOutlinePromptData(baseData, cfg, settings)
 	systemPrompt := i18n.SystemPromptFor(cfg.Language, "outline_editor_json")
 	minLen, _ := calcOutlineLengthRange(cfg.Story.TargetWordsPerChapter)
@@ -100,20 +100,18 @@ func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, 
 
 		rawResp := llm.CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 		if rawResp == "" {
-			return nil, fmt.Errorf("API 调用失败或被取消")
+			return OutlineResponse{}, fmt.Errorf("API 调用失败或被取消")
 		}
 
-		var resp struct {
-			Chapters []OutlineChapter `json:"chapters"`
-		}
+		var resp OutlineResponse
 		rawResp = cleanJSONResponse(rawResp)
 		if err := json.Unmarshal([]byte(rawResp), &resp); err != nil {
-			return nil, fmt.Errorf("解析大纲JSON失败: %w\n原始响应: %s", err, rawResp)
+			return OutlineResponse{}, fmt.Errorf("解析大纲JSON失败: %w\n原始响应: %s", err, rawResp)
 		}
 		lastChapters = resp.Chapters
 		lastShort = validateOutlineChapterLengths(resp.Chapters, minLen)
 		if len(lastShort) == 0 {
-			return resp.Chapters, nil
+			return resp, nil
 		}
 		logger.WarnKey("log.outline_chapters_too_short", strings.Join(intSliceToStr(lastShort), ", "), minLen)
 	}
@@ -121,7 +119,7 @@ func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, 
 	if len(lastShort) > 0 {
 		logger.WarnKey("log.outline_chapters_still_short", strings.Join(intSliceToStr(lastShort), ", "), minLen)
 	}
-	return lastChapters, nil
+	return OutlineResponse{Chapters: lastChapters}, nil
 }
 
 func reviseOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, userFeedback, progressPath, cfgPath string, logger *sse.LogBroadcaster) error {

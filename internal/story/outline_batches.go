@@ -134,14 +134,17 @@ func GenerateOutlineBatch(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		"StartNum": fmt.Sprint(start), "EndNum": fmt.Sprint(start + req.ChapterCount - 1),
 		"UserRequirements": synopsis, "LongTermDirection": strings.TrimSpace(req.LongTermDirection),
 	}
+	needsTitle := start == 1 && preferUserValue(cfg.Story.Title, state.Title) == ""
 	var chapters []OutlineChapter
+	var generatedTitle string
 	for attempt := 0; attempt < 3; attempt++ {
-		var err error
-		chapters, err = generateOutlineChaptersOnly(ctx, apiCfg, cfg, settings, template, data, logger)
+		resp, err := generateOutlineChaptersOnly(ctx, apiCfg, cfg, settings, template, data, logger)
 		if err != nil {
 			return err
 		}
-		valid := len(chapters) == req.ChapterCount
+		chapters = resp.Chapters
+		generatedTitle = strings.TrimSpace(resp.Title)
+		valid := len(chapters) == req.ChapterCount && (!needsTitle || generatedTitle != "")
 		for i, ch := range chapters {
 			if ch.Num != start+i {
 				valid = false
@@ -165,6 +168,9 @@ func GenerateOutlineBatch(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 	}
 	next.OutlineBatches = append(next.OutlineBatches, OutlineBatch{ID: id, Revision: revision, StartCh: start, EndCh: start + req.ChapterCount - 1, Synopsis: synopsis, EndingIntent: req.EndingIntent, EndingStyle: req.EndingStyle, EndingRequirements: strings.TrimSpace(req.EndingRequirements), PlannedFinal: req.EndingIntent == "final" || req.EndingIntent == "sequel"})
 	next.Title = preferUserValue(cfg.Story.Title, state.Title)
+	if start == 1 && next.Title == "" {
+		next.Title = generatedTitle
+	}
 	next.LongTermDirection = strings.TrimSpace(req.LongTermDirection)
 	next.Phase = "writing"
 	next.BookStatus = BookStatusActive

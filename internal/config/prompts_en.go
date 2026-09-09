@@ -265,6 +265,7 @@ Produce outlines for {{.NewChapterCount}} more chapters, starting at chapter {{.
 
 Return JSON:
 {
+  "title": "Novel title (infer from the batch synopsis when the supplied title is blank)",
   "chapters": [
     {
       "num": {{.StartNum}},

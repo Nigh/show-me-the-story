@@ -1,6 +1,9 @@
 // English UI strings. Mirror of zh.js. Missing keys fall back to zh.
 export default {
  "task.knowledge_sync": "Syncing facts and settings",
+ "task.planning_review": "Planning review",
+ "task.proofread_analyze": "Proofreading analysis",
+ "task.proofread_apply": "Automatic proofreading",
 "facts.field.name": "Name",
 "facts.field.age": "Age",
 "facts.field.appearance": "Appearance",

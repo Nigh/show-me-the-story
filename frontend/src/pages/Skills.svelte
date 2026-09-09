@@ -1,13 +1,13 @@
 <script>
   import { onMount } from 'svelte';
-  import { api } from '../lib/api.js';
+  import { api, apiFetch } from '../lib/api.js';
   import { skills, addToast, taskRunning, confirmModal } from '../lib/stores.js';
-  import { t, getLocale } from '../lib/i18n/index.js';
+  import { t } from '../lib/i18n/index.js';
   let mode='paste', markdown='', selectedFile=null, folderFiles=[], overwrite=false, installing=false, detail=null, wasRunning=false, staticCheck=null;
   async function load(){try{skills.set(await api('GET','/api/skill-library'));}catch(e){addToast(e.message,'error')}}
   onMount(load); $: if(wasRunning&&!$taskRunning)load(); $: wasRunning=$taskRunning;
   async function toggleSkill(id,enabled){try{await api('PUT','/api/skills/'+encodeURIComponent(id)+'/toggle',{enabled});addToast(enabled?$t('skills.toast.enabled'):$t('skills.toast.disabled'),'success');await load()}catch(e){addToast(e.message,'error');await load()}}
-  async function upload(body,validateOnly=false){const locale=getLocale();const url='/api/skill-library/install'+(validateOnly?'?validate_only=true':'');const r=await fetch(url,{method:'POST',headers:{'X-UI-Locale':locale,'Accept-Language':locale},body});const data=await r.json();if(!r.ok)throw new Error(data.error||'Install failed');return data}
+  async function upload(body,validateOnly=false){const url='/api/skill-library/install'+(validateOnly?'?validate_only=true':'');return (await apiFetch(url,{method:'POST',body})).json()}
   async function install(){installing=true;staticCheck=null;try{if(mode==='paste'){if(!markdown.trim())throw new Error($t('skills.install.needContent'));staticCheck=await api('POST','/api/skill-library/install?validate_only=true',{markdown,overwrite});await api('POST','/api/skill-library/install',{markdown,overwrite})}else{const fd=new FormData();fd.append('overwrite',String(overwrite));if(mode==='zip'){if(!selectedFile)throw new Error($t('skills.install.needFile'));fd.append('zip',selectedFile)}else if(mode==='markdown'){if(!selectedFile)throw new Error($t('skills.install.needFile'));fd.append('files',selectedFile);fd.append('paths',JSON.stringify([selectedFile.name]))}else{if(!folderFiles.length)throw new Error($t('skills.install.needFolder'));fd.append('paths',JSON.stringify(folderFiles.map(f=>f.webkitRelativePath||f.name)));folderFiles.forEach(f=>fd.append('files',f))}staticCheck=await upload(fd,true);await upload(fd)}addToast($t('skills.install.done'),'success');markdown='';selectedFile=null;folderFiles=[];overwrite=false;await load()}catch(e){staticCheck={valid:false,error:e.message};addToast(e.message,'error')}finally{installing=false}}
   async function validateSkill(id){try{await api('POST',`/api/skill-library/${encodeURIComponent(id)}/validate`);addToast($t('skills.validate.started'),'info');await load()}catch(e){addToast(e.message,'error')}}
   async function optimizeSkill(id){try{await api('POST',`/api/skill-library/${encodeURIComponent(id)}/optimize`);addToast($t('skills.optimize.started'),'info')}catch(e){addToast(e.message,'error')}}

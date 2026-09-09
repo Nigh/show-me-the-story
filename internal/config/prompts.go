@@ -275,6 +275,7 @@ var DefaultPromptsZH = PromptsConfig{
 
 请以JSON格式返回：
 {
+  "title": "小说标题（传入标题为空时根据本批梗概推断）",
   "chapters": [
     {
       "num": {{.StartNum}},

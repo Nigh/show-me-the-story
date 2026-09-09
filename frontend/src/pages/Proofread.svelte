@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { api } from '../lib/api.js';
+  import { api, apiFetch } from '../lib/api.js';
   import { progress, postprocess, taskRunning, addToast, confirmModal, config } from '../lib/stores.js';
   import { t } from '../lib/i18n/index.js';
 
@@ -18,11 +18,13 @@
   onMount(load);
 
   async function download(url, mark) {
-    const r = await fetch(url); if (!r.ok) { addToast(await r.text(), 'error'); return; }
-    const blob = await r.blob(), a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    const base = $config?.story?.title || $progress?.title || 'novel';
-    a.download = url.includes('outline') ? `${base}-outlines.md` : url.includes('proofread') ? `${base}-proofreading-report.md` : `${base}.txt`;
-    a.click(); URL.revokeObjectURL(a.href); mark();
+    try {
+      const r = await apiFetch(url);
+      const blob = await r.blob(), a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      const base = $config?.story?.title || $progress?.title || 'novel';
+      a.download = url.includes('outline') ? `${base}-outlines.md` : url.includes('proofread') ? `${base}-proofreading-report.md` : `${base}.txt`;
+      a.click(); URL.revokeObjectURL(a.href); mark();
+    } catch (e) { addToast(e.message, 'error'); }
   }
   async function acknowledge() { if (!backupChecked || !downloadedBook || !downloadedOutline) return; const value = await api('POST', '/api/proofread/backup'); postprocess.set({book_complete:true,state:value}); }
   async function run(path, body) { try { await api('POST', path, body); addToast($t('proofread.started'), 'info'); } catch(e) { addToast(e.message, 'error'); } }
