@@ -693,6 +693,7 @@ export default {
   'fs.stats.active': '活跃 {n}',
   'fs.stats.resolved': '已回收 {n}',
   'fs.stats.overdue': '超期 {n}',
+  'fs.inherited': '前作继承',
   'fs.hint': '写作时活跃伏笔会自动注入 AI 提示词；每章生成或修订后会更新状态，并同步写入项目目录 {file}。',
   'fs.suggestions.title': 'AI 伏笔建议（{n} 条）',
   'fs.suggestions.hint': '勾选要采纳的方案，确认后将写入项目并开始追踪。',
@@ -934,7 +935,7 @@ export default {
   'proofread.deleteConfirm': '删除段落会使相关报告定位失效，确定删除？',
   'proofread.insert': '后插段落', 'proofread.add': '添加', 'proofread.pickIssue': '点击报告中的段落定位开始处理',
   'proofread.continueTitle': '需要续写？',
-  'proofread.continueHint': '创建一个续写项目，复制校订前冻结的设定、事实、章节大纲与摘要，不复制校订后的正文；新项目从下一章继续规划。',
+  'proofread.continueHint': '创建一个续写项目，复制校订前冻结的设定、事实、章节大纲、摘要与伏笔快照，不复制校订后的正文；新项目从下一章继续规划，进度只统计新增章节。',
   'proofread.continueName': '新项目名（不是书名）', 'proofread.createContinuation': '创建续写项目',
   'proofread.continueCreated': '续写项目已创建',
 };

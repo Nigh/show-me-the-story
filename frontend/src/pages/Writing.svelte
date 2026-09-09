@@ -76,8 +76,9 @@
   $: p = $progress;
   $: inWriting = p?.phase === 'writing';
   $: chapters = p?.chapters || [];
-  $: total = chapters.length;
-  $: accepted = chapters.filter(c => c.status === 'accepted').length;
+  $: projectChapters = chapters.filter(c => !c.inherited);
+  $: total = projectChapters.length;
+  $: accepted = projectChapters.filter(c => c.status === 'accepted').length;
   $: pct = total > 0 ? Math.round(accepted / total * 100) : 0;
   $: currentIdx = p?.current_chapter_index ?? 0;
 

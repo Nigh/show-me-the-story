@@ -355,6 +355,7 @@
                 <span class="badge badge-sm ml-2 {statusMeta[fs.status]?.cls || 'badge-ghost'}">
                   {statusMeta[fs.status]?.label || fs.status}
                 </span>
+                {#if fs.inherited}<span class="badge badge-outline badge-sm ml-2">{$t('fs.inherited')}</span>{/if}
               </div>
               <div class="flex gap-1">
                 <button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click={() => openEdit(fs)}>{$t('common.edit')}</button>

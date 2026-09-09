@@ -1465,14 +1465,21 @@ func (h *Handlers) DeleteChaptersFrom(w http.ResponseWriter, r *http.Request) {
 	h.startKnowledgeSync()
 }
 
-func (h *Handlers) broadcastProgress() {
-	accepted := 0
-	for _, ch := range h.state.Chapters {
+func chapterProgress(chapters []story.ChapterState) (total, accepted int) {
+	for _, ch := range chapters {
+		if ch.Inherited {
+			continue
+		}
+		total++
 		if ch.Status == story.StatusAccepted {
 			accepted++
 		}
 	}
-	total := len(h.state.Chapters)
+	return
+}
+
+func (h *Handlers) broadcastProgress() {
+	total, accepted := chapterProgress(h.state.Chapters)
 	var pct float64
 	if total > 0 {
 		pct = float64(accepted) / float64(total) * 100
@@ -1498,10 +1505,11 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 		lang = i18n.NormalizeLanguage(h.cfg.Language)
 	}
 	running := h.isTaskRunning()
+	totalChapters, _ := chapterProgress(h.state.Chapters)
 	resp := map[string]interface{}{
 		"phase":            h.state.Phase,
 		"title":            h.state.Title,
-		"total_chapters":   len(h.state.Chapters),
+		"total_chapters":   totalChapters,
 		"is_task_running":  running,
 		"auto_confirm":     h.isAutoConfirmOn(),
 		"project_language": lang,

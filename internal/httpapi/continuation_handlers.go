@@ -103,12 +103,15 @@ func (h *Handlers) PostContinuationProject(w http.ResponseWriter, r *http.Reques
 	}
 
 	next := &story.Progress{Phase: "writing", BookStatus: story.BookStatusActive, Title: h.state.Title, CorePrompt: h.state.CorePrompt, LongTermDirection: h.state.LongTermDirection, StoryConfigSnapshot: h.state.StoryConfigSnapshot, NextMemoryID: h.state.NextMemoryID, Foreshadows: append([]story.Foreshadow(nil), h.state.Foreshadows...), NarrativeCheckpoints: append([]story.NarrativeCheckpoint(nil), h.state.NarrativeCheckpoints...)}
+	for i := range next.Foreshadows {
+		next.Foreshadows[i].Inherited = true
+	}
 	next.OutlineBatches = append([]story.OutlineBatch(nil), h.state.OutlineBatches...)
 	for i := range next.OutlineBatches {
 		next.OutlineBatches[i].PlannedFinal = false
 	}
 	for _, old := range h.state.Chapters {
-		next.Chapters = append(next.Chapters, story.ChapterState{Num: old.Num, Title: old.Title, Outline: old.Outline, Characters: append([]story.OutlineChapterCharacter(nil), old.Characters...), Summary: old.Summary, Status: story.StatusAccepted})
+		next.Chapters = append(next.Chapters, story.ChapterState{Inherited: true, Num: old.Num, Title: old.Title, Outline: old.Outline, Characters: append([]story.OutlineChapterCharacter(nil), old.Characters...), Summary: old.Summary, Status: story.StatusAccepted})
 	}
 	for _, old := range h.state.MemoryEntries {
 		old.References = nil
