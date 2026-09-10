@@ -180,8 +180,7 @@ func checkpointFor(ctx context.Context, api *config.APIConfig, cfg *config.Confi
 	if err := ctx.Err(); err != nil {
 		return NarrativeCheckpoint{}, err
 	}
-	// Version the hash to rebuild legacy checkpoints whose fallback provenance is unknown.
-	hash := checkpointHash([]string{"v2", checkpointHash(parts), checkpointHash(revisions)})
+	hash := checkpointHash(append(append([]string{}, parts...), revisions...))
 	key := fmt.Sprintf("%d:%d:%d", level, start, end)
 	if cp, ok := old[key]; ok && !cp.Degraded && cp.SourceHash == hash && strings.TrimSpace(cp.Summary) != "" {
 		return cp, nil

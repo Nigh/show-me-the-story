@@ -158,41 +158,13 @@ func normalizeSkillFiles(files map[string][]byte) (SkillManifest, map[string][]b
 		}
 		cleaned[clean] = b
 	}
-	var manifest SkillManifest
-	if raw, ok := cleaned["skill.json"]; ok {
-		if err := json.Unmarshal(raw, &manifest); err != nil {
-			return manifest, nil, fmt.Errorf("invalid skill.json: %w", err)
-		}
-	} else {
-		entry := "SKILL.md"
-		raw, ok := cleaned[entry]
-		if !ok {
-			var markdownFiles []string
-			for name := range cleaned {
-				if strings.EqualFold(filepath.Ext(name), ".md") {
-					markdownFiles = append(markdownFiles, name)
-				}
-			}
-			sort.Strings(markdownFiles)
-			if len(markdownFiles) == 1 {
-				entry = markdownFiles[0]
-				raw = cleaned[entry]
-				ok = true
-			}
-		}
-		if !ok {
-			return manifest, nil, fmt.Errorf("SKILL.md is required")
-		}
-		s, err := parseSkillFile(string(raw), "user")
-		if err != nil {
-			return manifest, nil, err
-		}
-		manifest = SkillManifest{SchemaVersion: 1, ID: s.ID, Name: s.Name, Description: s.Description, Category: s.Category, Languages: s.Languages, AppliesTo: s.AppliesTo, EntryPoint: entry}
-		mb, _ := json.MarshalIndent(manifest, "", "  ")
-		cleaned["skill.json"] = mb
+	raw, ok := cleaned["skill.json"]
+	if !ok {
+		return SkillManifest{}, nil, fmt.Errorf("skill.json is required")
 	}
-	if manifest.SchemaVersion == 0 {
-		manifest.SchemaVersion = 1
+	var manifest SkillManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return manifest, nil, fmt.Errorf("invalid skill.json: %w", err)
 	}
 	if manifest.SchemaVersion != 1 {
 		return manifest, nil, fmt.Errorf("unsupported skill schema version")

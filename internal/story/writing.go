@@ -564,10 +564,6 @@ func generateChapterContentStream(ctx context.Context, apiCfg *config.APIConfig,
 		"OutlineConstraints": outlineConstraints,
 	})
 	userPrompt = finalizeChapterWritingPrompt(cfg.Prompts.ChapterWriting, userPrompt, minLen, maxLen, targetWords, lang)
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.OutlineConstraints}}", outlineConstraints)
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.Foreshadows}}", foreshadowContext)
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.Memory}}", memoryContext)
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterWriting, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
 	if block := formatExtraWritingConstraintsBlock(extraWritingConstraints, lang); block != "" {
 		userPrompt += "\n\n" + block
 	}
@@ -665,29 +661,6 @@ func generateChapterFactCheck(ctx context.Context, apiCfg *config.APIConfig, cfg
 		"OutlineConstraints": outlineConstraints,
 		"Memory":             memoryContext,
 	})
-	// Old-template fallback: if placeholder is missing, append the material and supplementary checks at the end.
-	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
-		userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.ChapterOutline}}",
-			"[Chapter outline]\n"+ch.Outline)
-		if outlineConstraints != "" {
-			userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.OutlineConstraints}}",
-				outlineConstraints+"Supplementary audit scope (also count as reportable objective contradictions): (a) premature introduction of characters/events scheduled for later chapters per the outline; (b) one-time events from prior chapters (first meetings, identity reveals, etc.) being re-enacted as new in this chapter.")
-		}
-		if memoryContext != "" {
-			userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.Memory}}", memoryContext)
-		}
-	} else {
-		userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.ChapterOutline}}",
-			"【本章大纲】\n"+ch.Outline)
-		if outlineConstraints != "" {
-			userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.OutlineConstraints}}",
-				outlineConstraints+"补充核查范围（同样属于必须报告的客观矛盾）：(a) 提前引入按章节脉络安排在后续章节才登场或发生的人物/事件；(b) 前文已发生的一次性事件（初次见面、身份揭示等）在本章作为新事件重复发生。")
-		}
-		if memoryContext != "" {
-			userPrompt = appendIfMissingPlaceholder(cfg.Prompts.FactCheck, userPrompt, "{{.Memory}}", memoryContext)
-		}
-	}
-
 	systemPrompt := i18n.SystemPromptFor(lang, "fact_checker_json")
 	return llm.CallAPI(ctx, apiCfg, systemPrompt, userPrompt)
 }
@@ -836,7 +809,6 @@ func reviseChapterSegment(ctx context.Context, apiCfg *config.APIConfig, cfg *co
 		"SegmentOriginal":  segmentOriginal,
 		"UserFeedback":     feedbackForAI,
 	})
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterSegmentRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterSegmentRevision, userPrompt, "{{.UserFeedback}}", feedbackForAI)
 	userPrompt += factProtection(state, ch.Num, lang)
 
@@ -900,7 +872,6 @@ func reviseChapterContentStream(ctx context.Context, apiCfg *config.APIConfig, c
 		"OriginalContent":  ch.Content,
 		"UserFeedback":     userFeedback,
 	})
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
 	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterRevision, userPrompt, "{{.UserFeedback}}", userFeedback)
 	userPrompt += factProtection(state, ch.Num, lang)
 
@@ -988,7 +959,6 @@ func reviseSubsequentOutlines(ctx context.Context, apiCfg *config.APIConfig, cfg
 // futureOutlineWindow 注入后续章节大纲的窗口大小（章数）
 const futureOutlineWindow = 10
 
-// appendIfMissingPlaceholder keeps required context in customized prompts
 // that omit a supported placeholder.
 func appendIfMissingPlaceholder(template, rendered, placeholder, block string) string {
 	if strings.TrimSpace(block) == "" || strings.Contains(template, placeholder) {

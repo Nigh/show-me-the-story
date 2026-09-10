@@ -52,8 +52,6 @@ func analyzeWritingConflict(ctx context.Context, apiCfg *config.APIConfig, cfg *
 		"FailedIssues":       strings.Join(failedIssues, "\n"),
 		"ContentExcerpt":     excerpt,
 	})
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.WritingConflictAnalysis, userPrompt, "{{.OutlineConstraints}}", outlineConstraints)
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.WritingConflictAnalysis, userPrompt, "{{.Foreshadows}}", foreshadowBlock)
 
 	systemPrompt := i18n.SystemPromptFor(lang, "writing_conflict_analyst_json")
 	rawResp := llm.CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
