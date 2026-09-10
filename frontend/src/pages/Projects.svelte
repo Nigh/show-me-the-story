@@ -1,13 +1,17 @@
 <script>
   import { onMount } from 'svelte';
   import logo from '../../../docs/show-me-the-story.webp';
-  import { api } from '../lib/api.js';
+  import { api, apiFetch } from '../lib/api.js';
   import { currentProject, projects, addToast, showConfirm, taskRunning, progress, config, settings, chatSessions, currentChatSession, projectLanguage } from '../lib/stores.js';
   import { t, setLocale } from '../lib/i18n/index.js';
 
   let newProjectName = '';
   let newProjectLang = 'zh';
   let creating = false;
+  let backupBusy = false;
+  let restoreName = '';
+  let restoreFiles;
+  let restoreInput;
 
   onMount(loadProjects);
 
@@ -90,6 +94,36 @@
     });
   }
 
+  async function backupProject(name) {
+    backupBusy = true;
+    try {
+      const response = await apiFetch('/api/projects/' + encodeURIComponent(name) + '/backup');
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${name}-${new Date().toISOString().slice(0, 10)}.zip`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { addToast(e.message, 'error'); }
+    finally { backupBusy = false; }
+  }
+
+  async function restoreProject() {
+    if (!restoreName.trim() || !restoreFiles?.length) return;
+    backupBusy = true;
+    try {
+      await apiFetch('/api/projects/restore?name=' + encodeURIComponent(restoreName.trim()), {
+        method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: restoreFiles[0],
+      });
+      restoreName = '';
+      restoreInput.value = '';
+      restoreFiles = null;
+      await loadProjects();
+      addToast($t('projects.restore.done'), 'success');
+    } catch (e) { addToast(e.message, 'error'); }
+    finally { backupBusy = false; }
+  }
+
   function handleKeydown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -141,6 +175,18 @@
           </button>
         </div>
         <p class="text-xs text-base-content/60 mt-1">{$t('projects.create.langHint')}</p>
+      </div>
+    </div>
+
+    <div class="card bg-base-200">
+      <div class="card-body p-4">
+        <h3 class="card-title text-base">{$t('projects.restore.title')}</h3>
+        <p class="text-sm text-base-content/65">{$t('projects.restore.hint')}</p>
+        <input class="input w-full" aria-label={$t('projects.restore.name')} placeholder={$t('projects.restore.name')} bind:value={restoreName} disabled={backupBusy || $taskRunning} />
+        <input type="file" accept=".zip,application/zip" class="file-input w-full" aria-label={$t('projects.restore.file')} bind:this={restoreInput} bind:files={restoreFiles} disabled={backupBusy || $taskRunning} />
+        <button class="btn btn-primary btn-sm self-end" on:click={restoreProject} disabled={backupBusy || $taskRunning || !restoreName.trim() || !restoreFiles?.length}>
+          {$t('projects.restore.button')}
+        </button>
       </div>
     </div>
 
@@ -196,6 +242,9 @@
                     {$t('common.delete')}
                   </button>
                 {/if}
+                <button class="btn btn-outline btn-xs shrink-0" on:click|stopPropagation={() => backupProject(p.name)} disabled={backupBusy || $taskRunning || p.compatibility !== 'supported'}>
+                  {$t('projects.backup')}
+                </button>
               </div>
             {/each}
           </div>

@@ -1,0 +1,47 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, v4]
+  workflow_call:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build and check frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          npm run check
+      - name: Build, test and vet Go
+        run: |
+          go build ./...
+          go test ./...
+          go vet ./...
+      - name: Race checks
+        if: runner.os == 'Linux'
+        run: go test -race ./...

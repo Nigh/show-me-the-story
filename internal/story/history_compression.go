@@ -61,10 +61,13 @@ func boundedHistoryFallback(parts []string, limit int) string {
 	return truncateRunesExact(strings.TrimSpace(out.String()), limit)
 }
 
-func compressHistory(ctx context.Context, api *config.APIConfig, cfg *config.Config, parts []string, limit int) string {
+func compressHistory(ctx context.Context, api *config.APIConfig, cfg *config.Config, parts []string, limit int) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	fallback := boundedHistoryFallback(parts, limit)
 	if api == nil || cfg == nil || strings.TrimSpace(api.BaseURL) == "" {
-		return fallback
+		return fallback, true, nil
 	}
 	prompt := config.RenderPrompt(cfg.Prompts.HistoryCompression, map[string]string{
 		"History": strings.Join(parts, "\n"), "MaxRunes": fmt.Sprint(limit),
@@ -75,16 +78,22 @@ func compressHistory(ctx context.Context, api *config.APIConfig, cfg *config.Con
 		shortAPI.MaxTokens = min(shortAPI.MaxTokens, api.MaxTokens)
 	}
 	result, err := llm.CallAPI(ctx, &shortAPI, i18n.SystemPromptFor(cfg.Language, "author_default"), prompt)
-	if err != nil || strings.TrimSpace(result) == "" {
-		return fallback
+	if err := ctx.Err(); err != nil {
+		return "", false, err
 	}
-	return truncateRunesExact(strings.TrimSpace(result), limit)
+	if err != nil || strings.TrimSpace(result) == "" {
+		return fallback, true, nil
+	}
+	return truncateRunesExact(strings.TrimSpace(result), limit), false, nil
 }
 
 // EnsureNarrativeCheckpoints creates 20-chapter cold-history summaries and
 // rolls every ten siblings into a higher level. Source hashes make old edits
 // and deletions rebuild only the affected chain.
-func EnsureNarrativeCheckpoints(ctx context.Context, api *config.APIConfig, cfg *config.Config, state *Progress, path string, _ *sse.LogBroadcaster) error {
+func EnsureNarrativeCheckpoints(ctx context.Context, api *config.APIConfig, cfg *config.Config, state *Progress, path string, logger *sse.LogBroadcaster) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	accepted := make([]ChapterState, 0, len(state.Chapters))
 	for _, ch := range state.Chapters {
 		if ch.Status == StatusAccepted {
@@ -101,10 +110,16 @@ func EnsureNarrativeCheckpoints(ctx context.Context, api *config.APIConfig, cfg 
 		for start := 0; start < cold; start += historyLeafChapters {
 			group := accepted[start : start+historyLeafChapters]
 			parts := make([]string, len(group))
+			revisions := make([]string, len(group))
 			for i, ch := range group {
-				parts[i] = fmt.Sprintf("[%d %s rev=%s] %s", ch.Num, ch.Title, ChapterRevision(ch), ch.Summary)
+				parts[i] = fmt.Sprintf("[%d] %s — %s", ch.Num, ch.Summary, ch.Title)
+				revisions[i] = ChapterRevision(ch)
 			}
-			all = append(all, checkpointFor(ctx, api, cfg, old, 1, group[0].Num, group[len(group)-1].Num, parts, historyLeafRunes))
+			cp, err := checkpointFor(ctx, api, cfg, old, 1, group[0].Num, group[len(group)-1].Num, parts, revisions, historyLeafRunes)
+			if err != nil {
+				return err
+			}
+			all = append(all, cp)
 		}
 	}
 	levelNodes := append([]NarrativeCheckpoint(nil), all...)
@@ -113,10 +128,19 @@ func EnsureNarrativeCheckpoints(ctx context.Context, api *config.APIConfig, cfg 
 		for start := 0; start+historyFanout <= len(levelNodes); start += historyFanout {
 			group := levelNodes[start : start+historyFanout]
 			parts := make([]string, len(group))
+			revisions := make([]string, len(group))
+			degraded := false
 			for i, cp := range group {
-				parts[i] = fmt.Sprintf("[%d-%d hash=%s] %s", cp.StartChapter, cp.EndChapter, cp.SourceHash, cp.Summary)
+				parts[i] = fmt.Sprintf("[%d-%d] %s", cp.StartChapter, cp.EndChapter, cp.Summary)
+				revisions[i] = fmt.Sprintf("%s:%t", cp.SourceHash, cp.Degraded)
+				degraded = degraded || cp.Degraded
 			}
-			next = append(next, checkpointFor(ctx, api, cfg, old, level, group[0].StartChapter, group[len(group)-1].EndChapter, parts, historyParentRunes))
+			cp, err := checkpointFor(ctx, api, cfg, old, level, group[0].StartChapter, group[len(group)-1].EndChapter, parts, revisions, historyParentRunes)
+			if err != nil {
+				return err
+			}
+			cp.Degraded = cp.Degraded || degraded
+			next = append(next, cp)
 		}
 		all = append(all, next...)
 		levelNodes = next
@@ -127,6 +151,17 @@ func EnsureNarrativeCheckpoints(ctx context.Context, api *config.APIConfig, cfg 
 		}
 		return all[i].StartChapter < all[j].StartChapter
 	})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if logger != nil {
+		for _, cp := range all {
+			if cp.Degraded {
+				logger.WarnKey("log.history_degraded")
+				break
+			}
+		}
+	}
 	if reflect.DeepEqual(state.NarrativeCheckpoints, all) {
 		return nil
 	}
@@ -141,13 +176,18 @@ func EnsureNarrativeCheckpoints(ctx context.Context, api *config.APIConfig, cfg 
 	return nil
 }
 
-func checkpointFor(ctx context.Context, api *config.APIConfig, cfg *config.Config, old map[string]NarrativeCheckpoint, level, start, end int, parts []string, limit int) NarrativeCheckpoint {
-	hash := checkpointHash(parts)
-	key := fmt.Sprintf("%d:%d:%d", level, start, end)
-	if cp, ok := old[key]; ok && cp.SourceHash == hash && strings.TrimSpace(cp.Summary) != "" {
-		return cp
+func checkpointFor(ctx context.Context, api *config.APIConfig, cfg *config.Config, old map[string]NarrativeCheckpoint, level, start, end int, parts, revisions []string, limit int) (NarrativeCheckpoint, error) {
+	if err := ctx.Err(); err != nil {
+		return NarrativeCheckpoint{}, err
 	}
-	return NarrativeCheckpoint{StartChapter: start, EndChapter: end, Level: level, SourceHash: hash, Summary: compressHistory(ctx, api, cfg, parts, limit)}
+	// Version the hash to rebuild legacy checkpoints whose fallback provenance is unknown.
+	hash := checkpointHash([]string{"v2", checkpointHash(parts), checkpointHash(revisions)})
+	key := fmt.Sprintf("%d:%d:%d", level, start, end)
+	if cp, ok := old[key]; ok && !cp.Degraded && cp.SourceHash == hash && strings.TrimSpace(cp.Summary) != "" {
+		return cp, nil
+	}
+	summary, degraded, err := compressHistory(ctx, api, cfg, parts, limit)
+	return NarrativeCheckpoint{StartChapter: start, EndChapter: end, Level: level, SourceHash: hash, Summary: summary, Degraded: degraded}, err
 }
 
 func checkpointCover(state *Progress, beforeChapter int) []NarrativeCheckpoint {

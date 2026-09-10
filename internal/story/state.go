@@ -142,6 +142,7 @@ type NarrativeCheckpoint struct {
 	Level        int    `json:"level,omitempty"`
 	SourceHash   string `json:"source_hash,omitempty"`
 	Summary      string `json:"summary"`
+	Degraded     bool   `json:"degraded,omitempty"`
 }
 
 const (
