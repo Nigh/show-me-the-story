@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('./sse.js', import.meta.url), 'utf8');
-const script = source.replace(/^import .*;\n/gm, '').replace('export function connectSSE', 'function connectSSE');
+const script = source.replace(/^import .*;\r?\n/gm, '').replace('export function connectSSE', 'function connectSSE');
 const pending = [];
 const intervals = new Map();
 let timer = 0;
