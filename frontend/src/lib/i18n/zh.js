@@ -94,7 +94,7 @@ export default {
   "outline.batch.replaceConfirm": "将替换末尾整批未写章纲，使用本次梗概和章节数重新生成。是否继续？",
 
   // Header / shell
-  'app.title': 'AI 小说生成器',
+  'app.title': 'AI 小说写手',
   'app.newVersion': '新版本',
   'app.switchProject': '⇄ 切换 / 新建项目',
   'app.switchProject.disabled': 'AI 任务进行中，暂不能切换项目',

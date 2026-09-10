@@ -35,6 +35,13 @@ tasks:
     cmds:
       - ./{{.BINARY}}
 
+  screenshots:
+    desc: 用固定离线样例重建 README 截图
+    dir: frontend
+    deps: [frontend:install]
+    cmds:
+      - npm run screenshots
+
   dev:frontend:
     desc: 启动前端开发服务器（热重载）
     dir: frontend

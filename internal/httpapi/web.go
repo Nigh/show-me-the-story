@@ -187,7 +187,7 @@ func StartWebServer(apiCfg *config.APIConfig, apiCfgPath string, logger *sse.Log
 		IdleTimeout:  120 * time.Second,
 	}
 
-	fmt.Printf(" [系统] AI 小说生成器 Web UI 启动中...\n")
+	fmt.Printf(" [系统] AI 小说写手 Web UI 启动中...\n")
 	fmt.Printf(" [系统] 访问地址: http://localhost%s\n", port)
 	fmt.Printf(" [系统] 程序目录: %s\n", progDir)
 	fmt.Printf(" [系统] 项目目录: %s\n", filepath.Join(progDir, "storys"))

@@ -7,12 +7,14 @@
     "check": "node src/lib/projectRestore.check.js && node src/lib/forceGraphLayout.check.js && node src/lib/sse.check.js && node src/lib/projectBackup.check.js",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "screenshots": "npm run build && node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.0",
     "@tailwindcss/vite": "^4",
     "daisyui": "^5",
+    "playwright": "^1.55.0",
     "svelte": "^4.2.18",
     "tailwindcss": "^4",
     "vite": "^5.3.1"

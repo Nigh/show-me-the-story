@@ -1,97 +1,101 @@
+[English](README.md) · [简体中文](README.zh.md)
+
 <p align="center">
   <img src="docs/show-me-the-story.webp" alt="Show Me The Story" width="240">
 </p>
 
-# Show Me The Story — AI 小说生成器
+# Show Me The Story
 
-[English](README.en.md) · [完整使用指南](docs/guide.zh.md) · [下载发布版](https://github.com/Nigh/show-me-the-story/releases)
+<p align="center"><a href="docs/guide.en.md">User guide</a> · <a href="https://github.com/Nigh/show-me-the-story/releases">Download releases</a></p>
 
-本地运行的长篇小说创作工具。一个可执行文件、一套浏览器界面，连接 OpenAI 兼容的模型接口，即可管理设定、分批规划大纲、逐章生成和修订，最后导出作品。
+A local application for writing long fiction with AI. One executable and a browser interface connect to an OpenAI-compatible model service to manage settings, plan batches of chapters, draft and revise prose, and export your work.
 
-你决定故事规则与创作方向，AI 负责协助执行。设定可以遵循现实，也可以完全虚构。
+You decide the story’s rules and direction. Those rules may be realistic or entirely fictional.
 
-![配置页与 AI 助理](screenshot.png)
+![Writing workspace](docs/screenshots/en/writing.webp)
 
-## 第一次使用
+![Batch outline planning](docs/screenshots/en/outline.webp)
 
-1. 下载适合系统的发布版，解压到准备长期保存作品的目录，启动程序。
-2. 浏览器打开 `http://localhost:48090`，创建项目并选择中文或英文。
-3. 在「配置」填写 API 地址、模型名称和 API Key，测试连接并保存。模型名称以服务商提供的标识为准。
-4. 保存故事类型、每章目标字数、文风和视角，添加必要的角色与世界观。
-5. 在「大纲」填写本批梗概和章数（1–36），生成并检查章纲；页面出现「确认大纲」时，确认后进入写作。
-6. 在「写作」生成一章，阅读并修订，满意后确认，再继续下一章。
+## First run
 
-首次建议只规划少量章节并关闭自动确认，先验证人物、文风与模型输出是否符合预期。
+1. Download a release for your system, extract it into a directory you intend to keep, and launch it.
+2. Open `http://localhost:48090` and create a Chinese or English project.
+3. In Configuration, enter the API address, model identifier, and API key. Test the connection and save. Use the exact model identifier supplied by your provider.
+4. Save the genre, target chapter length, style, and point of view. Add essential characters and worldview entries.
+5. In Outline, enter a synopsis and chapter count (1–36) for the first batch. Generate and review it. If the page offers Confirm outline, confirm before writing.
+6. In Writing, generate one chapter, read and revise it, then accept it before continuing.
 
-遇到某一步不知道如何操作，请从[第一次创作](docs/guide.zh.md#first-story)开始；完整指南说明了每一步的输入、结果和下一步。
+Start with a small batch and auto-confirm disabled to check the voice, characters, and model behavior.
 
-## 按需求查阅
+The [first-story walkthrough](docs/guide.en.md#first-story) explains the input, expected result, and next step for each stage.
 
-| 你想做什么 | 使用说明 |
+## Find the right workflow
+
+| Goal | Guide |
 |---|---|
-| 接通模型、设置窗口和输出长度 | [安装与 API 配置](docs/guide.zh.md#setup) |
-| 从一个想法开始写小说 | [推荐创作流程](docs/guide.zh.md#first-story) |
-| AI 写错规则，补充设定后修正本章 | [补充知识与纠错](docs/guide.zh.md#knowledge) |
-| 只改一句、一个段落或某一章 | [审核与修订](docs/guide.zh.md#revision) |
-| 追加章节、调整末批、安排结尾 | [分批规划](docs/guide.zh.md#planning) |
-| 理解事实、设定、伏笔的区别 | [知识与一致性](docs/guide.zh.md#consistency) |
-| 接着已有小说写，或开始续作 | [导入与续写](docs/guide.zh.md#import) |
-| 完结后校订、导出、备份 | [完稿流程](docs/guide.zh.md#completion) · [数据管理](docs/guide.zh.md#data) |
-| 配置技能，合理使用助理 | [技能与助理](docs/guide.zh.md#skills) |
-| 按钮不可用、任务失败、版本不兼容 | [排查问题](docs/guide.zh.md#troubleshooting) |
+| Connect a model and configure context/output limits | [Setup](docs/guide.en.md#setup) |
+| Start a novel from an idea | [First story](docs/guide.en.md#first-story) |
+| Add a story rule and correct the current chapter | [Knowledge and corrections](docs/guide.en.md#knowledge) |
+| Edit a paragraph or revise a chapter | [Review and revision](docs/guide.en.md#revision) |
+| Add chapters, replace an unwritten batch, plan an ending | [Batch planning](docs/guide.en.md#planning) |
+| Understand facts, settings, and foreshadowing | [Consistency](docs/guide.en.md#consistency) |
+| Import an existing work or create a sequel | [Import and continuation](docs/guide.en.md#import) |
+| Proofread, export, and back up | [Completion](docs/guide.en.md#completion) · [Data](docs/guide.en.md#data) |
+| Use skills and the assistant | [Skills and assistant](docs/guide.en.md#skills) |
+| Resolve disabled buttons, failures, or incompatible projects | [Troubleshooting](docs/guide.en.md#troubleshooting) |
 
-## 核心能力
+## Features
 
-- 多项目与中英文创作；界面语言可以独立切换。
-- 分批大纲、长期方向、结尾意图与规划复盘。
-- 角色、世界观、组织、关系图谱和知识设定。
-- 逐章生成、审核、段落编辑、定向修订与可选自动确认。
-- 正文事实提取、来源定位、设定变化建议和伏笔跟踪。
-- 补充知识后直接修订本章：所选条目完整进入本次请求，后续按相关性使用。
-- 已有作品导入、可选写作与润色 Skill、聊天助理。
-- 独立完稿校订、问题定位、逐章撤销校订与创建续写项目。
-- 实时日志、流式输出、任务取消、本地保存与全文/大纲/报告导出。
+- Multiple projects; Chinese and English writing with independently switchable UI language.
+- Batch outlines, long-term direction, ending intent, and planning reviews.
+- Characters, worldview, organizations, relationship graphs, and story knowledge.
+- Chapter drafting, review, paragraph editing, targeted revision, and optional auto-confirm.
+- Extracted facts with source references, setting-change proposals, and foreshadow tracking.
+- Save knowledge and revise a chapter: selected entries enter that request in full; later writing retrieves relevant entries.
+- Existing-text import, optional writing/polishing skills, and a conversational assistant.
+- Separate final proofreading, anchored reports, per-chapter proofreading undo, and continuation projects.
+- Streaming output, logs, cancellation, local persistence, and text/outline/report exports.
 
-一致性核查主要依据小说上下文，不等于联网查证。AI 仍可能遗漏或误用设定，需要作者审核。
+Consistency checks primarily use your story context; they are not online research. Authors still need to review model output.
 
-## 运行与数据
+## Running and storing data
 
-默认数据目录是启动时的工作目录。也可传入一个**已经存在的目录**：
+The default data directory is the working directory at launch. You can pass an **existing directory**:
 
 ```bash
 ./show-me-the-story
 ./show-me-the-story /path/to/existing/novels
 ```
 
-Windows 可双击可执行文件，或在 PowerShell 中运行：
+On Windows, double-click the executable or run:
 
 ```powershell
 .\show-me-the-story.exe "D:\Novels"
 ```
 
-请核对启动日志中的项目目录；指定目录不存在时程序会退回工作目录。端口由 `PORT` 环境变量覆盖，默认 48090。
+Check the project directory printed at startup. An invalid directory argument falls back to the working directory. The default port is 48090; override it with the `PORT` environment variable.
 
-项目保存在 `storys/<项目名>/`。迁移时停止任务、关闭程序，再复制整个数据目录。当前版本只打开 v4 项目；旧格式请使用项目列表提示的对应版本，勿手改版本号。
+Projects live in `storys/<project>/`. Stop tasks and close the program before copying the entire data directory for backup or migration. This release only opens v4 projects. Use the version recommended by the project list for older formats; do not edit the format number manually.
 
-也可等待任务结束后，在项目列表点击「备份 ZIP」下载完整项目；使用「从项目备份恢复」恢复为新项目，不覆盖原项目。ZIP 不包含全局 API 配置和用户 Skill，迁移时需另行保留。详见[备份与恢复](docs/guide.zh.md#data)。
+After tasks finish, use **Back up ZIP** in the project list to download a complete project. **Restore a project backup** restores it as a new project without overwriting the original. Global API configuration and user Skills are excluded; preserve them separately when migrating. See [backups and restoration](docs/guide.en.md#data).
 
-正文与进度保存中断后，重新打开项目会尝试恢复上次完整保存。若章节文件损坏或恢复失败，程序会阻止打开并提示诊断；请保留整个项目目录及 `progress.json.rollback`（若存在），排除文件访问问题或从备份恢复。回滚日志不能替代定期备份，也不是正文历史版本；不要用多个程序同时写同一项目。
+After an interrupted prose/progress save, reopening the project attempts to restore the last complete save. Damaged chapter files or failed recovery prevent the project from opening and display diagnostics. Preserve the entire project directory, including `progress.json.rollback` if present, then resolve file access problems or restore a backup. The rollback journal is not version history or a replacement for regular backups; do not run multiple writers against the same project.
 
-正文和配置保存在本地，但使用 AI 功能时，相关正文、设定、提示词等会发送到你配置的模型服务；服务可能产生费用。API Key 位于本地 `api.json`，分享项目或日志前应检查敏感信息。程序适合可信本地环境，不要直接暴露到公网。
+Files are stored locally, but AI operations send relevant prose, settings, and prompts to your configured model service, which may charge for usage. API keys are stored in `api.json`; inspect shared files and logs for sensitive information. Use the application in a trusted local environment, not directly exposed to the public internet.
 
-Windows 若提示未知发布者，请先确认下载来源；确认信任后可通过「更多信息 → 仍要运行」启动。
+If Windows reports an unknown publisher, verify the download source. After deciding to trust the executable, use More info → Run anyway.
 
-## 开发与构建
+## Development
 
-后端使用 Go 1.25.1 和标准库；前端使用 Vite 5、Svelte 4、Tailwind CSS 4、DaisyUI 5 与 `@xianii/design-system`。前端产物和内置 Skill 嵌入单个二进制。
+Go 1.25.1 with the standard library; Vite 5, Svelte 4, Tailwind CSS 4, DaisyUI 5, and `@xianii/design-system`. Frontend assets and built-in skills are embedded in the executable.
 
-安装 Go、Node.js；可选安装 [Task](https://taskfile.dev/)。
+Install Go and Node.js, optionally [Task](https://taskfile.dev/):
 
 ```bash
 task build
 ```
 
-或分步构建：
+Or build manually:
 
 ```bash
 cd frontend
@@ -101,9 +105,9 @@ cd ..
 go build -o show-me-the-story .
 ```
 
-开发命令：`task dev` 启动后端，`task dev:frontend` 启动前端开发服务器（5173，代理 API 到 48090）。
+Use `task dev` for the backend and `task dev:frontend` for the frontend development server (5173, proxying API requests to 48090). Run `task screenshots` with Google Chrome installed to rebuild the README images from fixed offline sample data.
 
-检查：
+Checks:
 
 ```bash
 go build ./...
@@ -113,8 +117,8 @@ node frontend/src/lib/projectRestore.check.js
 node frontend/src/lib/forceGraphLayout.check.js
 ```
 
-架构与贡献约束见 [AGENTS.md](AGENTS.md)。用户操作说明以[完整指南](docs/guide.zh.md)为准。
+See [AGENTS.md](AGENTS.md) for architecture and contribution constraints, and the [user guide](docs/guide.en.md) for workflows.
 
-## 许可证
+## License
 
 [MIT](LICENSE)
