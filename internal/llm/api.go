@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,6 +52,26 @@ type CompletionResult struct {
 	FinishReason string // e.g. "stop", "length"
 }
 
+// A server-side output limit will not recover by retrying the same request.
+type outputLimitError struct{ maxTokens int }
+
+type contextBudgetError struct{ prompt, budget int }
+
+func (e *contextBudgetError) Error() string {
+	return fmt.Sprintf("estimated prompt size %d tokens exceeds context input budget %d; reduce project context or increase the configured context window", e.prompt, e.budget)
+}
+
+func (e *outputLimitError) Error() string {
+	return fmt.Sprintf("API output truncated (finish_reason=length, requested max_tokens=%d); check provider output/reasoning limits or reduce the requested batch size", e.maxTokens)
+}
+
+func completionText(result CompletionResult, err error, maxTokens int) (string, error) {
+	if err == nil && result.FinishReason == "length" {
+		err = &outputLimitError{maxTokens: maxTokens}
+	}
+	return result.Content, err
+}
+
 func hasAPIVersionSegment(u string) bool {
 	for _, seg := range strings.Split(u, "/") {
 		if len(seg) >= 2 && seg[0] == 'v' && seg[1] >= '0' && seg[1] <= '9' {
@@ -92,15 +113,17 @@ func normalizeURL(apiCfg *config.APIConfig) string {
 	return resolveChatCompletionsURL(apiCfg.BaseURL, apiCfg.URLStrict)
 }
 
-// EnsureContextBudget fills ContextBudgetTokens when unset: it tries the
-// model's real context window first, then falls back to the default.
+// EnsureContextBudget fills an unset budget and clamps configured values to a
+// smaller model-reported window. A deliberate smaller user limit is retained.
 func EnsureContextBudget(apiCfg *config.APIConfig) {
-	if apiCfg == nil || apiCfg.ContextBudgetTokens > 0 {
+	if apiCfg == nil {
 		return
 	}
 	if window := FetchModelContextWindow(apiCfg); window > 0 {
-		apiCfg.ContextBudgetTokens = window
-	} else {
+		if apiCfg.ContextBudgetTokens <= 0 || apiCfg.ContextBudgetTokens > window {
+			apiCfg.ContextBudgetTokens = window
+		}
+	} else if apiCfg.ContextBudgetTokens <= 0 {
 		apiCfg.ContextBudgetTokens = config.DefaultContextBudgetTokens
 	}
 }
@@ -158,6 +181,14 @@ func IsFatalAPIError(err error) bool {
 	if err == nil {
 		return false
 	}
+	var limit *outputLimitError
+	if errors.As(err, &limit) {
+		return true
+	}
+	var budget *contextBudgetError
+	if errors.As(err, &budget) {
+		return true
+	}
 	msg := err.Error()
 	// 注意：不要把所有 "dial tcp" 都当作致命错误——
 	// "dial tcp ... i/o timeout" 等临时网络故障应当重试。
@@ -176,6 +207,32 @@ func IsFatalAPIError(err error) bool {
 	return false
 }
 
+// PromptInputBudget reserves output capacity and a small provider/tokenizer
+// margin. Estimates deliberately use the project's conservative rune ratio.
+func PromptInputBudget(apiCfg *config.APIConfig) int {
+	window := config.DefaultContextBudgetTokens
+	output := config.DefaultMaxTokens
+	if apiCfg != nil {
+		if apiCfg.ContextBudgetTokens > 0 {
+			window = apiCfg.ContextBudgetTokens
+		}
+		if apiCfg.MaxTokens > 0 {
+			output = apiCfg.MaxTokens
+		}
+	}
+	margin := max(4096, window/20)
+	return max(0, window-output-margin)
+}
+
+func validateContextBudget(apiCfg *config.APIConfig, messages []Message) error {
+	prompt := EstimateTokensFromRunes(countMessageRunes(messages))
+	budget := PromptInputBudget(apiCfg)
+	if prompt > budget {
+		return &contextBudgetError{prompt: prompt, budget: budget}
+	}
+	return nil
+}
+
 func CallAPI(ctx context.Context, apiCfg *config.APIConfig, system, user string) (string, error) {
 	return CallAPIMessages(ctx, apiCfg, []Message{
 		{Role: "system", Content: system},
@@ -186,9 +243,10 @@ func CallAPI(ctx context.Context, apiCfg *config.APIConfig, system, user string)
 // CallAPIMessages 以完整的多轮消息数组调用 API。
 // 内部优先走流式并缓冲全文，使 token 计数在等待期间也能更新；流式不可用时回退同步请求。
 func CallAPIMessages(ctx context.Context, apiCfg *config.APIConfig, messages []Message) (string, error) {
+	messages = applyPromptAddon(ctx, messages)
 	result, err := CallAPIStreamMessages(ctx, apiCfg, messages, nil)
 	if err == nil && result.Content != "" {
-		return result.Content, nil
+		return completionText(result, nil, apiCfg.MaxTokens)
 	}
 	if ctx.Err() != nil {
 		if result.Content != "" {
@@ -202,13 +260,16 @@ func CallAPIMessages(ctx context.Context, apiCfg *config.APIConfig, messages []M
 	if err != nil && IsFatalAPIError(err) {
 		return "", err
 	}
-	// ponytail: fallback for providers with broken stream; loses finish_reason + stream estimate.
+	// Fall back only before any stream content has been received.
 	syncResult, syncErr := CallAPIMessagesSync(ctx, apiCfg, messages)
-	return syncResult.Content, syncErr
+	return completionText(syncResult, syncErr, apiCfg.MaxTokens)
 }
 
 // CallAPIMessagesSync 同步 HTTP 调用（仅作流式失败时的回退）。
 func CallAPIMessagesSync(ctx context.Context, apiCfg *config.APIConfig, messages []Message) (CompletionResult, error) {
+	if err := validateContextBudget(apiCfg, messages); err != nil {
+		return CompletionResult{}, err
+	}
 	fullURL := normalizeURL(apiCfg)
 	tracker := TaskTokensFromContext(ctx)
 	tracker.beginCall(messages)
@@ -344,11 +405,14 @@ func CallAPIStream(ctx context.Context, apiCfg *config.APIConfig, system, user s
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
 	}, onChunk)
-	return result.Content, err
+	return completionText(result, err, apiCfg.MaxTokens)
 }
 
 // CallAPIStreamMessages 以完整的多轮消息数组调用 API（流式）。
 func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messages []Message, onChunk func(string)) (CompletionResult, error) {
+	if err := validateContextBudget(apiCfg, messages); err != nil {
+		return CompletionResult{}, err
+	}
 	fullURL := normalizeURL(apiCfg)
 	tracker := TaskTokensFromContext(ctx)
 	tracker.beginCall(messages)
@@ -390,26 +454,32 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messag
 	}
 
 	var fullContent strings.Builder
-	scanner := bufio.NewScanner(resp.Body)
+	reader := bufio.NewReader(resp.Body)
 	var streamUsage *tokenUsage
 	var finishReason string
+	var readErr error
+	done := false
 
-	for scanner.Scan() {
+	for readErr == nil {
 		if ctx.Err() != nil {
 			return CompletionResult{Content: fullContent.String(), FinishReason: finishReason}, ctx.Err()
 		}
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
+		var line string
+		line, readErr = reader.ReadString('\n')
+		line = strings.TrimRight(line, "\r\n")
+		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
-		data := strings.TrimPrefix(line, "data: ")
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
+			done = true
 			break
 		}
 
 		var delta streamDelta
 		if err := json.Unmarshal([]byte(data), &delta); err != nil {
-			continue
+			readErr = fmt.Errorf("invalid SSE JSON: %w", err)
+			break
 		}
 		if delta.Usage != nil {
 			streamUsage = delta.Usage
@@ -432,9 +502,6 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messag
 	}
 
 	result := fullContent.String()
-	if result == "" {
-		return CompletionResult{}, fmt.Errorf("流式响应为空")
-	}
 	if tracker != nil {
 		if streamUsage != nil {
 			tracker.finishCall(streamUsage.PromptTokens, streamUsage.CompletionTokens, true, messages, result)
@@ -442,5 +509,18 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messag
 			tracker.finishCall(0, 0, false, messages, result)
 		}
 	}
-	return CompletionResult{Content: result, FinishReason: finishReason}, nil
+	completion := CompletionResult{Content: result, FinishReason: finishReason}
+	if ctx.Err() != nil {
+		return completion, ctx.Err()
+	}
+	if readErr != nil && readErr != io.EOF {
+		return completion, fmt.Errorf("stream interrupted after %d bytes: %w", len(result), readErr)
+	}
+	if !done && finishReason == "" {
+		return completion, fmt.Errorf("stream ended without finish_reason or [DONE] after %d bytes: %w", len(result), io.ErrUnexpectedEOF)
+	}
+	if result == "" {
+		return completion, fmt.Errorf("流式响应为空")
+	}
+	return completion, nil
 }

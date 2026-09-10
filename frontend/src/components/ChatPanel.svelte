@@ -47,13 +47,13 @@
 
   // 重试 API 端点映射
   const retryEndpoints = {
-    'outline_generation': { method: 'POST', url: '/api/outline/generate' },
     'outline_revision': { method: 'POST', url: '/api/outline/revise' },
     'chapter_generation': { method: 'POST', url: '/api/chapter/generate' },
     'chapter_revision': { method: 'POST', url: '/api/chapter/revise' },
     'foreshadow_suggest': { method: 'POST', url: '/api/foreshadows/suggest' },
     'continuation_outline': { method: 'POST', url: '/api/outline/generate-continuation' },
     'settings_reconciliation': { method: 'POST', url: '/api/settings/reconcile' },
+    'knowledge_sync': { method: 'POST', url: '/api/knowledge/sync' },
   };
 
   function isHallucinatedWait(msg, allMsgs, idx) {
@@ -274,7 +274,7 @@
             <div class="text-sm font-medium truncate">{s.title}</div>
             <div class="text-xs text-base-content/40">{new Date(s.updated_at).toLocaleString($uiLocale === 'en' ? 'en-US' : 'zh-CN')} · {$t('chat.session.msgs', { n: s.msg_count || 0 })}</div>
           </div>
-          <button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100 transition-opacity" on:click={(e) => deleteSession(s.id, e)}>{$t('common.delete')}</button>
+          <button class="btn btn-error btn-outline btn-xs opacity-0 group-hover:opacity-100 transition-opacity" on:click={(e) => deleteSession(s.id, e)}>{$t('common.delete')}</button>
         </div>
       {/each}
       {#if sessions.length === 0}
@@ -288,17 +288,19 @@
     <div class="border-b border-base-content/10 shrink-0">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-base-300/50" on:click={() => taskStatusCollapsed = !taskStatusCollapsed}>
+      <div class="px-3 py-1.5 cursor-pointer hover:bg-base-300/50" on:click={() => taskStatusCollapsed = !taskStatusCollapsed}>
+        <div class="flex items-center gap-2">
+          {#if $taskRunning}
+            <span class="loading loading-spinner loading-xs text-warning"></span>
+          {:else}
+            <span class="text-success text-xs">●</span>
+          {/if}
+          <span class="text-xs font-semibold text-base-content/70">{$currentTaskName || $t('chat.task.placeholder')}{$taskRunning ? $t('chat.task.running') : $t('chat.task.ended')}</span>
+          <span class="text-xs text-base-content/40 ml-auto">{taskStatusCollapsed ? $t('chat.task.expand') : $t('chat.task.collapse')}</span>
+        </div>
         {#if $taskRunning}
-          <span class="loading loading-spinner loading-xs text-warning"></span>
-        {:else}
-          <span class="text-success text-xs">●</span>
+          <div class="mt-1 pl-5"><TaskTokenBadge className="badge badge-xs badge-info gap-1 font-mono whitespace-nowrap" /></div>
         {/if}
-        <span class="text-xs font-semibold text-base-content/70">{$currentTaskName || $t('chat.task.placeholder')}{$taskRunning ? $t('chat.task.running') : $t('chat.task.ended')}</span>
-        {#if $taskRunning}
-          <TaskTokenBadge />
-        {/if}
-        <span class="text-xs text-base-content/40 ml-auto">{taskStatusCollapsed ? $t('chat.task.expand') : $t('chat.task.collapse')}</span>
       </div>
       {#if !taskStatusCollapsed && taskLogs.length > 0}
         <div class="max-h-[150px] overflow-y-auto px-3 py-1 font-mono text-xs leading-relaxed space-y-0.5">

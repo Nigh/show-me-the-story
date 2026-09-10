@@ -1,17 +1,73 @@
 <script>
-  import { onMount } from 'svelte';
-  import { api } from '../lib/api.js';
-  import { progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
+  import { onMount, tick } from 'svelte';
+  import { api, apiFetch } from '../lib/api.js';
+  import { config, progress, taskRunning, streamingContent, streamingChapterIdx, selectedChapter, autoConfirm, addToast, confirmModal } from '../lib/stores.js';
   import { navigate } from '../lib/router.js';
   import { t } from '../lib/i18n/index.js';
   import { countProseUnits } from '../lib/proseUnits.js';
-  import PostProcessPanel from '../components/PostProcessPanel.svelte';
   import TaskTokenBadge from '../components/TaskTokenBadge.svelte';
+  import KnowledgePanel from '../components/KnowledgePanel.svelte';
+  import { settings } from '../lib/stores.js';
+  let showKnowledge = false;
+  let knowledgeName = '', knowledgeDescription = '', knowledgeTags = '';
+  let selectedSettings = [];
+  let savingKnowledge = false;
+  async function saveKnowledge(revise = false) {
+    if (!knowledgeName.trim() || !knowledgeDescription.trim() || savingKnowledge) return;
+    savingKnowledge = true;
+    const target = ch?.num;
+    try {
+      const entry = await api('POST', '/api/worldview', {name: knowledgeName.trim(), description: knowledgeDescription.trim(), tags: knowledgeTags.trim(), category: 'knowledge'});
+      settings.update(s => ({...s, worldview: [...(s?.worldview || []).filter(w => w.id !== entry.id), entry]}));
+      knowledgeName = ''; knowledgeDescription = ''; knowledgeTags = '';
+      if (ch?.num === target) selectedSettings = [...new Set([...selectedSettings, entry.id])];
+      addToast($t('writing.knowledge.saved'), 'success');
+      if (revise && ch?.num === target) await doRevise();
+    } catch (e) { addToast(e.message, 'error'); }
+    finally { savingKnowledge = false; }
+  }
+  let facts = [];
+  let activeFact = null;
+  let knowledgeExpanded = false;
+  let returnRef = null;
+  let highlightedBlock = null;
+  let selectedBlockId = null;
+  $: factsByBlock = new Map(chapterBlocks.map(b => [b.id, facts.filter(f => (f.references || []).some(r => r.chapter === ch?.num && r.block_id === b.id))]));
+  const blockFacts = id => factsByBlock.get(id) || [];
+  function confirmAction(message, action) {
+    confirmModal.set({ message, onConfirm: action });
+  }
+  function selectBlock(id) {
+    if (editingBlockId != null || revisingBlockId != null || insertAfterId != null) return;
+    highlightedBlock = null;
+    selectedBlockId = selectedBlockId === id ? null : id;
+  }
+  async function jumpToFact(ref, returning = false) {
+    if (editingBlockId != null || revisingBlockId != null || insertAfterId != null) {
+      confirmAction($t('facts.discard'), () => { cancelBlockOps(); jumpToFact(ref, returning); });
+      return;
+    }
+    const idx = chapters.findIndex(c => c.num === ref.chapter);
+    if (idx < 0) { addToast($t('facts.stale'), 'warning'); return; }
+    if (!returning && !returnRef) returnRef = {chapter: ch?.num, block_id: highlightedBlock || chapterBlocks[0]?.id};
+    try {
+      const full = await api('GET', '/api/chapters/' + ref.chapter);
+      const block = (full.blocks || []).find(b => b.id === ref.block_id);
+      if (!block || (ref.quote && block.text !== ref.quote)) { addToast($t('facts.stale'), 'warning'); return; }
+      selectedChapter.set(idx);
+      loadedNum = ref.chapter;
+      applyChapter(ref.chapter, full);
+      highlightedBlock = ref.block_id;
+      await tick();
+      document.getElementById('story-block-' + ref.block_id)?.scrollIntoView({block: 'center', behavior: 'smooth'});
+      if (returning) returnRef = null;
+    } catch(e) { addToast(e.message, 'error'); }
+  }
+  function factHeaders(confirmed) {
+    return {'X-Content-Rev': loadedRev || '', 'X-Confirm-Fact-Impact': String(confirmed)};
+  }
 
   const OUTLINE_FOCUS_KEY = 'showmethestory.outlineFocusChapter';
-
-  // 保留 prop 以兼容 App 传参
-  export const sendToChat = async () => {};
 
   onMount(async () => {
     try {
@@ -39,8 +95,9 @@
   $: p = $progress;
   $: inWriting = p?.phase === 'writing';
   $: chapters = p?.chapters || [];
-  $: total = chapters.length;
-  $: accepted = chapters.filter(c => c.status === 'accepted').length;
+  $: projectChapters = chapters.filter(c => !c.inherited);
+  $: total = projectChapters.length;
+  $: accepted = projectChapters.filter(c => c.status === 'accepted').length;
   $: pct = total > 0 ? Math.round(accepted / total * 100) : 0;
   $: currentIdx = p?.current_chapter_index ?? 0;
 
@@ -58,7 +115,7 @@
   $: isCurrent = ch && currentIdx === $selectedChapter;
   $: isStreamingThis = $streamingChapterIdx === $selectedChapter && $streamingContent;
 
-  // v3: /api/progress 不再携带正文，选中章节的正文按需拉取，content_rev 变化时刷新
+  // /api/progress 不携带正文，选中章节的正文按需拉取，content_rev 变化时刷新
   let chapterContent = '';
   let chapterBlocks = [];
   let loadedNum = -1;
@@ -73,6 +130,7 @@
   async function maybeLoadContent(c) {
     const rev = c.content_rev || '';
     if (c.num === loadedNum && rev === loadedRev) return;
+    if (c.num !== loadedNum) selectedBlockId = null;
     loadedNum = c.num;
     loadedRev = rev;
     if (!rev) { chapterContent = ''; chapterBlocks = []; return; }
@@ -83,7 +141,7 @@
   }
   $: hasContent = !!(ch?.content_rev);
 
-  // —— Block 编辑（v3）——
+  // —— Block 编辑 ——
   let editingBlockId = null;   // 正在内联编辑的 block
   let editingText = '';
   let revisingBlockId = null;  // 正在填写 AI 修订意见的 block
@@ -92,12 +150,14 @@
   let insertText = '';
 
   function startBlockEdit(b) {
+    selectedBlockId = b.id;
     editingBlockId = b.id;
     editingText = b.text;
     revisingBlockId = null;
     insertAfterId = null;
   }
   function startBlockRevise(b) {
+    selectedBlockId = b.id;
     revisingBlockId = b.id;
     blockFeedback = '';
     editingBlockId = null;
@@ -115,10 +175,13 @@
     insertAfterId = null;
   }
 
-  async function saveBlockEdit() {
+  async function saveBlockEdit(confirmed = false) {
     if (editingBlockId == null || !editingText.trim() || !ch) return;
+    if (confirmed !== true && blockFacts(editingBlockId).length) {
+      confirmAction($t('facts.confirm') + '\n' + blockFacts(editingBlockId).map(f => f.content).join('\n'), () => saveBlockEdit(true)); return;
+    }
     try {
-      const full = await api('PUT', `/api/chapters/${ch.num}/blocks/${editingBlockId}`, { text: editingText });
+      const full = await api('PUT', `/api/chapters/${ch.num}/blocks/${editingBlockId}`, { text: editingText }, factHeaders(confirmed === true));
       applyChapter(ch.num, full);
       cancelBlockOps();
       addToast($t('writing.block.saved'), 'success');
@@ -128,10 +191,10 @@
   function deleteBlock(b) {
     if (!ch) return;
     confirmModal.set({
-      message: $t('writing.block.deleteConfirm'),
+      message: $t('writing.block.deleteConfirm') + (blockFacts(b.id).length ? '\n' + $t('facts.confirm') + '\n' + blockFacts(b.id).map(f => f.content).join('\n') : ''),
       onConfirm: async () => {
         try {
-          const full = await api('DELETE', `/api/chapters/${ch.num}/blocks/${b.id}`);
+          const full = await api('DELETE', `/api/chapters/${ch.num}/blocks/${b.id}`, null, factHeaders(true));
           applyChapter(ch.num, full);
           addToast($t('writing.block.deleted'), 'success');
         } catch (e) { addToast(e.message, 'error'); }
@@ -142,17 +205,20 @@
   async function saveBlockInsert() {
     if (insertAfterId == null || !insertText.trim() || !ch) return;
     try {
-      const full = await api('POST', `/api/chapters/${ch.num}/blocks`, { after_id: insertAfterId, text: insertText });
+      const full = await api('POST', `/api/chapters/${ch.num}/blocks`, { after_id: insertAfterId, text: insertText }, factHeaders(false));
       applyChapter(ch.num, full);
       cancelBlockOps();
       addToast($t('writing.block.inserted'), 'success');
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function submitBlockRevise() {
+  async function submitBlockRevise(confirmed = false) {
     if (revisingBlockId == null || !blockFeedback.trim() || !ch) return;
+    if (confirmed !== true && blockFacts(revisingBlockId).length) {
+      confirmAction($t('facts.confirmAI') + '\n' + blockFacts(revisingBlockId).map(f => f.content).join('\n'), () => submitBlockRevise(true)); return;
+    }
     try {
-      await api('POST', `/api/chapters/${ch.num}/blocks/${revisingBlockId}/revise`, { feedback: blockFeedback });
+      await api('POST', `/api/chapters/${ch.num}/blocks/${revisingBlockId}/revise`, { feedback: blockFeedback }, factHeaders(confirmed === true));
       addToast($t('writing.block.reviseStarted'), 'info');
       cancelBlockOps();
     } catch (e) { addToast(e.message, 'error'); }
@@ -293,7 +359,11 @@
   $: if (isStreamingThis && contentEl) scheduleScroll();
 
   function selectChapter(i) {
+    if (savingKnowledge) return;
+    selectedSettings = [];
+    showKnowledge = false;
     selectedChapter.set(i);
+    maybeLoadContent(chapters[i]);
     showRevise = false;
     reviseFeedback = '';
     hideQuotePopover();
@@ -320,21 +390,38 @@
     } catch (e) { addToast(e.message, 'error'); }
   }
 
-  async function doRevise() {
+  async function doRevise(confirmed = false) {
     const fb = reviseFeedback.trim();
-    if (!fb) { addToast($t('writing.toasts.feedbackRequired'), 'error'); return; }
+    if (!fb && !selectedSettings.length) { addToast($t('writing.toasts.feedbackRequired'), 'error'); return; }
     if (!ch) return;
+    const num = ch.num;
+    const rev = loadedRev;
+    if (selectedSettings.length && confirmed !== true) {
+      try {
+        const knowledge = await api('GET', '/api/knowledge?chapter=' + num);
+        if (ch?.num !== num || loadedRev !== rev) return;
+        if (knowledge.facts?.length) {
+          confirmAction($t('writing.knowledge.confirm') + '\n' + knowledge.facts.map(f => f.content).join('\n'), () => {
+            if (ch?.num === num && loadedRev === rev) doRevise(true);
+          });
+          return;
+        }
+      } catch (e) { addToast(e.message, 'error'); return; }
+    }
+    const body = { feedback: fb, worldview_ids: selectedSettings };
     try {
-      if (isCurrent && ch.status === 'review') {
+      if (!selectedSettings.length && isCurrent && ch.status === 'review') {
         // 当前审核中章节：完整修订流程
-        await api('POST', '/api/chapter/revise', { feedback: fb });
+        await api('POST', '/api/chapter/revise', body, factHeaders(confirmed === true));
       } else {
         // 其他章节（含已确认）：定向最小化修订，不影响其他章节
-        await api('POST', '/api/chapter/revise/' + ch.num, { feedback: fb });
+        await api('POST', '/api/chapter/revise/' + ch.num, body, factHeaders(confirmed === true));
       }
       addToast($t('writing.toasts.reviseStarted', { num: ch.num }), 'info');
       reviseFeedback = '';
       showRevise = false;
+      showKnowledge = false;
+      selectedSettings = [];
     } catch (e) { addToast(e.message, 'error'); }
   }
 
@@ -358,12 +445,12 @@
     const written = chapters.filter(c => c.content_rev);
     if (written.length === 0) { addToast($t('writing.toasts.exportEmpty'), 'error'); return; }
     try {
-      const r = await fetch('/api/export/txt');
+      const r = await apiFetch('/api/export/txt');
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${p.title || $t('writing.export.defaultName')}.txt`;
+      a.download = `${$config?.story?.title || p.title || $t('writing.export.defaultName')}.txt`;
       a.click();
       URL.revokeObjectURL(url);
       addToast($t('writing.toasts.exportDone', { n: written.length }), 'success');
@@ -384,6 +471,21 @@
       },
     });
   }
+  async function setBookCompleted(completed) {
+    const active = foreshadows.filter(f => f.status !== "resolved" && f.status !== "abandoned").length;
+    const run = async () => {
+      try {
+        const suffix = completed && active ? "?confirm_foreshadows=true" : "";
+        progress.set(await api("POST", completed ? "/api/story/complete" + suffix : "/api/story/resume"));
+        addToast($t(completed ? "writing.book.completed" : "writing.book.resumed"), "success");
+      } catch (e) { addToast(e.message, "error"); }
+    };
+    if (completed && active) {
+      confirmModal.set({ message: $t("writing.book.foreshadowConfirm", { n: active }), onConfirm: run });
+    } else {
+      await run();
+    }
+  }
 </script>
 
 {#if !inWriting}
@@ -394,9 +496,13 @@
     <button class="btn btn-primary btn-sm" on:click={() => window.location.hash = '#outline'}>{$t('writing.notReady.goto')}</button>
   </div>
 {:else}
-  <div class="space-y-3">
+  <div class="space-y-4">
+    {#if p.book_status !== 'completed' && (p.outline_batches || []).some(b => b.planned_final && chapters.find(c => c.num === b.end_ch)?.status === 'accepted')}
+      <p class="alert alert-info">{$t('ending.completeHint')}</p>
+    {/if}
+
     <!-- 进度 -->
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <div class="flex items-center gap-3">
           <h2 class="card-title text-base flex-1">{$t('writing.progress.title')}</h2>
@@ -406,9 +512,14 @@
           </label>
           <span class="text-xs text-base-content/40">{$t('writing.progress.totalWords', { n: totalWords.toLocaleString() })}</span>
           {#if accepted >= 2}
-            <button class="btn btn-ghost btn-xs" on:click={smoothTransitions} disabled={$taskRunning} title={$t('writing.btn.smoothTransitions.tip')}>{$t('writing.btn.smoothTransitions')}</button>
+            <button class="btn btn-outline btn-xs" on:click={smoothTransitions} disabled={$taskRunning} title={$t('writing.btn.smoothTransitions.tip')}>{$t('writing.btn.smoothTransitions')}</button>
           {/if}
-          <button class="btn btn-ghost btn-xs" on:click={exportBook}>{$t('writing.btn.exportTxt')}</button>
+          <button class="btn btn-outline btn-xs" on:click={exportBook}>{$t('writing.btn.exportTxt')}</button>
+			{#if p.book_status === 'completed'}
+				<button class="btn btn-warning btn-xs" on:click={() => setBookCompleted(false)} disabled={$taskRunning}>{$t('writing.book.resume')}</button>
+			{:else}
+				<button class="btn btn-success btn-xs" on:click={() => setBookCompleted(true)} disabled={$taskRunning}>{$t('writing.book.complete')}</button>
+			{/if}
         </div>
         <progress class="progress progress-primary w-full" value={pct} max="100"></progress>
         <div class="text-sm text-base-content/50">{$t('writing.progress.acceptedSummary', { pct, accepted, total })}</div>
@@ -416,7 +527,7 @@
     </div>
 
     {#if writingConflict}
-      <div class="card bg-error/10 border border-error/30 shadow-sm">
+      <div class="card bg-error/10 border border-error/30 ">
         <div class="card-body p-4 gap-3">
           <h3 class="font-semibold text-error">{$t('writing.conflict.title')}</h3>
           <p class="text-sm">{$t('writing.conflict.summary')}：{writingConflict.summary}</p>
@@ -439,7 +550,7 @@
               {:else if action.id === 'retry'}
                 <button class="btn btn-primary btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('retry')}>{$t('writing.conflict.retry')}</button>
               {:else if action.id === 'force_review'}
-                <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.conflict.forceReview')}</button>
+                <button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.conflict.forceReview')}</button>
               {/if}
             {/each}
             <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('dismiss')}>{$t('writing.conflict.dismiss')}</button>
@@ -447,13 +558,13 @@
         </div>
       </div>
     {:else if orphanWriting}
-      <div class="card bg-warning/10 border border-warning/30 shadow-sm">
+      <div class="card bg-warning/10 border border-warning/30 ">
         <div class="card-body p-4 gap-3">
           <h3 class="font-semibold text-warning">{$t('writing.orphan.title')}</h3>
           <p class="text-sm text-base-content/70">{$t('writing.orphan.hint')}</p>
           <div class="flex flex-wrap gap-2">
             <button class="btn btn-primary btn-xs" disabled={$taskRunning} on:click={doGenerate}>{$t('writing.orphan.retry')}</button>
-            <button class="btn btn-ghost btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.orphan.forceReview')}</button>
+            <button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click={() => resolveWritingConflict('force_review')}>{$t('writing.orphan.forceReview')}</button>
             <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoOutlineForConflict}>{$t('writing.conflict.gotoOutline')}</button>
             <button class="btn btn-warning btn-xs" disabled={$taskRunning} on:click={gotoForeshadows}>{$t('writing.conflict.gotoForeshadows')}</button>
           </div>
@@ -462,11 +573,11 @@
     {/if}
 
     {#if foreshadows.length > 0}
-      <div class="card bg-base-200 shadow-sm">
+      <div class="card bg-base-200">
         <div class="card-body p-4 gap-2">
           <div class="flex items-center justify-between gap-2">
             <h3 class="font-medium text-sm">{$t('writing.fs.title')}</h3>
-            <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.goto')}</button>
+            <button class="btn btn-outline btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.goto')}</button>
           </div>
           <div class="flex flex-wrap gap-2 text-xs">
             <span class="badge badge-ghost">{$t('writing.fs.total', { n: foreshadows.length })}</span>
@@ -486,20 +597,18 @@
         </div>
       </div>
     {:else}
-      <div class="card bg-base-200 shadow-sm">
+      <div class="card bg-base-200">
         <div class="card-body p-4 flex items-center justify-between gap-2">
           <p class="text-sm text-base-content/50">{$t('writing.fs.none')}</p>
-          <button class="btn btn-ghost btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.setup')}</button>
+          <button class="btn btn-outline btn-xs" on:click={() => window.location.hash = '#foreshadows'}>{$t('writing.fs.setup')}</button>
         </div>
       </div>
     {/if}
 
-    <PostProcessPanel />
-
     <!-- 章节区 -->
-    <div class="grid grid-cols-[230px_1fr] gap-3" style="min-height:400px">
+    <div class="grid grid-cols-[345px_minmax(0,1fr)] gap-3" style="min-height:400px">
       <!-- 章节列表 -->
-      <div class="card bg-base-200 shadow-sm overflow-y-auto max-h-[calc(100vh-280px)]">
+      <div class="card bg-base-200  overflow-y-auto max-h-[calc(100vh-280px)]">
         <ul class="menu menu-sm p-0 w-full">
           {#each chapters as c, i}
             <li>
@@ -519,7 +628,7 @@
       <!-- 内容区 -->
       <div class="min-w-0">
         {#if ch}
-          <div class="card bg-base-200 shadow-sm">
+          <div class="card bg-base-200">
             <div class="card-body p-4 gap-2">
               <div class="flex items-center gap-2 flex-wrap">
                 <h2 class="card-title text-base flex-1 min-w-0">{$t('writing.chapter.title', { num: ch.num, title: ch.title })}</h2>
@@ -530,6 +639,9 @@
                   <span class="text-xs text-base-content/40">{$t('writing.chapter.words', { n: chapterWordCount.toLocaleString() })}</span>
                 {/if}
               </div>
+
+              <KnowledgePanel chapterNum={ch.num} bind:facts bind:activeFact bind:expanded={knowledgeExpanded} on:jump={e => jumpToFact(e.detail)} />
+              {#if returnRef}<button class="btn btn-outline btn-xs self-start" on:click={() => jumpToFact(returnRef, true)}>{$t('facts.return')}</button>{/if}
 
               {#if ch.outline}
                 <details class="bg-base-300 rounded">
@@ -562,7 +674,8 @@
                   {:else if chapterBlocks.length > 0}
                     <div class="space-y-3">
                       {#each chapterBlocks as b (b.id)}
-                        <div class="group relative rounded hover:bg-base-100/40 -mx-2 px-2 py-0.5">
+                        <div id={'story-block-' + b.id} class="relative rounded -mx-2 px-2 py-1 cursor-pointer transition-colors hover:bg-base-100/40 {highlightedBlock === b.id || activeFact?.references?.some(r => !r.stale && r.chapter === ch.num && r.block_id === b.id) ? 'bg-info/20' : selectedBlockId === b.id ? 'bg-primary/10' : ''}" role="button" tabindex="0" aria-pressed={selectedBlockId===b.id} on:click={() => selectBlock(b.id)} on:keydown={(e) => { if (e.currentTarget === e.target && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectBlock(b.id); } }}>
+                          {#if blockFacts(b.id).length}<div class="flex flex-wrap gap-1 mb-2">{#each blockFacts(b.id) as fact}<button class="badge badge-warning badge-sm cursor-pointer" on:click|stopPropagation={() => { activeFact = fact; highlightedBlock = b.id; knowledgeExpanded = true; }}>{$t('facts.marker')} #{fact.id}</button>{/each}</div>{/if}
                           {#if editingBlockId === b.id}
                             <textarea class="textarea textarea-sm w-full text-[15px] leading-relaxed" rows={Math.max(3, Math.ceil(b.text.length / 40))} bind:value={editingText} disabled={$taskRunning}></textarea>
                             <div class="flex gap-2 justify-end mt-1">
@@ -571,12 +684,7 @@
                             </div>
                           {:else}
                             <div class="whitespace-pre-wrap {b.type === 'scene_break' ? 'text-center text-base-content/40' : ''}">{b.text}</div>
-                            <div class="absolute right-1 top-0.5 hidden group-hover:flex gap-1 bg-base-200/90 rounded shadow px-1 py-0.5">
-                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.edit')} disabled={$taskRunning} on:click={() => startBlockEdit(b)}>✏️</button>
-                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.revise')} disabled={$taskRunning} on:click={() => startBlockRevise(b)}>🤖</button>
-                              <button class="btn btn-ghost btn-xs px-1.5" title={$t('writing.block.insertAfter')} disabled={$taskRunning} on:click={() => startBlockInsert(b.id)}>➕</button>
-                              <button class="btn btn-ghost btn-xs px-1.5 text-error" title={$t('writing.block.delete')} disabled={$taskRunning} on:click={() => deleteBlock(b)}>🗑</button>
-                            </div>
+                            {#if selectedBlockId === b.id}<div class="absolute right-1 top-1 flex gap-1 bg-base-200 border border-base-content/20 rounded px-1 py-0.5"><button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click|stopPropagation={() => startBlockEdit(b)}>{$t('writing.block.edit')}</button><button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click|stopPropagation={() => startBlockRevise(b)}>{$t('writing.block.revise')}</button><button class="btn btn-outline btn-xs" disabled={$taskRunning} on:click|stopPropagation={() => startBlockInsert(b.id)}>{$t('writing.block.insertAfter')}</button><button class="btn btn-error btn-outline btn-xs" disabled={$taskRunning} on:click|stopPropagation={() => deleteBlock(b)}>{$t('writing.block.delete')}</button></div>{/if}
                           {/if}
                           {#if revisingBlockId === b.id}
                             <div class="bg-base-100 rounded p-2 mt-1 space-y-1">
@@ -605,7 +713,7 @@
                 </div>
                 {#if quotePopover}
                   <button type="button"
-                    class="fixed z-50 btn btn-primary btn-xs shadow-lg"
+                    class="fixed z-50 btn btn-primary btn-xs"
                     style="left: {quotePopover.x}px; top: {quotePopover.y}px; transform: translate(-50%, -100%); margin-top: -6px;"
                     on:click={insertQuoteToFeedback}
                     title={$t('writing.revise.quoteBtn.tip')}>
@@ -631,11 +739,12 @@
                   <button class="btn btn-success btn-sm" on:click={doConfirm} disabled={$taskRunning}>{$t('writing.btn.confirm')}</button>
                 {/if}
                 {#if hasContent && ch.status !== 'writing'}
-                  <button class="btn btn-ghost btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('writing.btn.revise')}</button>
+                  <button class="btn btn-outline btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('writing.btn.revise')}</button>
+                  <button class="btn btn-outline btn-sm" on:click={() => { showKnowledge = !showKnowledge; showRevise = true; if (!showKnowledge) selectedSettings = []; }} disabled={$taskRunning || savingKnowledge}>{$t('writing.knowledge.title')}</button>
                   {#if hasPolishSkills}
-                    <button class="btn btn-ghost btn-sm" on:click={doPolish} disabled={$taskRunning} title={$t('writing.btn.polish.tip')}>{$t('writing.btn.polish')}</button>
+                    <button class="btn btn-outline btn-sm" on:click={doPolish} disabled={$taskRunning} title={$t('writing.btn.polish.tip')}>{$t('writing.btn.polish')}</button>
                   {/if}
-                  <button class="btn btn-ghost btn-sm" on:click={copyContent}>{$t('writing.btn.copy')}</button>
+                  <button class="btn btn-outline btn-sm" on:click={copyContent}>{$t('writing.btn.copy')}</button>
                 {/if}
                 <div class="flex-1"></div>
                 <div class="join">
@@ -646,6 +755,26 @@
 
               {#if showRevise}
                 <div class="bg-base-300 rounded-lg p-3 space-y-2">
+                    {#if showKnowledge}
+                      <fieldset class="border border-base-content/20 rounded-lg p-3 space-y-3" disabled={$taskRunning || savingKnowledge}>
+                        <legend>{$t('writing.knowledge.title')}</legend>
+                        <p class="text-sm">{$t('writing.knowledge.hint')}</p>
+                        <label class="block text-sm">{$t('config.wv.name')}<input class="input input-sm w-full" bind:value={knowledgeName} /></label>
+                        <label class="block text-sm">{$t('config.wv.description')}<textarea class="textarea w-full" rows="4" bind:value={knowledgeDescription}></textarea></label>
+                        <label class="block text-sm">{$t('config.wv.tags')}<input class="input input-sm w-full" bind:value={knowledgeTags} /></label>
+                        <div class="flex gap-2 flex-wrap">
+                          <button class="btn btn-outline btn-sm" on:click={() => saveKnowledge()} disabled={!knowledgeName.trim() || !knowledgeDescription.trim()}>{$t('common.save')}</button>
+                          <button class="btn btn-primary btn-sm" on:click={() => saveKnowledge(true)} disabled={!knowledgeName.trim() || !knowledgeDescription.trim()}>{$t('writing.knowledge.saveRevise')}</button>
+                        </div>
+                        <p class="text-sm">{$t('writing.knowledge.select')}</p>
+                        <div class="max-h-48 overflow-y-auto space-y-2">
+                          {#each ($settings?.worldview || []) as entry (entry.id)}
+                            <label class="flex items-start gap-2 text-sm"><input type="checkbox" class="checkbox checkbox-sm" value={entry.id} bind:group={selectedSettings} /><span>{entry.name}</span></label>
+                            {#if selectedSettings.includes(entry.id)}<p class="text-sm whitespace-pre-wrap pl-6">{entry.description}</p>{/if}
+                          {/each}
+                        </div>
+                      </fieldset>
+                    {/if}
                   <textarea
                     class="textarea textarea-sm w-full h-20 text-sm"
                     bind:value={reviseFeedback}
@@ -655,7 +784,7 @@
                   ></textarea>
                   <div class="flex justify-between items-center gap-2 flex-wrap">
                     <span class="text-xs text-base-content/40">
-                      {#if !(isCurrent && ch.status === 'review')}
+                        {#if selectedSettings.length || !(isCurrent && ch.status === 'review')}
                         {$t('writing.revise.hintTargeted')}
                       {:else}
                         {$t('writing.revise.hintCurrent')}
@@ -663,8 +792,8 @@
                       <span class="ml-1 text-base-content/30">· {$t('writing.revise.quoteHint')}</span>
                     </span>
                     <div class="flex gap-2">
-                      <button class="btn btn-ghost btn-xs" on:click={() => { showRevise = false; reviseFeedback = ''; }}>{$t('common.cancel')}</button>
-                      <button class="btn btn-primary btn-xs" on:click={doRevise} disabled={$taskRunning || !reviseFeedback.trim()}>{$t('writing.revise.submit')}</button>
+                      <button class="btn btn-ghost btn-xs" on:click={() => { showRevise = false; reviseFeedback = ''; selectedSettings = []; showKnowledge = false; }} disabled={savingKnowledge}>{$t('common.cancel')}</button>
+                      <button class="btn btn-primary btn-xs" on:click={() => doRevise()} disabled={$taskRunning || savingKnowledge || (!reviseFeedback.trim() && !selectedSettings.length)}>{selectedSettings.length ? $t('writing.knowledge.revise') : $t('writing.revise.submit')}</button>
                     </div>
                   </div>
                 </div>

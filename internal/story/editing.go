@@ -17,6 +17,7 @@ const (
 
 // EditChapterContentRequest holds parameters for a surgical chapter edit.
 type EditChapterContentRequest struct {
+	FactEditOptions
 	ChapterNum int    `json:"num"`
 	Operation  EditOp `json:"operation"`
 	StartLine  int    `json:"start_line,omitempty"` // 1-indexed, inclusive (replace_lines)
@@ -43,6 +44,10 @@ func EditChapterContent(state *Progress, req EditChapterContentRequest) (int, er
 	if ch.Content == "" {
 		return 0, fmt.Errorf("第 %d 章正文为空，无法编辑", req.ChapterNum)
 	}
+	original := ch
+	copyChapter := *ch
+	copyChapter.Blocks = append([]Block(nil), ch.Blocks...)
+	ch = &copyChapter
 
 	lines := strings.Split(ch.Content, "\n")
 	totalLines := len(lines)
@@ -93,6 +98,12 @@ func EditChapterContent(state *Progress, req EditChapterContentRequest) (int, er
 		return 0, fmt.Errorf("未知编辑操作: %s", req.Operation)
 	}
 
+	SyncChapterBlocks(ch)
+	if err := ValidateFactEdit(state, *original, *ch, req.FactEditOptions, "zh"); err != nil {
+		return 0, err
+	}
+	ch.KnowledgeTracked = true
+	*original = *ch
 	return len(strings.Split(ch.Content, "\n")), nil
 }
 

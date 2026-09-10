@@ -3,6 +3,13 @@ package i18n
 // messageCatalog holds localized UI/log/agent status strings (key → zh/en template).
 // Templates use fmt.Sprintf verbs (%s, %d, %v). Frontend mirrors keys with {0},{1},… placeholders.
 var messageCatalog = map[string]map[string]string{
+	"log.history_degraded":          {LangZH: "历史摘要暂用本地截断内容；下次使用时将重试生成。", LangEN: "History summaries are using locally shortened text; generation will be retried on next use."},
+	"log.knowledge_failed":          {LangZH: "事实或设定同步未完成，可在写作页重试：%v", LangEN: "Fact or setting sync incomplete; retry from Writing: %v"},
+	"log.skills_activated":          {LangZH: "本次流程已激活 Skill：%s", LangEN: "Skills activated for this task: %s"},
+	"log.skill_validation_done":     {LangZH: "Skill「%s」AI 校验完成", LangEN: "AI validation completed for skill \"%s\""},
+	"log.skill_validation_failed":   {LangZH: "Skill AI 校验失败：%s", LangEN: "Skill AI validation failed: %s"},
+	"log.skill_optimization_done":   {LangZH: "Skill 优化副本「%s」已生成并复检", LangEN: "Optimized skill copy \"%s\" was created and revalidated"},
+	"log.skill_optimization_failed": {LangZH: "Skill AI 优化失败：%s", LangEN: "Skill AI optimization failed: %s"},
 	// ---- Task / handler logs ----
 	"log.autoconfirm_on": {
 		LangZH: "已开启自动确认模式：每章生成完成后将自动确认并继续生成下一章",
@@ -12,25 +19,9 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "已关闭自动确认模式",
 		LangEN: "Auto-confirm disabled",
 	},
-	"log.outline_cleared_pending": {
-		LangZH: "已自动清除旧的大纲（pending 章节）",
-		LangEN: "Cleared previous outline (pending chapters)",
-	},
 	"log.outline_generating": {
 		LangZH: "正在生成小说大纲...",
 		LangEN: "Generating novel outline...",
-	},
-	"log.outline_generate_cancelled": {
-		LangZH: "大纲生成已取消",
-		LangEN: "Outline generation cancelled",
-	},
-	"log.outline_generate_failed": {
-		LangZH: "大纲生成失败: %s",
-		LangEN: "Outline generation failed: %s",
-	},
-	"log.outline_generate_done": {
-		LangZH: "大纲生成完成！",
-		LangEN: "Outline generation complete.",
 	},
 	"log.outline_confirmed": {
 		LangZH: "大纲已确认，进入写作阶段。",
@@ -442,10 +433,6 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "章节衔接优化完成：检查 %d 章，优化 %d 章",
 		LangEN: "Transition smoothing complete: checked %d, optimised %d",
 	},
-	"log.outline_generate_summary": {
-		LangZH: "大纲生成完成，共 %d 章，标题: 《%s》",
-		LangEN: "Outline complete — %d chapters, title: \"%s\"",
-	},
 	"log.outline_revise_summary": {
 		LangZH: "大纲已修订，共 %d 章",
 		LangEN: "Outline revised — %d chapters",
@@ -518,46 +505,6 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "叙事记忆保存失败",
 		LangEN: "Failed to save narrative memory",
 	},
-	"log.arc_skeleton_generating": {
-		LangZH: "正在生成全书卷骨架...",
-		LangEN: "Generating book arc skeleton...",
-	},
-	"log.arc_outline_generating": {
-		LangZH: "正在生成第 %d 卷章纲...",
-		LangEN: "Generating chapter outlines for arc %d...",
-	},
-	"log.arc_task_cancelled": {
-		LangZH: "卷任务已取消",
-		LangEN: "Arc task cancelled",
-	},
-	"log.arc_task_failed": {
-		LangZH: "卷任务失败: %s",
-		LangEN: "Arc task failed: %s",
-	},
-	"log.arc_skeleton_done": {
-		LangZH: "卷骨架生成完成：共 %d 卷 / %d 章",
-		LangEN: "Arc skeleton generated: %d arcs / %d chapters",
-	},
-	"log.arc_outline_done": {
-		LangZH: "第 %d 卷章纲生成完成（%d 章）",
-		LangEN: "Arc %d chapter outlines generated (%d chapters)",
-	},
-	"log.arc_summary_generating": {
-		LangZH: "正在生成第 %d 卷卷摘要...",
-		LangEN: "Generating summary for arc %d...",
-	},
-	"log.arc_summary_failed": {
-		LangZH: "第 %d 卷卷摘要生成失败：%v（不影响写作）",
-		LangEN: "Arc %d summary generation failed: %v (writing unaffected)",
-	},
-	"log.arc_summary_done": {
-		LangZH: "第 %d 卷卷摘要已生成",
-		LangEN: "Arc %d summary saved",
-	},
-	"log.arc_save_failed": {
-		LangZH: "保存进度失败：%v",
-		LangEN: "Failed to save progress: %v",
-	},
 	"log.import_split_done": {
 		LangZH: "本地切章完成：共 %d 章，开始逐章分析",
 		LangEN: "Local split done: %d chapters, starting per-chapter analysis",
@@ -577,10 +524,6 @@ var messageCatalog = map[string]map[string]string{
 	"log.import_chapter_done": {
 		LangZH: "第 %d / %d 章分析完成",
 		LangEN: "Chapter %d / %d analyzed",
-	},
-	"log.import_arcs_created": {
-		LangZH: "章节较多，已自动分为 %d 卷，正在生成卷摘要...",
-		LangEN: "Long book: grouped into %d arcs, generating arc summaries...",
 	},
 	"log.import_cancelled": {
 		LangZH: "导入已暂停（已完成 %d / %d 章，可随时恢复）",
@@ -665,8 +608,8 @@ var messageCatalog = map[string]map[string]string{
 		LangEN: "Assistant output was cut off at the max_tokens limit (%d). The tool call did not complete. Increase max_tokens on the Config page, shorten your message, then click Retry to resend.",
 	},
 	"agent.tool_call_parse_retry_hint": {
-		LangZH: "[工具调用解析失败 — 请重试一次]\n原因标记: %s；当前 Agent max_tokens=%d。\n你上一条输出中的 <tool_call> 未能解析（常见原因：缺少 </tool_call>、JSON 被截断/不完整、arguments 过长、非法转义）。\n请自行分析上一条输出的问题后重试：只输出一个完整合法的 <tool_call>...</tool_call>（标签内为合法 JSON 对象）。\n若 story_synopsis / writing_style 等字段很长，请拆成多次 update_project_config，每次只更新少量字段。\n不要解释，直接输出工具调用。",
-		LangEN: "[Tool-call parse failed — retry once]\nReason tag: %s; Agent max_tokens=%d.\nYour previous <tool_call> could not be parsed (common causes: missing </tool_call>, truncated/incomplete JSON, oversized arguments, bad escapes).\nDiagnose the previous output, then retry with exactly one complete <tool_call>...</tool_call> containing a valid JSON object.\nIf story_synopsis / writing_style are long, split into multiple update_project_config calls with few fields each.\nDo not explain — emit the tool call only.",
+		LangZH: "[工具调用解析失败 — 请重试一次]\n原因标记: %s；当前 Agent max_tokens=%d。\n你上一条输出中的 <tool_call> 未能解析（常见原因：缺少 </tool_call>、JSON 被截断/不完整、arguments 过长、非法转义）。\n请自行分析上一条输出的问题后重试：只输出一个完整合法的 <tool_call>...</tool_call>（标签内为合法 JSON 对象）。\n若 writing_style 等字段很长，请拆成多次 update_project_config，每次只更新少量字段。\n不要解释，直接输出工具调用。",
+		LangEN: "[Tool-call parse failed — retry once]\nReason tag: %s; Agent max_tokens=%d.\nYour previous <tool_call> could not be parsed (common causes: missing </tool_call>, truncated/incomplete JSON, oversized arguments, bad escapes).\nDiagnose the previous output, then retry with exactly one complete <tool_call>...</tool_call> containing a valid JSON object.\nIf writing_style or another field is long, split it into multiple update_project_config calls with few fields each.\nDo not explain — emit the tool call only.",
 	},
 	"agent.tool_call_parse_failed": {
 		LangZH: "助理工具调用格式无效（重试后仍无法解析）。请缩短单次参数（长文本字段拆开更新），或点击「重试」重新发送。",

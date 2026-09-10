@@ -1,15 +1,16 @@
 <script>
   import { currentPage } from './lib/router.js';
-  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage } from './lib/stores.js';
+  import { progress, taskRunning, contextPage, toastStore, currentProject, projectLanguage, config, settings, chatSessions, currentChatSession } from './lib/stores.js';
   import { connectSSE } from './lib/sse.js';
   import { api } from './lib/api.js';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { t, uiLocale, setLocale } from './lib/i18n/index.js';
   import TaskTokenBadge from './components/TaskTokenBadge.svelte';
   import Projects from './pages/Projects.svelte';
   import Config from './pages/Config.svelte';
   import Outline from './pages/Outline.svelte';
   import Writing from './pages/Writing.svelte';
+  import Proofread from './pages/Proofread.svelte';
   import Relations from './pages/Relations.svelte';
   import Skills from './pages/Skills.svelte';
   import Foreshadows from './pages/Foreshadows.svelte';
@@ -19,16 +20,59 @@
   import StorageErrorModal from './components/StorageErrorModal.svelte';
 
   let chatPanel;
+  let initializing = true;
+  let restoring = false;
+  let restoreTimer;
+  let destroyed = false;
+
+  $: if ($taskRunning && !$currentProject) restoreCurrentProject();
+
+  onDestroy(() => { destroyed = true; clearTimeout(restoreTimer); });
+
+  async function restoreCurrentProject() {
+    if (restoring || destroyed) return;
+    restoring = true;
+    try {
+      const cur = await api('GET', '/api/projects/current');
+      if (destroyed) return;
+      if (cur.name && cur.name !== $currentProject) {
+        config.set(null);
+        progress.set(null);
+        settings.set(null);
+        chatSessions.set([]);
+        currentChatSession.set(null);
+        currentProject.set(cur.name);
+        initializing = false;
+        if (cur.language) {
+          projectLanguage.set(cur.language);
+          setLocale(cur.language);
+        }
+        if ($taskRunning) currentPage.set('writing');
+        await Promise.allSettled([
+          api('GET', '/api/config').then(config.set),
+          api('GET', '/api/progress').then(progress.set),
+          api('GET', '/api/settings').then(settings.set),
+          api('GET', '/api/chat/sessions').then(chatSessions.set),
+        ]);
+      }
+      initializing = false;
+    } catch (_) {
+      clearTimeout(restoreTimer);
+      if (!destroyed) restoreTimer = setTimeout(restoreCurrentProject, 2000);
+    } finally {
+      restoring = false;
+    }
+  }
 
   let appVersion = '';
   let latestVersion = '';
   let hasUpdate = false;
-  const releasesURL = 'https://github.com/Nigh/show-me-the-story/releases';
   const latestReleaseURL = 'https://github.com/Nigh/show-me-the-story/releases/latest';
 
   $: $contextPage = $currentPage;
 
   onMount(async () => {
+    restoreCurrentProject();
     connectSSE();
     // Fetch app version
     try {
@@ -48,20 +92,6 @@
         }
       } catch (e) {}
     }
-    // Check if a project is already selected
-    try {
-      const cur = await api('GET', '/api/projects/current');
-      if (cur.name) {
-        currentProject.set(cur.name);
-        if (cur.language) {
-          projectLanguage.set(cur.language);
-          // First time opening this project this session: align UI with project language.
-          // Subsequent toggles persist in localStorage.
-          setLocale(cur.language);
-        }
-        try { const p = await api('GET', '/api/progress'); progress.set(p); } catch (e) {}
-      }
-    } catch (e) {}
   });
 
   $: phase = $progress
@@ -70,7 +100,7 @@
         : $progress.phase)
     : $t('app.phase.unstarted');
   $: chapterStats = (() => {
-    const chs = $progress?.chapters || [];
+    const chs = ($progress?.chapters || []).filter(c => !c.inherited);
     if (chs.length === 0) return '';
     const accepted = chs.filter(c => c.status === 'accepted').length;
     return $t('app.chapters.count', { accepted, total: chs.length });
@@ -80,8 +110,17 @@
     if (chatPanel) await chatPanel.sendMessageToChat(text);
   }
 
-  function backToProjects() {
+  async function backToProjects() {
+    if ($taskRunning || restoring) return;
+    try {
+      const status = await api('GET', '/api/status');
+      if (status.is_task_running || $taskRunning) {
+        taskRunning.set(true);
+        return;
+      }
+    } catch (_) { return; }
     currentProject.set(null);
+    config.set(null);
   }
 
   function toggleLocale() {
@@ -91,7 +130,7 @@
 
 <div class="flex flex-col h-screen bg-base-300 text-base-content overflow-hidden">
   <!-- Header -->
-  <header class="navbar bg-base-200 border-b border-base-content/10 px-6 min-h-[46px] shrink-0 gap-4">
+  <header class="navbar bg-base-200 border-b border-base-content/10 px-4 min-h-[46px] shrink-0 gap-2 flex-wrap">
     <span class="text-lg font-semibold">{$t('app.title')}</span>
     {#if appVersion}
       <span class="badge badge-xs badge-ghost font-mono">{appVersion}</span>
@@ -102,14 +141,14 @@
       </a>
     {/if}
     {#if $currentProject}
-      <span class="badge badge-sm badge-outline">{$currentProject}</span>
+      <span class="badge badge-sm badge-outline">{$config?.story?.title?.trim() || $t('app.untitled')}</span>
       <span class="badge badge-sm badge-accent uppercase" title={$projectLanguage === 'en' ? 'English' : '中文'}>
         {$projectLanguage === 'en' ? 'EN' : 'ZH'}
       </span>
       <button
         class="btn btn-ghost btn-xs gap-1"
         on:click={backToProjects}
-        disabled={$taskRunning}
+        disabled={$taskRunning || restoring}
         title={$taskRunning ? $t('app.switchProject.disabled') : $t('app.switchProject.tooltip')}
       >
         {$t('app.switchProject')}
@@ -136,7 +175,11 @@
     </button>
   </header>
 
-  {#if !$currentProject}
+  {#if initializing || ($taskRunning && !$currentProject)}
+    <main class="flex-1 flex items-center justify-center" aria-busy="true">
+      <span class="loading loading-spinner loading-lg"></span>
+    </main>
+  {:else if !$currentProject}
     <!-- Project selection -->
     <main class="flex-1 overflow-y-auto p-6">
       <Projects />
@@ -149,6 +192,7 @@
           ['config', '⚙️', 'nav.config'],
           ['outline', '📝', 'nav.outline'],
           ['writing', '✍️', 'nav.writing'],
+          ['proofread', '✅', 'nav.proofread'],
           ['foreshadows', '🔗', 'nav.foreshadows'],
           ['memory', '🧠', 'nav.memory'],
           ['relations', '🕸️', 'nav.relations'],
@@ -164,13 +208,15 @@
       </nav>
 
       <!-- Center: page content -->
-      <main class="flex-1 min-w-0 overflow-y-auto p-4 border-r border-base-content/10">
+      <main class="@container flex-[2] min-w-0 overflow-y-auto p-4 border-r border-base-content/10">
         {#if $currentPage === 'config'}
           <Config {sendToChat} />
         {:else if $currentPage === 'outline'}
-          <Outline {sendToChat} />
+          <Outline />
         {:else if $currentPage === 'writing'}
-          <Writing {sendToChat} />
+          <Writing />
+        {:else if $currentPage === 'proofread'}
+          <Proofread />
         {:else if $currentPage === 'foreshadows'}
           <Foreshadows />
         {:else if $currentPage === 'memory'}
@@ -183,7 +229,7 @@
       </main>
 
       <!-- Right: Chat Panel -->
-      <div class="flex-1 min-w-0 bg-base-200 overflow-hidden">
+      <div class="flex-1 min-w-72 max-w-md bg-base-200 overflow-hidden">
         <ChatPanel bind:this={chatPanel} contextPage={$currentPage} />
       </div>
     </div>
@@ -192,7 +238,7 @@
   <!-- Toasts -->
   <div class="fixed top-5 right-5 z-50 flex flex-col gap-2">
     {#each $toastStore as t (t.id)}
-      <div class="alert alert-sm {t.type === 'success' ? 'alert-success' : t.type === 'error' ? 'alert-error' : 'alert-info'} toast-enter shadow-lg max-w-sm">
+      <div class="alert alert-sm {t.type === 'success' ? 'alert-success' : t.type === 'error' ? 'alert-error' : 'alert-info'} toast-enter  max-w-sm">
         <span>{t.msg}</span>
       </div>
     {/each}

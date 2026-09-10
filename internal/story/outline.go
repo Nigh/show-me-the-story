@@ -12,10 +12,9 @@ import (
 )
 
 type OutlineResponse struct {
-	Title         string           `json:"title"`
-	CorePrompt    string           `json:"core_prompt"`
-	StorySynopsis string           `json:"story_synopsis"`
-	Chapters      []OutlineChapter `json:"chapters"`
+	Title      string           `json:"title"`
+	CorePrompt string           `json:"core_prompt"`
+	Chapters   []OutlineChapter `json:"chapters"`
 }
 
 // OutlineChapterCharacter is a machine-readable cast entry for one chapter outline.
@@ -78,60 +77,6 @@ func parseOutlineResponse(rawResp string) (*OutlineResponse, error) {
 	return &resp, nil
 }
 
-func generateOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, settings *ProjectSettings, logger *sse.LogBroadcaster) (*OutlineResponse, error) {
-	chapterCountStr := fmt.Sprintf("%d", cfg.Story.ChapterCount)
-	targetWordsStr := fmt.Sprintf("%d", cfg.Story.TargetWordsPerChapter)
-	data := mergeOutlinePromptData(map[string]string{
-		"StoryType":     cfg.Story.Type,
-		"ChapterCount":  chapterCountStr,
-		"TargetWords":   targetWordsStr,
-		"WritingStyle":  cfg.Story.WritingStyle,
-		"WritingPOV":    cfg.Story.WritingPOV,
-		"StorySynopsis": cfg.Story.StorySynopsis,
-	}, cfg, settings)
-
-	systemPrompt := i18n.SystemPromptFor(cfg.Language, "outline_editor_json")
-	minLen, _ := calcOutlineLengthRange(cfg.Story.TargetWordsPerChapter)
-
-	var lastResp *OutlineResponse
-	var lastShort []int
-	for attempt := 0; attempt < outlineGenMaxAttempts; attempt++ {
-		userPrompt := finalizeOutlinePrompt(cfg.Prompts.OutlineGeneration,
-			config.RenderPrompt(cfg.Prompts.OutlineGeneration, data), cfg, settings)
-		if attempt > 0 {
-			userPrompt += formatShortOutlineRetryFeedback(lastShort, minLen, cfg.Language)
-		}
-
-		var rawResp string
-		if logger != nil {
-			rawResp = llm.CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
-		} else {
-			rawResp = llm.CallAPIWithRetry(ctx, apiCfg, systemPrompt, userPrompt)
-		}
-		if rawResp == "" {
-			return nil, fmt.Errorf("API 调用失败或被取消")
-		}
-
-		resp, err := parseOutlineResponse(rawResp)
-		if err != nil {
-			return nil, err
-		}
-		lastResp = resp
-		lastShort = validateOutlineChapterLengths(resp.Chapters, minLen)
-		if len(lastShort) == 0 {
-			return resp, nil
-		}
-		if logger != nil {
-			logger.WarnKey("log.outline_chapters_too_short", strings.Join(intSliceToStr(lastShort), ", "), minLen)
-		}
-	}
-
-	if logger != nil && len(lastShort) > 0 {
-		logger.WarnKey("log.outline_chapters_still_short", strings.Join(intSliceToStr(lastShort), ", "), minLen)
-	}
-	return lastResp, nil
-}
-
 func intSliceToStr(nums []int) []string {
 	out := make([]string, len(nums))
 	for i, n := range nums {
@@ -140,7 +85,7 @@ func intSliceToStr(nums []int) []string {
 	return out
 }
 
-func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, settings *ProjectSettings, template string, baseData map[string]string, logger *sse.LogBroadcaster) ([]OutlineChapter, error) {
+func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, settings *ProjectSettings, template string, baseData map[string]string, logger *sse.LogBroadcaster) (OutlineResponse, error) {
 	data := mergeOutlinePromptData(baseData, cfg, settings)
 	systemPrompt := i18n.SystemPromptFor(cfg.Language, "outline_editor_json")
 	minLen, _ := calcOutlineLengthRange(cfg.Story.TargetWordsPerChapter)
@@ -155,20 +100,18 @@ func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, 
 
 		rawResp := llm.CallAPIWithRetryLog(ctx, apiCfg, systemPrompt, userPrompt, logger)
 		if rawResp == "" {
-			return nil, fmt.Errorf("API 调用失败或被取消")
+			return OutlineResponse{}, fmt.Errorf("API 调用失败或被取消")
 		}
 
-		var resp struct {
-			Chapters []OutlineChapter `json:"chapters"`
-		}
+		var resp OutlineResponse
 		rawResp = cleanJSONResponse(rawResp)
 		if err := json.Unmarshal([]byte(rawResp), &resp); err != nil {
-			return nil, fmt.Errorf("解析大纲JSON失败: %w\n原始响应: %s", err, rawResp)
+			return OutlineResponse{}, fmt.Errorf("解析大纲JSON失败: %w\n原始响应: %s", err, rawResp)
 		}
 		lastChapters = resp.Chapters
 		lastShort = validateOutlineChapterLengths(resp.Chapters, minLen)
 		if len(lastShort) == 0 {
-			return resp.Chapters, nil
+			return resp, nil
 		}
 		logger.WarnKey("log.outline_chapters_too_short", strings.Join(intSliceToStr(lastShort), ", "), minLen)
 	}
@@ -176,37 +119,25 @@ func generateOutlineChaptersOnly(ctx context.Context, apiCfg *config.APIConfig, 
 	if len(lastShort) > 0 {
 		logger.WarnKey("log.outline_chapters_still_short", strings.Join(intSliceToStr(lastShort), ", "), minLen)
 	}
-	return lastChapters, nil
+	return OutlineResponse{Chapters: lastChapters}, nil
 }
 
 func reviseOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, userFeedback, progressPath, cfgPath string, logger *sse.LogBroadcaster) error {
 	lang := cfg.Language
-	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-
-	lockedChapters := ""
-	for _, ch := range state.Chapters {
-		if ch.Status == StatusAccepted {
-			lockedChapters += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
-		}
-	}
-	if lockedChapters == "" {
-		if en {
-			lockedChapters = "(no locked chapters)"
-		} else {
-			lockedChapters = "无已锁定章节。"
-		}
-	}
-
+	lockedChapters := BuildPlanningHistory(state, userFeedback, lang)
 	currentOutline := ""
 	for _, ch := range state.Chapters {
-		currentOutline += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
+		if ch.Status != StatusAccepted {
+			currentOutline += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
+		}
 	}
+	selectedSettings, _ := retrieveSettings(settings, userFeedback+"\n"+currentOutline, settingsContextRunes)
 
 	data := mergeOutlinePromptData(map[string]string{
 		"CurrentOutline": currentOutline,
 		"UserFeedback":   userFeedback,
 		"LockedChapters": lockedChapters,
-	}, cfg, settings)
+	}, cfg, selectedSettings)
 
 	systemPrompt := i18n.SystemPromptFor(lang, "outline_editor_locked_json")
 	minLen, _ := calcOutlineLengthRange(cfg.Story.TargetWordsPerChapter)
@@ -215,7 +146,7 @@ func reviseOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Co
 	var lastShort []int
 	for attempt := 0; attempt < outlineGenMaxAttempts; attempt++ {
 		userPrompt := finalizeOutlinePrompt(cfg.Prompts.OutlineRevision,
-			config.RenderPrompt(cfg.Prompts.OutlineRevision, data), cfg, settings)
+			config.RenderPrompt(cfg.Prompts.OutlineRevision, data), cfg, selectedSettings)
 		if attempt > 0 {
 			userPrompt += formatShortOutlineRetryFeedback(lastShort, minLen, lang)
 		}
@@ -283,49 +214,11 @@ func cleanJSONResponse(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func GenerateOutlineAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, progressPath, cfgPath string, logger *sse.LogBroadcaster) error {
-	if err := llm.ValidateConfig(apiCfg); err != nil {
-		return err
-	}
-	for _, ch := range state.Chapters {
-		if ch.Status == StatusAccepted {
-			return fmt.Errorf("存在已确认章节，无法整体重新生成大纲（会覆盖已完成内容）。如需追加章节请使用「生成后续大纲」")
-		}
-	}
-
-	logger.StepInfo(1, 2, "正在调用 AI 生成大纲...")
-
-	outlineResp, err := generateOutline(ctx, apiCfg, cfg, settings, logger)
-	if err != nil {
-		return fmt.Errorf("生成大纲失败: %w", err)
-	}
-
-	logger.StepInfo(2, 2, "正在保存大纲...")
-
-	state.Chapters = make([]ChapterState, len(outlineResp.Chapters))
-	for i, ch := range outlineResp.Chapters {
-		state.Chapters[i] = chapterStateFromOutline(ch, StatusPending)
-	}
-
-	if err := applyOutlineMetaWithGuard(cfg, state, *outlineResp, "outline_generation", PendingConfigChangesPath(progressPath), cfgPath, logger); err != nil {
-		return err
-	}
-
-	snapshot := cfg.Story
-	state.StoryConfigSnapshot = &snapshot
-
-	if err := SaveProgress(progressPath, state); err != nil {
-		return fmt.Errorf("保存进度失败: %w", err)
-	}
-
-	runOutlinePostProcessChecks(ctx, apiCfg, cfg, state, settings, progressPath, logger)
-
-	logger.SuccessKey("log.outline_generate_summary", len(state.Chapters), state.Title)
-	return nil
-}
-
 func ReviseOutlineAction(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, progressPath, cfgPath, feedback string, logger *sse.LogBroadcaster) error {
 	logger.StepInfo(1, 2, "正在根据意见修订大纲...")
+	if err := EnsureNarrativeCheckpoints(ctx, apiCfg, cfg, state, progressPath, logger); err != nil {
+		return err
+	}
 
 	if err := reviseOutline(ctx, apiCfg, cfg, state, settings, feedback, progressPath, cfgPath, logger); err != nil {
 		return fmt.Errorf("修订大纲失败: %w", err)
@@ -385,70 +278,8 @@ func EditChapterOutline(state *Progress, chapterNum int, title, outline string, 
 	return nil
 }
 
-// Continuation outline generation for imported / finished books.
-// The v3 import pipeline itself lives in importer.go.
-
 // ContinuationOutlineAllowed gates POST /api/outline/generate-continuation.
-// Append-only: allowed in outline or writing once chapters exist (phase stays unchanged).
+// Batch planning accepts empty projects and projects in outline/writing phases.
 func ContinuationOutlineAllowed(phase string, chapterCount int) bool {
-	if chapterCount <= 0 {
-		return false
-	}
-	return phase == "outline" || phase == "writing"
-}
-
-func GenerateContinuationOutline(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, newChapterCount int, progressPath string, logger *sse.LogBroadcaster) error {
-	logger.StepInfo(1, 2, "正在构建已有章节上下文...")
-
-	lang := cfg.Language
-	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-	existingOutline := ""
-	for _, ch := range state.Chapters {
-		status := ""
-		if ch.Status == StatusAccepted {
-			status = "✅"
-		}
-		if en {
-			existingOutline += fmt.Sprintf("Chapter %d \"%s\"%s: %s\n", ch.Num, ch.Title, status, ch.Outline)
-		} else {
-			existingOutline += fmt.Sprintf("第%d章《%s》%s: %s\n", ch.Num, ch.Title, status, ch.Outline)
-		}
-	}
-
-	snapshot := state.StoryConfigSnapshot
-	if snapshot == nil {
-		snapshot = &cfg.Story
-	}
-
-	startNum := len(state.Chapters) + 1
-
-	chapters, err := generateOutlineChaptersOnly(ctx, apiCfg, cfg, settings, cfg.Prompts.ContinuationOutlineGeneration, map[string]string{
-		"Title":           state.Title,
-		"StoryType":       snapshot.Type,
-		"CorePrompt":      state.CorePrompt,
-		"StorySynopsis":   state.StorySynopsis,
-		"WritingStyle":    snapshot.WritingStyle,
-		"WritingPOV":      snapshot.WritingPOV,
-		"ExistingOutline": existingOutline,
-		"NewChapterCount": fmt.Sprintf("%d", newChapterCount),
-		"StartNum":        fmt.Sprintf("%d", startNum),
-	}, logger)
-	if err != nil {
-		return err
-	}
-
-	logger.StepInfo(2, 2, "正在保存续写大纲...")
-
-	for _, ch := range chapters {
-		state.Chapters = append(state.Chapters, chapterStateFromOutline(ch, StatusPending))
-	}
-
-	if err := SaveProgress(progressPath, state); err != nil {
-		return fmt.Errorf("保存进度失败: %w", err)
-	}
-
-	runOutlinePostProcessChecks(ctx, apiCfg, cfg, state, settings, progressPath, logger)
-
-	logger.InfoKey("log.continuation_outline_summary", len(chapters), len(state.Chapters))
-	return nil
+	return phase == "" || phase == "outline" || phase == "writing"
 }

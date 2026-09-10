@@ -1,12 +1,11 @@
 package story
 
-// v3 project storage: progress metadata lives in project.json (chapter list
-// WITHOUT prose content), each chapter's prose lives in chapters/NNNNNN.json.
-// LoadProgress/SaveProgress keep their v2 signatures (path = project.json) so
-// every caller stays untouched; the split happens inside.
+// Project storage: progress metadata lives in progress.json (without prose),
+// and chapter prose lives in chapters/NNNNNN.json.
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -16,6 +15,148 @@ import (
 	"strings"
 	"sync"
 )
+
+// ponytail: serialize project file transactions in this process; use per-project
+// locks if the application ever supports concurrent project writers.
+var progressStorageMu sync.Mutex
+
+// ChapterLoadError preserves the chapter and path for localized HTTP diagnostics.
+type ChapterLoadError struct {
+	Num  int
+	Path string
+	Err  error
+}
+
+func (e *ChapterLoadError) Error() string {
+	return fmt.Sprintf("chapter %d (%s): %v", e.Num, e.Path, e.Err)
+}
+func (e *ChapterLoadError) Unwrap() error { return e.Err }
+
+// Num=0 identifies progress metadata. Positive numbers identify chapter files;
+// the journal cannot supply arbitrary filesystem paths. Nil Data means absent.
+type progressFile struct {
+	Num  int    `json:"num"`
+	Data []byte `json:"data"`
+}
+
+func (f *progressFile) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Num  *int            `json:"num"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.Num == nil || len(raw.Data) == 0 {
+		return errors.New("incomplete rollback file")
+	}
+	f.Num = *raw.Num
+	return json.Unmarshal(raw.Data, &f.Data)
+}
+
+type progressJournal struct {
+	Version int            `json:"version"`
+	Files   []progressFile `json:"files"`
+}
+
+func progressFilePath(path string, num int) string {
+	if num == 0 {
+		return path
+	}
+	return chapterFilePath(path, num)
+}
+
+// Recover an interrupted transaction before exposing or saving project state.
+// Keep the journal until every restore succeeds, so recovery is retryable.
+func recoverProgress(path string, write func(string, []byte) error) error {
+	journalPath := path + ".rollback"
+	data, err := os.ReadFile(journalPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	failure := func(err error) error {
+		return &fsutil.SaveError{Path: path, Stage: "recover_progress", BackupPath: journalPath, Err: err}
+	}
+	if err != nil {
+		return failure(err)
+	}
+	var journal progressJournal
+	if err := json.Unmarshal(data, &journal); err != nil {
+		return failure(err)
+	}
+	if journal.Version != 1 || len(journal.Files) == 0 {
+		return failure(errors.New("invalid progress rollback journal"))
+	}
+	seen := make(map[int]bool, len(journal.Files))
+	for _, file := range journal.Files {
+		if file.Num < 0 || seen[file.Num] {
+			return failure(errors.New("invalid rollback file number"))
+		}
+		seen[file.Num] = true
+	}
+	if !seen[0] {
+		return failure(errors.New("rollback journal has no progress metadata"))
+	}
+	resetCache(path)
+	for _, file := range journal.Files {
+		target := progressFilePath(path, file.Num)
+		if file.Data == nil {
+			err = os.Remove(target)
+			if os.IsNotExist(err) {
+				err = nil
+			}
+		} else {
+			err = write(target, file.Data)
+		}
+		if err != nil {
+			return failure(err)
+		}
+	}
+	if err := os.Remove(journalPath); err != nil {
+		return failure(err)
+	}
+	return nil
+}
+
+// Journal old bytes before the first replacement. Removing the journal commits
+// the transaction; a crash before that point restores the entire previous save.
+func commitProgressFiles(path string, files []progressFile, write func(string, []byte) error) error {
+	journal := progressJournal{Version: 1}
+	for _, file := range files {
+		target := progressFilePath(path, file.Num)
+		data, err := os.ReadFile(target)
+		if err != nil && !os.IsNotExist(err) {
+			return &fsutil.SaveError{Path: target, Stage: "read_original", OriginalPreserved: true, Err: err}
+		}
+		journal.Files = append(journal.Files, progressFile{Num: file.Num, Data: data})
+	}
+	data, err := json.Marshal(journal)
+	if err != nil {
+		return err
+	}
+	journalPath := path + ".rollback"
+	if err := write(journalPath, data); err != nil {
+		return err
+	}
+	for _, file := range files {
+		if err = write(progressFilePath(path, file.Num), file.Data); err != nil {
+			break
+		}
+	}
+	if err == nil {
+		err = os.Remove(journalPath)
+	}
+	if err != nil {
+		restoreErr := recoverProgress(path, write)
+		backupPath := ""
+		if restoreErr != nil {
+			backupPath = journalPath
+		}
+		return &fsutil.SaveError{Path: path, Stage: "commit_progress", OriginalPreserved: restoreErr == nil,
+			BackupPath: backupPath, Err: err, RestoreErr: restoreErr}
+	}
+	return nil
+}
 
 // chapterFile is the on-disk shape of chapters/NNNNNN.json.
 type chapterFile struct {
@@ -67,20 +208,18 @@ func resetCache(progressPath string) {
 	contentHashCache.Unlock()
 }
 
-// saveChapterFiles writes chapter files whose content changed since the last
-// load/save, removes orphaned chapter files, and refreshes WordCount.
-func saveChapterFiles(progressPath string, p *Progress) error {
-	dir := chaptersDir(progressPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("创建章节目录失败: %w", err)
-	}
-
+// Prepare changed chapter files without overwriting any originals.
+func prepareChapterFiles(progressPath string, p *Progress) ([]progressFile, error) {
 	cache := cacheFor(progressPath)
-	live := make(map[int]bool, len(p.Chapters))
+	var files []progressFile
+	seenNumbers := make(map[int]bool, len(p.Chapters))
 
 	for i := range p.Chapters {
 		ch := &p.Chapters[i]
-		live[ch.Num] = true
+		if ch.Num <= 0 || seenNumbers[ch.Num] {
+			return nil, fmt.Errorf("invalid or duplicate chapter number: %d", ch.Num)
+		}
+		seenNumbers[ch.Num] = true
 		h := HashContent(ch.Content)
 		contentHashCache.Lock()
 		prev, seen := cache[ch.Num]
@@ -95,20 +234,27 @@ func saveChapterFiles(progressPath string, p *Progress) error {
 			Blocks: ch.Blocks, NextBlockID: ch.NextBlockID, BlockSep: ch.BlockSep,
 		}, "", "  ")
 		if err != nil {
-			return fmt.Errorf("序列化第 %d 章失败: %w", ch.Num, err)
+			return nil, fmt.Errorf("序列化第 %d 章失败: %w", ch.Num, err)
 		}
-		if err := fsutil.WriteFileAtomic(chapterFilePath(progressPath, ch.Num), data); err != nil {
-			return fmt.Errorf("保存第 %d 章失败: %w", ch.Num, err)
-		}
-		contentHashCache.Lock()
-		cache[ch.Num] = h
-		contentHashCache.Unlock()
+		files = append(files, progressFile{Num: ch.Num, Data: data})
+	}
+
+	return files, nil
+}
+
+// Prune only after metadata commits, so failed saves retain old chapter files.
+func cleanupChapterFiles(progressPath string, p *Progress) {
+	dir := chaptersDir(progressPath)
+	cache := cacheFor(progressPath)
+	live := make(map[int]bool, len(p.Chapters))
+	for _, ch := range p.Chapters {
+		live[ch.Num] = true
 	}
 
 	// Remove orphaned chapter files (e.g. outline regenerated with fewer chapters).
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil
+		return
 	}
 	for _, e := range entries {
 		name := e.Name()
@@ -126,26 +272,42 @@ func saveChapterFiles(progressPath string, p *Progress) error {
 			contentHashCache.Unlock()
 		}
 	}
-	return nil
 }
 
 // loadChapterContents fills Content for each chapter from its chapter file
 // and primes the dirty-check cache.
-func loadChapterContents(progressPath string, p *Progress) {
-	cache := cacheFor(progressPath)
+func loadChapterContents(progressPath string, p *Progress) error {
+	cache := make(map[int]uint64, len(p.Chapters))
+	seen := make(map[int]bool, len(p.Chapters))
 	for i := range p.Chapters {
 		ch := &p.Chapters[i]
-		data, err := os.ReadFile(chapterFilePath(progressPath, ch.Num))
+		path := chapterFilePath(progressPath, ch.Num)
+		failure := func(err error) error { return &ChapterLoadError{Num: ch.Num, Path: path, Err: err} }
+		if ch.Num <= 0 || seen[ch.Num] {
+			return failure(errors.New("invalid or duplicate chapter number"))
+		}
+		seen[ch.Num] = true
+		data, err := os.ReadFile(path)
 		if err != nil {
-			ch.Content = ""
-			continue
+			if os.IsNotExist(err) && ch.Status == StatusPending && ch.WordCount == 0 && ch.Summary == "" && ch.Content == "" && ch.ContentRev == "" {
+				continue // Older v4 projects may omit files for wholly unwritten chapters.
+			}
+			return failure(err)
 		}
-		var cf chapterFile
+		var cf struct {
+			chapterFile
+			Content *string `json:"content"`
+		}
 		if err := json.Unmarshal(data, &cf); err != nil {
-			ch.Content = ""
-			continue
+			return failure(err)
 		}
-		ch.Content = cf.Content
+		if cf.Num != ch.Num || cf.Content == nil {
+			return failure(errors.New("chapter number or content field is invalid"))
+		}
+		if ch.WordCount > 0 && *cf.Content == "" {
+			return failure(errors.New("chapter is empty but metadata records existing prose"))
+		}
+		ch.Content = *cf.Content
 		ch.Blocks = cf.Blocks
 		ch.NextBlockID = cf.NextBlockID
 		ch.BlockSep = cf.BlockSep
@@ -155,14 +317,21 @@ func loadChapterContents(progressPath string, p *Progress) {
 		if ch.WordCount == 0 && ch.Content != "" {
 			ch.WordCount = prose.CountProseUnits(ch.Content)
 		}
-		contentHashCache.Lock()
 		cache[ch.Num] = HashContent(ch.Content)
-		contentHashCache.Unlock()
 	}
+	contentHashCache.Lock()
+	contentHashCache.m[progressPath] = cache
+	contentHashCache.Unlock()
+	return nil
 }
 
 // ResetProgressFiles removes project.json and the chapters directory.
 func ResetProgressFiles(progressPath string) error {
+	progressStorageMu.Lock()
+	defer progressStorageMu.Unlock()
+	if err := recoverProgress(progressPath, fsutil.WriteFileAtomic); err != nil {
+		return err
+	}
 	if err := fsutil.Delete(progressPath); err != nil {
 		return err
 	}
@@ -194,7 +363,17 @@ func ProgressView(p *Progress) *Progress {
 	if len(p.MemoryEntries) > 0 {
 		entries := make([]MemoryEntry, len(p.MemoryEntries))
 		for i, m := range p.MemoryEntries {
-			m.Snippet = extractSnippet(p, m.Chapter, m.Position, 100)
+			for _, ref := range m.References {
+				if ReferenceLive(p, ref) {
+					r := []rune(ref.Quote)
+					if len(r) > 100 {
+						r = r[:100]
+					}
+					m.Snippet = string(r)
+					break
+				}
+			}
+			m.References = nil // Evidence is loaded on demand via the facts endpoint.
 			entries[i] = m
 		}
 		cp.MemoryEntries = entries

@@ -38,15 +38,12 @@ type ForeshadowUpdateResponse struct {
 
 func SuggestForeshadows(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, logger *sse.LogBroadcaster) ([]ForeshadowSuggestion, error) {
 	lang := cfg.Language
-	outline := ""
-	for _, ch := range state.Chapters {
-		outline += formatChapterLine(ch.Num, ch.Title, ch.Outline, lang)
-	}
+	outline := BuildPlanningHistory(state, state.LongTermDirection, lang)
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ForeshadowPlanning, map[string]string{
 		"Title":         state.Title,
 		"CorePrompt":    state.CorePrompt,
-		"StorySynopsis": state.StorySynopsis,
+		"StorySynopsis": state.LongTermDirection,
 		"Outline":       outline,
 	})
 
@@ -328,37 +325,11 @@ func syncForeshadowsAfterChapter(ctx context.Context, apiCfg *config.APIConfig, 
 }
 
 func buildFullOutlineText(state *Progress, lang string) string {
-	var sb strings.Builder
-	for _, ch := range state.Chapters {
-		sb.WriteString(formatChapterLine(ch.Num, ch.Title, ch.Outline, lang))
-		if cast := formatCharactersLine(ch.Characters, lang); cast != "" {
-			sb.WriteString(cast)
-			sb.WriteString("\n")
-		}
-	}
-	return sb.String()
+	return BuildPlanningHistory(state, formatForeshadowsForPromptLang(state.Foreshadows, lang), lang)
 }
 
 func buildAcceptedSummariesText(state *Progress, lang string) string {
-	en := i18n.NormalizeLanguage(lang) == i18n.LangEN
-	var sb strings.Builder
-	for _, ch := range state.Chapters {
-		if ch.Status != StatusAccepted || ch.Summary == "" {
-			continue
-		}
-		if en {
-			sb.WriteString(fmt.Sprintf("Chapter %d \"%s\": %s\n", ch.Num, ch.Title, ch.Summary))
-		} else {
-			sb.WriteString(fmt.Sprintf("第%d章《%s》：%s\n", ch.Num, ch.Title, ch.Summary))
-		}
-	}
-	if sb.Len() == 0 {
-		if en {
-			return "(no confirmed chapters yet)"
-		}
-		return "尚无已确认章节。"
-	}
-	return sb.String()
+	return buildHistorySummaryForLang(state, len(state.Chapters), lang)
 }
 
 func CheckForeshadowOutlineConsistency(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, logger *sse.LogBroadcaster) (*ForeshadowOutlineReport, error) {
@@ -398,23 +369,29 @@ func applyForeshadowOutlineReport(state *Progress, report *ForeshadowOutlineRepo
 	state.LastForeshadowOutlineReport = report
 }
 
-func RunForeshadowOutlineCheckAndSave(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, progressPath string, logger *sse.LogBroadcaster) {
+func RunForeshadowOutlineCheckAndSave(ctx context.Context, apiCfg *config.APIConfig, cfg *config.Config, state *Progress, progressPath string, logger *sse.LogBroadcaster) error {
 	if len(state.Foreshadows) == 0 {
-		return
+		return nil
 	}
 	report, err := CheckForeshadowOutlineConsistency(ctx, apiCfg, cfg, state, logger)
 	if err != nil {
 		logger.WarnKey("log.foreshadow_outline_check_failed", err)
-		return
+		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	before := state.LastForeshadowOutlineReport
 	applyForeshadowOutlineReport(state, report)
 	if err := SaveProgress(progressPath, state); err != nil {
-		logger.WarnKey("log.foreshadow_outline_report_save_failed", err)
-		return
+		state.LastForeshadowOutlineReport = before
+		logger.ErrorKey("log.foreshadow_outline_report_save_failed", err)
+		return err
 	}
 	if report.HasConflicts {
 		logger.ForeshadowOutlineConflicts(report)
 	} else {
 		logger.InfoKey("log.foreshadow_outline_check_pass")
 	}
+	return nil
 }

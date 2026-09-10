@@ -1,313 +1,124 @@
+[English](README.md) · [简体中文](README.zh.md)
+
 <p align="center">
   <img src="docs/show-me-the-story.webp" alt="Show Me The Story" width="240">
 </p>
 
-# Show Me The Story — AI 小说生成器
+# Show Me The Story
 
-> English documentation: [README.en.md](README.en.md)
+<p align="center"><a href="docs/guide.en.md">User guide</a> · <a href="https://github.com/Nigh/show-me-the-story/releases">Download releases</a></p>
 
-一个开箱即用的长篇小说 AI 创作工具。单个可执行文件，内置完整 Web 界面，连接任意 OpenAI 兼容 API（OpenAI、DeepSeek、本地 Ollama / LM Studio 等）即可自动生成大纲并逐章创作长篇小说。
+A local application for writing long fiction with AI. One executable and a browser interface connect to an OpenAI-compatible model service to manage settings, plan batches of chapters, draft and revise prose, and export your work.
 
-程序本身不包含任何小说内容——故事类型、世界观、角色、写作风格全部由你配置，或交给 AI 自动生成。
+You decide the story’s rules and direction. Those rules may be realistic or entirely fictional.
 
-![主界面：配置页与 AI 助理](screenshot.png)
+![Writing workspace](docs/screenshots/en/writing.webp)
 
-## 功能亮点
+![Batch outline planning](docs/screenshots/en/outline.webp)
 
-- **单文件运行**：一个二进制文件 + 一个浏览器，无需安装数据库或其他依赖
-- **多项目管理**：每部小说一个独立项目，可随时切换、新建、删除
-- **两阶段创作**：先生成全书大纲供你审核修订，确认后逐章写作
-- **逐章审核**：每章生成后可确认、提修改意见，AI 定向修订而不影响其他章节
-- **自动确认模式**：开启后 AI 自动逐章连写，无需手动逐章确认，可随时开关
-- **结构化设定**：角色、世界观、组织、人物关系独立管理，写作时自动注入相关上下文；支持 AI 一键生成初始设定
-- **关系图谱**：可视化展示角色 / 组织 / 世界观之间的关系网络
-- **伏笔系统**：AI 规划伏笔方案，写作时注入活跃伏笔，完成后自动追踪埋设 → 推进 → 回收，超期未回收自动告警
-- **叙事记忆**：每章完成后自动提取大纲未体现的关键叙事细节（角色习惯、具体承诺、道具细节等），跨章节注入写作 prompt，弥补历史摘要窗口的信息缺口
-- **事实核查**：每章写完自动做一致性检查，不通过自动重写
-- **续写已有作品**：粘贴已有文本，AI 分析提取设定与章节摘要后接着往下写
-- **去 AI 味**：内置润色技能（禁用 AI 高频套话、口语化改写等），写作页一键对单章去 AI 味
-- **全书优化**：完稿后一键诊断 → 一致性核查 → 生成优化工单 → 逐章自动修订（支持大上下文模型、按卷核查、修改前后 diff 对比）
-- **技能系统**：内置写作技巧 / 润色技能可选启用，也支持项目级自定义技能
-- **AI 助理**：内置聊天助理，可通过对话查询和修改项目的设定、大纲、章节（破坏性操作有多层防护）
-- **实时流式输出**：生成过程逐字实时展示，附带日志面板和进度提示
-- **断点续作**：进度随时落盘，关闭程序后重新打开自动恢复
-- **导出**：一键导出全书 TXT，章节文件同时以 Markdown 保存在项目目录中
-- **多语言**：每个项目可选择中文或英文，AI 提示词、生成正文、内置技能、Agent 系统提示全部按项目语言切换；前端界面语言可独立切换
+## First run
 
-## 快速开始
+1. Download a release for your system, extract it into a directory you intend to keep, and launch it.
+2. Open `http://localhost:48090` and create a Chinese or English project.
+3. In Configuration, enter the API address, model identifier, and API key. Test the connection and save. Use the exact model identifier supplied by your provider.
+4. Save the genre, target chapter length, style, and point of view. Add essential characters and worldview entries.
+5. In Outline, enter a synopsis and chapter count (1–36) for the first batch. Generate and review it. If the page offers Confirm outline, confirm before writing.
+6. In Writing, generate one chapter, read and revise it, then accept it before continuing.
 
-### 1. 获取程序
+Start with a small batch and auto-confirm disabled to check the voice, characters, and model behavior.
 
-下载对应平台的发布版本，或自行编译（见文末「开发」一节）。
+The [first-story walkthrough](docs/guide.en.md#first-story) explains the input, expected result, and next step for each stage.
 
-> [!WARNING]
-> **Windows 用户注意**：首次运行时可能会弹出「Windows 已保护你的电脑」的 SmartScreen 警告（显示"未知发布者"）。这是因为程序未购买代码签名证书。点击「更多信息」→「仍要运行」即可正常使用，或右键 exe 文件 → 属性 → 勾选「解除锁定」→ 确定。
+## Find the right workflow
 
-> [!NOTE]
-> 程序请求网络权限仅用于调用 LLM API 和检查版本更新，不会收集或上传任何用户数据。
+| Goal | Guide |
+|---|---|
+| Connect a model and configure context/output limits | [Setup](docs/guide.en.md#setup) |
+| Start a novel from an idea | [First story](docs/guide.en.md#first-story) |
+| Add a story rule and correct the current chapter | [Knowledge and corrections](docs/guide.en.md#knowledge) |
+| Edit a paragraph or revise a chapter | [Review and revision](docs/guide.en.md#revision) |
+| Add chapters, replace an unwritten batch, plan an ending | [Batch planning](docs/guide.en.md#planning) |
+| Understand facts, settings, and foreshadowing | [Consistency](docs/guide.en.md#consistency) |
+| Import an existing work or create a sequel | [Import and continuation](docs/guide.en.md#import) |
+| Proofread, export, and back up | [Completion](docs/guide.en.md#completion) · [Data](docs/guide.en.md#data) |
+| Use skills and the assistant | [Skills and assistant](docs/guide.en.md#skills) |
+| Resolve disabled buttons, failures, or incompatible projects | [Troubleshooting](docs/guide.en.md#troubleshooting) |
 
-### 2. 运行
+## Features
+
+- Multiple projects; Chinese and English writing with independently switchable UI language.
+- Batch outlines, long-term direction, ending intent, and planning reviews.
+- Characters, worldview, organizations, relationship graphs, and story knowledge.
+- Chapter drafting, review, paragraph editing, targeted revision, and optional auto-confirm.
+- Extracted facts with source references, setting-change proposals, and foreshadow tracking.
+- Save knowledge and revise a chapter: selected entries enter that request in full; later writing retrieves relevant entries.
+- Existing-text import, optional writing/polishing skills, and a conversational assistant.
+- Separate final proofreading, anchored reports, per-chapter proofreading undo, and continuation projects.
+- Streaming output, logs, cancellation, local persistence, and text/outline/report exports.
+
+Consistency checks primarily use your story context; they are not online research. Authors still need to review model output.
+
+## Running and storing data
+
+The default data directory is the working directory at launch. You can pass an **existing directory**:
 
 ```bash
-./show-me-the-story            # 数据保存在当前目录
-./show-me-the-story ~/novels   # 或指定一个数据目录
+./show-me-the-story
+./show-me-the-story /path/to/existing/novels
 ```
 
-启动后访问 `http://localhost:48090`（端口可通过环境变量 `PORT` 修改）。
+On Windows, double-click the executable or run:
 
-### 3. 配置 API
-
-首次进入会提示创建项目。创建后在「配置」页填写：
-
-- **API 地址**：任意 OpenAI 兼容接口的 Base URL（程序会自动补 `/chat/completions`），如 `https://api.deepseek.com`、`https://api.openai.com/v1`、`https://api.z.ai/api/paas/v4`；仅填域名时会自动补 `/v1`。非标准路径（如 z.ai Coding Plan）可开启「严格 URL 模式」
-- **模型名称**：如 `deepseek-chat`、`gpt-4o` 等
-- **API Key**：本地模型可留空
-
-API 配置全局共享，所有项目通用。
-
-### 4. 开始创作
-
-1. **配置故事**：在「配置」页填写故事类型、章节数、每章字数、写作风格等；角色 / 世界观 / 组织 / 关系可手动添加，也可点「AI 生成设定」让 AI 根据你的故事描述自动生成
-2. **生成大纲**：进入「大纲」页点击生成，AI 输出全书章节大纲；可整体提修订意见，也可逐章内联编辑，满意后确认
-3. **逐章写作**:「写作」页点击生成，AI 流式写出正文 → 自动摘要 → 自动事实核查 → 等你审核；确认进入下一章，或提修改意见让 AI 修订（框选原文点「引用」可只改对应自然段，失败时自动回退整章修订）
-4. **想省事**：打开「自动确认」开关，AI 会自动逐章连写到底，期间可随时关闭
-
-## 核心功能说明
-
-### 续写已有小说
-
-在大纲页（空项目状态下）点「导入已有内容」，粘贴你已写好的文本。AI 会分析出标题、梗概、各章大纲与摘要，你确认导入后，已有章节标记为已完成，再点「生成后续大纲」即可接着往下写。全书写完后仍在写作阶段时，也可在大纲页继续「生成后续大纲」追加章节。
-
-### 伏笔系统
-
-大纲确认后可让 AI 建议 3–8 条伏笔（含埋设章节和预计回收章节），也可手动创建。写作时活跃伏笔自动注入上下文；每章完成后 AI 自动更新伏笔状态：
-
-```
-planted（已埋设）→ progressing（推进中）→ resolved（已回收）
-                                        → abandoned（已放弃）
+```powershell
+.\show-me-the-story.exe "D:\Novels"
 ```
 
-伏笔超过预计回收章节 3 章仍未回收会自动告警。
+Check the project directory printed at startup. An invalid directory argument falls back to the working directory. The default port is 48090; override it with the `PORT` environment variable.
 
-### 设定协调
+Projects live in `storys/<project>/`. Stop tasks and close the program before copying the entire data directory for backup or migration. This release only opens v4 projects. Use the version recommended by the project list for older formats; do not edit the format number manually.
 
-已经写了若干章之后修改了角色 / 世界观等关键设定？保存时程序会提示进行「设定协调」：AI 比对新设定与已写内容，输出兼容版设定，并基于新设定重新生成尚未写作章节的大纲，保证前后一致。
+After tasks finish, use **Back up ZIP** in the project list to download a complete project. **Restore a project backup** restores it as a new project without overwriting the original. Global API configuration and user Skills are excluded; preserve them separately when migrating. See [backups and restoration](docs/guide.en.md#data).
 
-### 引用式段落修订
+After an interrupted prose/progress save, reopening the project attempts to restore the last complete save. Damaged chapter files or failed recovery prevent the project from opening and display diagnostics. Preserve the entire project directory, including `progress.json.rollback` if present, then resolve file access problems or restore a backup. The rollback journal is not version history or a replacement for regular backups; do not run multiple writers against the same project.
 
-写作页审核章节时，可在正文预览中框选一段话，点「引用到修改意见」，选中内容会以 `> ` 引用行插入修改意见。提交后 AI 优先只重写引用句所在的自然段（其余正文不动）；若无法在正文中精确定位或 AI 输出段数不匹配，会自动回退为整章最小化修订。
+Files are stored locally, but AI operations send relevant prose, settings, and prompts to your configured model service, which may charge for usage. API keys are stored in `api.json`; inspect shared files and logs for sensitive information. Use the application in a trusted local environment, not directly exposed to the public internet.
 
-### 技能（Skills）
+If Windows reports an unknown publisher, verify the download source. After deciding to trust the executable, use More info → Run anyway.
 
-「技能」页可启用内置技能：
+## Development
 
-| 技能 | 类型 | 作用 |
-|------|------|------|
-| 中文去 AI 味 | 润色 | 23 条禁止模式 + 高频套话替换表 + 口语化规则 |
-| 故事去味检测 | 润色 | 6-Gate AI 味检测流程与真人写作基准 |
-| 写作技巧 | 写作 | 章首 / 章尾钩子、爽点密度、节奏控制 |
+Go 1.25.1 with the standard library; Vite 5, Svelte 4, Tailwind CSS 4, DaisyUI 5, and `@xianii/design-system`. Frontend assets and built-in skills are embedded in the executable.
 
-所有技能默认关闭，不会影响正常生成；启用润色类技能后，写作页的「去 AI 味」按钮可对单章做一键润色，全书优化执行时也可附加去 AI 味。也可在项目目录下放置自定义技能文件。
-
-### 全书优化
-
-全部章节确认后，写作页会出现「全书优化」面板：
-
-1. **开始全书分析**：AI 通读设定与正文（超长时自动切换摘要模式或按卷核查），输出诊断报告 + 一致性报告 + 可执行工单
-2. **审阅工单**：勾选、编辑修改意见，可选「执行前先优化衔接」「修订时附加去 AI 味」
-3. **执行选中**：逐章最小化修订，每条完成后可查看修改前后 diff 节选
-
-建议在配置页使用大上下文模型，并将「上下文预算」设为约 900000（1M 模型）。
-
-### AI 助理
-
-右侧聊天面板（或「助理」页）提供一个能操作项目的 AI 助理。你可以用自然语言查询设定、修改角色、调整大纲、修订章节等。破坏性操作有多层防护：助理必须先向你确认，且修改章节时默认做最小化定向修订。
-
-#### 助理能做什么
-
-| 类别 | 示例 |
-|------|------|
-| **查询** | 「当前大纲是什么」「第 3 章写了什么」「有哪些角色」 |
-| **设定管理** | 创建/修改/删除角色、世界观、组织、关系 |
-| **配置** | 修改故事类型、章数、每章字数、写作风格、梗概等 |
-| **大纲** | 生成大纲、按意见修订（章数不变时）、编辑单章大纲（待定/写作中/审核中）、确认大纲 |
-| **写作** | 生成章节、确认章节、按意见修订某一章、框选引用后段落级修订、局部编辑段落 |
-| **伏笔** | 建议伏笔、创建/修改/删除伏笔 |
-| **技能** | 查看技能列表、开关技能 |
-
-#### 推荐交给助理的操作
-
-- **批量设定**：「根据梗概生成 5 个主要角色」「添加一条世界观：魔法体系」
-- **大纲微调（章数不变）**：「把第 5 章改成主角在雨夜发现线索」「整体节奏加快，反派提前出场」
-- **单章修订**：「第 8 章对话太生硬，改得更口语化」「把第 3 章结尾的悬念加强」
-- **局部润色**：「把第 6 章第 12–15 行换成更紧张的描写」
-- **查询与导航**：「目前写到哪了」「活跃伏笔有哪些」
-
-#### 可以交给助理，但建议留意结果
-
-- **整本重新生成大纲（改章数）**：可以说「改成 12 章，每章 3000 字，重新生成大纲」。助理应依次更新配置再生成；生成完成后请在大纲页核对章数是否为 12、编号是否从 1 连续到 12。
-- **改配置后已有正文**：若已确认若干章节后修改关键设定，助理保存配置会触发「设定协调」，可能改写待定章节大纲，耗时较长。
-- **异步任务**：生成大纲、生成章节、修订等会启动后台任务，请留意底部日志面板和任务状态，完成后再发下一条指令。
-
-#### 最好不要交给助理的操作
-
-| 操作 | 建议做法 |
-|------|----------|
-| **改总章数 / 整本重写大纲** | 更稳妥：配置页改好章数与字数 → 大纲页「删除大纲」→「生成大纲」。若用助理，请明确说「改成 N 章并重新生成大纲」，生成后务必核对章数。 |
-| **已有确认章节后想整本换大纲** | 助理会拒绝 `generate_outline`（防止覆盖已完成内容）。应在大纲页用「生成后续大纲」追加，或新建项目。 |
-| **缩章 / 减章** | 不要说「删掉后面 18 章」——`delete_chapters_from` 只清正文，不减章数。要减少章数请走「改配置 + 重新生成大纲」。 |
-| **全书优化** | 在写作页「全书优化」面板操作，步骤多、需审阅工单，不适合聊天里一句话完成。 |
-| **续写导入** | 在大纲页「导入已有内容」粘贴文本，界面可预览分析结果再确认。 |
-| **关系图谱布局** | 在「图谱」页拖拽查看，助理无法操作 Canvas。 |
-| **重置整个项目** | 危险操作；若确需重置，请明确说「重置全部进度」并确认助理复述的范围。 |
-
-#### 与页面按钮的分工
-
-- **页面按钮**：生成/确认/修订/删除等核心流程，状态清晰、可预期，**推荐作为默认操作方式**。
-- **AI 助理**：适合需要解释、多步查询、或「用一句话描述意图」的场景；复杂流程（改章数重生、全书优化）建议仍以页面为主、助理为辅。
-
-#### 表述技巧
-
-- **改章数重生**：「把章节数改成 12，每章 3000 字，重新生成全部大纲」——比「大纲不太好，重来」更明确。
-- **改内容不改结构**：「修订大纲：第 3 章增加伏笔，整体不要改章数」——避免助理误走整本重生。
-- **改某一章正文**：「修订第 6 章：……」——不要用「删除第 6 章」来表达修改。
-- **任务进行中**：底部显示「AI 思考中」时，请等待当前任务结束再发新指令；可随时点「停止」中断。
-
-#### 安全机制简述
-
-1. 修改某一章 ≠ 删除：助理被禁止用删除工具实现「修改」。
-2. 删除类操作需你明确确认：助理会先复述影响范围，你回复同意后才会执行。
-3. 用户已在配置页填写的字段，助理不会静默覆盖，会先说明差异并征求同意。
-4. 同一时间只能运行一个 AI 任务；任务进行中配置/大纲等编辑入口会暂时禁用。
-
-## 数据与文件
-
-所有数据都是本地纯文本 / JSON 文件，目录结构：
-
-```
-<数据目录>/
-├── api.json                 # API 配置（全局共享）
-└── storys/
-    └── <项目名>/
-        ├── config.json      # 故事配置 + 提示词 + 技能开关
-        ├── progress.json    # 创作进度、大纲、章节、伏笔
-        ├── settings.json    # 角色 / 世界观 / 组织 / 关系
-        ├── sessions/        # 助理聊天记录
-        └── Chapter_XX.md    # 每章正文（Markdown）
-```
-
-想备份或迁移，直接复制整个数据目录即可。
-
-## 合理使用范围
-
-本工具的每个 AI 调用步骤（大纲生成、章节写作、事实核查等）都会将历史摘要、前文大纲、角色设定、活跃伏笔、叙事记忆等注入到提示词中。其中**全书章节脉络**（前文全部大纲 + 后续 10 章大纲）随章节数线性增长，是最大的 token 消耗因子。推荐章节数的上限主要由 **token 窗口**决定——章节脉络注入量随章节数线性增长，最终会超出模型上下文限制。
-
-### 章节写作单次调用 token 估算
-
-| 当前章节数 | 输入 tokens（不含输出） | 说明 |
-|-----------|----------------------|------|
-| 10 章 | ~9,000 | 章节脉络较短 |
-| 30 章 | ~12,000 | 默认配置 |
-| 50 章 | ~17,000 | 脉络块约占 9K |
-| 80 章 | ~22,000 | 脉络块约占 13.5K |
-| 100 章 | ~27,000 | 脉络块约占 17K |
-
-> 上表按每章 2500 字、5 个角色估算。每章 5000 字时输出部分翻倍（~7,500 tokens）。事实核查最多重试 3 次，最坏情况 token 消耗约为上表的 2 倍。
-
-### 按模型推荐
-
-推荐章节数的上限主要由 **token 窗口**决定（章节脉络注入随章节数线性增长）。模型之间的差异体现在**写作质量**（文笔流畅度、指令遵从度、文学性），而非能维持多少章的一致性——因为每章注入的上下文信息（设定、大纲、摘要、伏笔、叙事记忆）对所有模型完全相同。
-
-| 模型 | 上下文 | 推荐章节数 | 每章字数 | 全书总字数 | 写作质量说明 |
-|------|--------|-----------|---------|-----------|-------------|
-| GPT-5.5 | 1M | 50–80 章 | 2500–5000 | 12–40 万字 | 旗舰级，文笔流畅、指令遵从度高、长文不易自行发挥 |
-| Claude Opus 4.8 | 1M | 50–80 章 | 2500–5000 | 12–40 万字 | 文学性最强，细腻描写出色，擅长复杂人物关系 |
-| Gemini 3.5 Flash | 1M | 50–80 章 | 2500–5000 | 12–40 万字 | 速度快、性价比高，写作质量好 |
-| DeepSeek-V4-Pro | 1M | 50–80 章 | 2500–5000 | 12–40 万字 | 性价比极高，写作质量不错，偶尔需人工微调 |
-| GPT-5.4 | 1M | 50–80 章 | 2500–5000 | 12–40 万字 | 综合能力强，中长篇稳定 |
-| Claude Sonnet 4.6 | 1M | 50–80 章 | 2500–5000 | 12–40 万字 | 速度快、质量好，性价比优秀 |
-| DeepSeek-V4-Flash | 1M | 50–80 章 | 1500–3000 | 7.5–24 万字 | 极低成本，写作质量尚可，可能需要更多人工修改 |
-| GPT-5.4 mini | 400K | 30–50 章 | 1500–3000 | 4.5–15 万字 | 低成本快速出稿，受 400K 窗口限制 |
-| Qwen3-235B（本地） | 128K | 20–30 章 | 2000–3000 | 4–9 万字 | 本地零成本，受 128K 窗口限制 |
-| Qwen3-32B（本地） | 128K | 15–25 章 | 1500–2500 | 2.2–6 万字 | 轻量本地模型，受 128K 窗口限制 |
-
-> **关于上下文信息与模型能力**：
-> - **设定和大纲对所有模型一视同仁**：角色/世界观/组织设定每章完整注入，全书大纲全部注入，伏笔系统独立追踪。这些信息不会因模型不同而变化。
-> - **5 章详细摘要是工具的固定设计**：系统对最近 5 章保留详细摘要（每章约 250 字，含人物动态、心理轨迹、关键细节等），并注入上一章结尾原文约 800 字。第 6 章以前的全文不可见，但关键叙事细节由叙事记忆系统保留。
-> - **叙事记忆弥补长期信息缺口**：每章完成后，AI 自动提取大纲未体现的关键叙事细节（角色口头禅、具体承诺、道具细节等），存入跨章节记忆库并在后续章节写作时注入。记忆 token 上限根据全书规模自动计算（2000–20000 tokens），超限时自动裁剪最不重要的条目。修订章节时，该章旧记忆自动清除并重新提取。
-> - **摘要仍是近期章节的基础**：记忆系统侧重于保留跨章节的关键细节，而最近 5 章的详细摘要则提供完整的情节推进、人物状态和情绪基调。两者互补，共同维持叙事连贯性。
-> - **模型差异在于写作质量**：旗舰模型（GPT-5.5、Claude Opus 4.8）文笔更流畅、更忠实于指令、更少自行添加大纲外的情节。低成本模型可能需要更多人工修改。但无论用哪个模型，注入的上下文信息是相同的。
-> - 本地部署的开源模型（如 Qwen3）性能取决于硬件和量化方式，上表以全精度推理为基准；量化后能力会有一定损失。
-
-### 全书优化的上下文预算
-
-全书优化（诊断 + 核查 + 路线图）需要将全文或摘要送入模型。配置页的「上下文预算」决定可用容量（取 65% 作为安全余量）：
-
-| 全书规模 | 推荐 context_budget_tokens | 说明 |
-|---------|---------------------------|------|
-| ≤ 30 章 × 2500 字 | 300,000（默认） | 全文模式 |
-| ≤ 30 章 × 5000 字 | 500,000 | 全文模式 |
-| ≤ 50 章 × 2500 字 | 500,000 | 全文模式 |
-| 50+ 章 或 15 万字以上 | 900,000+ | 按卷分段核查 |
-
-### 超大规模注意事项
-
-- **token 窗口是主要限制**：100 章时章节脉络注入约 27K tokens，加上其他上下文约 15K，单次输入约 42K tokens——大多数 128K+ 模型仍可胜任。真正的瓶颈不是"装不下"，而是大纲脉络过长时 AI 可能更难有效利用所有信息。
-- **大纲生成**：生成全部章节大纲时，完整大纲作为输出也需要大量 tokens；80+ 章的大纲生成建议使用 128K+ 模型。
-- **事实核查**：重试最多 3 次，50 章 × 5000 字的最坏情况单章可消耗约 100K tokens。
-- **伏笔系统**：活跃伏笔随章节数增加，额外增加约 0.5–1.5K tokens/章。
-- **叙事记忆**：记忆 token 上限随全书规模自动扩展（最大 20000 tokens），超长篇的记忆库更大，能保留更多早期细节。
-
-> **总结**：默认配置（30 章 × 2500 字）适配大多数主流模型。100 章以上的超长小说主要受 token 窗口限制（需 128K+ 模型）。叙事记忆系统会自动维护跨章节的关键细节一致性。
-
-## 注意事项
-
-- 同一时间只允许一个 AI 任务运行，任务进行中编辑操作会被暂时禁用，可随时点「停止」中断任务
-- 网络瞬时故障会自动重试（指数退避）；API Key 无效等致命错误会立即停止并提示
-- 高级用户可在 `config.json` 的 `prompts` 字段覆盖任意内置提示词模板（占位符格式为 `{{.KeyName}}`）
-
----
-
-## 开发
-
-### 技术栈
-
-- **后端**：Go 1.25+，仅标准库，零第三方依赖
-- **前端**：Vite 5 + Svelte 4 + Tailwind CSS 4 + DaisyUI 5，构建产物通过 `embed.FS` 内嵌进二进制
-- **通信**：REST API + SSE 实时事件流
-
-### 编译
-
-需要 Go、Node.js 以及 [Task](https://taskfile.dev/)（可选）：
+Install Go and Node.js, optionally [Task](https://taskfile.dev/):
 
 ```bash
-# 推荐：一键完整构建（前端 + 后端）
 task build
+```
 
-# 或手动分步
-cd frontend && npm install && npm run build && cd ..
+Or build manually:
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
 go build -o show-me-the-story .
 ```
 
-### 开发模式
+Use `task dev` for the backend and `task dev:frontend` for the frontend development server (5173, proxying API requests to 48090). Run `task screenshots` with Google Chrome installed to rebuild the README images from fixed offline sample data.
+
+Checks:
 
 ```bash
-task dev            # 编译并启动 Go 后端（:48090）
-task dev:frontend   # 启动 Vite dev server（:5173，热重载，代理 /api → :48090）
+go build ./...
+go test ./...
+go vet ./...
+node frontend/src/lib/projectRestore.check.js
+node frontend/src/lib/forceGraphLayout.check.js
 ```
 
-### 项目结构
+See [AGENTS.md](AGENTS.md) for architecture and contribution constraints, and the [user guide](docs/guide.en.md) for workflows.
 
-后端按依赖层次拆分为 `internal/` 下的 Go 包：`httpapi`（路由与 handler）、`agent`（助理 Agent Loop）、`story`（大纲/写作/伏笔/卷/导入等领域逻辑）、`llm`（OpenAI 兼容客户端）、`config`（配置与提示词模板）、`sse`（事件广播）、`i18n`（双语文案）、`prose` / `fsutil`（基础工具）。前端页面在 `frontend/src/pages/`。
+## License
 
-完整的架构说明、API 端点一览、SSE 事件类型、设计模式与开发约束请见 [AGENTS.md](AGENTS.md)。
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=Nigh%2Fshow-me-the-story&type=timeline&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Nigh/show-me-the-story&type=timeline&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Nigh/show-me-the-story&type=timeline&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Nigh/show-me-the-story&type=timeline&legend=top-left" />
- </picture>
-</a>
+[MIT](LICENSE)

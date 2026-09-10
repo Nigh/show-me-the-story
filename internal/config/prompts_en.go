@@ -3,48 +3,6 @@ package config
 // DefaultPromptsEN holds English versions of every prompt template.
 // Used when a project's language is set to "en".
 var DefaultPromptsEN = PromptsConfig{
-	OutlineGeneration: `You are a professional novel-planning editor. Generate a novel outline that satisfies the constraints below.
-
-Return JSON in exactly this structure:
-{
-  "title": "Novel title",
-  "core_prompt": "Core writing prompt (a system-level guideline that will steer every later chapter)",
-  "story_synopsis": "Synopsis of the story",
-  "chapters": [
-    {
-      "num": 1,
-      "title": "Chapter title",
-      "outline": "Outline for this chapter",
-      "characters": [
-        {"name": "Existing character"},
-        {"name": "New proper name", "first_appearance": true, "note": "one-line role or relationship"}
-      ]
-    },
-    ...
-  ]
-}
-
-[Story type] {{.StoryType}}
-[Chapter count] {{.ChapterCount}}
-[Prose words per chapter] {{.TargetWords}}
-[Writing style] {{.WritingStyle}}
-[Narrative POV] {{.WritingPOV}}
-[Synopsis] {{.StorySynopsis}}
-
-[Registered characters]
-{{.CharacterList}}
-
-Rules:
-1. The outline must cover the full story arc, from inciting incident to resolution.
-2. Each chapter's outline field must be {{.OutlineMinWords}}–{{.OutlineMaxWords}} characters (excluding the chapter title), with concrete plot beats — no vague one-liners.
-3. Each chapter outline must cover, in order: opening scene/location; core conflict or goal; key turning point; characters appearing (with roles); chapter ending or hook.
-4. Every chapter MUST include a characters array of proper names on stage. Put only the proper name in name (e.g. "Lyudmila", "Alexander Ivanov") — never job titles, verbs, quotes, or full sentences. Skip crowd labels ("villagers", "guards").
-5. Prefer [Registered characters]. For brand-new characters set first_appearance=true with a one-line note, and never list them in an earlier chapter's characters.
-6. One-time events such as first meetings and identity reveals must happen in exactly one chapter — never repeat them.
-7. core_prompt should bundle the directives that guide the whole novel, including writing style and narrative POV, and must require a consistent POV throughout.
-8. If [Story type], [Writing style], [Narrative POV], or [Synopsis] were provided by the user and are non-empty, echo those values verbatim in the JSON — do not rewrite or expand them.
-9. Output strict JSON only. No extra prose.`,
-
 	ChapterWriting: `Write the prose for chapter {{.ChapterNum}} of the novel "{{.Title}}".
 
 [Core writing prompt]
@@ -196,7 +154,6 @@ Return the revised full outline as JSON:
 {
   "title": "Novel title",
   "core_prompt": "Core writing prompt",
-  "story_synopsis": "Synopsis",
   "chapters": [
     {
       "num": 1,
@@ -294,7 +251,7 @@ Output strict JSON only.`,
 [Title] {{.Title}}
 [Story type] {{.StoryType}}
 [Core writing prompt] {{.CorePrompt}}
-[Synopsis] {{.StorySynopsis}}
+[Batch synopsis] {{.StorySynopsis}}
 [Writing style] {{.WritingStyle}}
 [Narrative POV] {{.WritingPOV}}
 
@@ -308,6 +265,7 @@ Produce outlines for {{.NewChapterCount}} more chapters, starting at chapter {{.
 
 Return JSON:
 {
+  "title": "Novel title (infer from the batch synopsis when the supplied title is blank)",
   "chapters": [
     {
       "num": {{.StartNum}},
@@ -492,7 +450,6 @@ When reconcilable is false, leave extra_constraints empty. suggested_actions mus
 Story type: {{.NewType}}
 Writing style: {{.NewWritingStyle}}
 Narrative POV: {{.NewWritingPOV}}
-Synopsis: {{.NewStorySynopsis}}
 
 [Summaries of existing confirmed chapters]
 {{.ExistingSummaries}}
@@ -502,7 +459,6 @@ Return the adjusted settings as JSON:
   "type": "...",
   "writing_style": "...",
   "writing_pov": "...",
-  "story_synopsis": "...",
   "explanation": "Describe what was adjusted and why"
 }
 
@@ -615,7 +571,7 @@ The memory store bridges the gap left by the rolling summary (which only covers 
 [Memory token budget] {{.MemoryMaxTokens}} tokens
 
 Extraction rules:
-1. Only extract **specific narrative details NOT in the outline** — high-level plot points already in the outline do not need memorising.
+1. Extract all specific facts important to continuity, including facts already in the outline or mentioned again in this chapter.
 2. Focus on these categories:
    - character: speech tics, habits, appearance details, subtle emotional shifts
    - location: place names, scene layout, environmental features
@@ -623,115 +579,23 @@ Extraction rules:
    - event: specific promises, agreements, or information exchanged in dialogue
    - promise: commitments a character made to others or themselves, unfinished obligations
    - other: any other detail with narrative continuity value
-3. Each memory is a single sentence, with the approximate paragraph number in the original chapter (1-indexed, split by paragraph breaks).
-4. If an existing memory entry is superseded or contradicted by this chapter, mark it for deletion in updates.
-5. If the total memory exceeds the token budget (~{{.MemoryMaxTokens}} tokens), merge or remove the least important entries in the response.
+3. Summarize new facts in one sentence with id=0; the server allocates permanent IDs. Use the supplied real block IDs in block_ids.
+4. Reuse only supplied existing IDs and copy their content exactly. Return changed facts as new facts instead of modifying existing facts.
+5. The token budget is for context retrieval; never delete, merge or rewrite existing facts to meet it.
 
 Return JSON:
 {
   "new_memories": [
-    {"content": "memory description", "category": "category", "position": paragraph_number}
-  ],
-  "updates": [
-    {"id": existing_memory_id, "action": "delete", "reason": "reason for deletion"}
+    {"id": 0, "content": "memory description", "category": "character", "block_ids": [1]}
   ]
 }
 
-Only return entries that changed. If this chapter has no memorable new details, return {"new_memories": [], "updates": []}.
+Return new facts and existing facts mentioned again in this chapter. Return {"new_memories": []} only when no facts apply.
 Return JSON only, nothing else.`,
 
-	ArcSkeleton: `You are a senior development editor who specializes in structuring very long novels. Design the volume-level skeleton for the following book (each arc is a self-contained story stage; chapter outlines will be generated arc by arc later).
+	HistoryCompression: `Compress the following novel history into a compact checkpoint for future continuation. Preserve current character states, relationship changes, unresolved promises, key items and locations, timeline facts, one-time events that already happened, and unresolved foreshadows. Merge duplicates, do not imitate the prose, and invent nothing. Return only the summary, at most {{.MaxRunes}} characters.
 
-[Story type] {{.StoryType}}
-[Synopsis] {{.StorySynopsis}}
-[Writing style] {{.WritingStyle}}
-[Narrative POV] {{.WritingPOV}}
-[Planned total chapters] {{.ChapterCount}} chapters (about {{.TargetWords}} words each)
-
-[Registered characters]
-{{.CharacterList}}
-
-Design requirements:
-1. Every arc needs a clear stage goal: where the protagonist starts, the core conflict, where they end up, plus an end-of-arc hook
-2. The chapter_count values MUST sum to exactly {{.ChapterCount}}; 10-50 chapters per arc is recommended — longer books get more arcs
-3. Arcs must escalate: power/status/scope upgrades and conflict shifts need a clear through-line
-4. Each goal field is 100-250 words and must name the arc's key events, key characters and causal chain — no vague descriptions
-
-Return JSON:
-{
-  "title": "book title",
-  "story_synopsis": "synopsis (keep the provided one's intent; refine if useful)",
-  "arcs": [
-    {"title": "arc title", "goal": "stage goal and through-line", "chapter_count": 30}
-  ]
-}
-Return JSON only, nothing else.`,
-
-	ArcChapterOutline: `You are a professional story-development editor. This long novel advances arc by arc; generate the chapter-by-chapter outline for one arc.
-
-[Title] {{.Title}}
-[Story type] {{.StoryType}}
-[Core writing prompt] {{.CorePrompt}}
-[Synopsis] {{.StorySynopsis}}
-[Writing style] {{.WritingStyle}}
-[Narrative POV] {{.WritingPOV}}
-
-[Previously — progress of earlier arcs/chapters]
-{{.PreviousContext}}
-
-[This arc] Arc {{.ArcIndex}}: "{{.ArcTitle}}"
-[Arc stage goal] {{.ArcGoal}}
-
-[Upcoming arcs — this arc must NOT spend their key events early]
-{{.FutureArcs}}
-
-[Registered characters]
-{{.CharacterList}}
-
-[Extra user requirements]
-{{.UserRequirements}}
-
-Generate outlines for this arc's {{.NewChapterCount}} chapters, from chapter {{.StartNum}} to chapter {{.EndNum}}.
-
-Return JSON:
-{
-  "chapters": [
-    {
-      "num": {{.StartNum}},
-      "title": "chapter title",
-      "outline": "chapter outline",
-      "characters": [
-        {"name": "Proper name"},
-        {"name": "New name", "first_appearance": true, "note": "role note"}
-      ]
-    },
-    ...
-  ]
-}
-
-Notes:
-1. Outlines must continue the story from [Previously], accomplish the arc goal within the arc, and end in a state that hands off naturally to the next arc
-2. Each outline field must be {{.OutlineMinWords}}-{{.OutlineMaxWords}} words of concrete plot development — no vague summaries
-3. Every chapter outline must include: opening scene; core conflict; key turn; characters on stage and their roles; end-of-chapter hook
-4. Every chapter MUST include characters (proper names only; new cast first_appearance=true with note)
-5. Prefer [Registered characters]
-6. One-time events that already happened (first meetings, identity reveals) must not be re-scheduled; key events of later arcs must not happen early
-7. Return JSON only, nothing else`,
-
-	ArcSummary: `You are a precise narrative analyst. Below are the chapter summaries of one completed arc. Compress them into a single arc-level summary that later arcs will use as prior context for outlining and writing.
-
-[Title] {{.Title}}
-[Arc {{.ArcIndex}}] "{{.ArcTitle}}" (chapters {{.StartNum}}-{{.EndNum}})
-[Arc stage goal] {{.ArcGoal}}
-
-[Chapter summaries]
-{{.ChapterSummaries}}
-
-Requirements:
-1. 300-600 words, chronological through-line: starting state -> key event chain -> end state
-2. Must preserve: one-time events (first meetings, identity reveals, relationship milestones, major deaths), changes in the protagonist's power/status/understanding, and unresolved hooks or foreshadowing left at arc end
-3. Compress side plots to a sentence; drop details with no narrative continuity value
-4. Output the summary text only, nothing else`,
+{{.History}}`,
 
 	ImportMetaAnalysis: `You are a professional fiction editor. The user is importing a published novel. Below are an opening excerpt and the chapter title list. Analyze them and extract the work's metadata.
 
@@ -746,7 +610,6 @@ Return JSON:
   "title": "book title (inferred from the text; leave empty if unclear)",
   "story_type": "genre (e.g. urban fantasy, epic fantasy, mystery)",
   "core_prompt": "core writing prompt: 100-200 words capturing the work's core premise and appeal, used as guidance for AI continuation",
-  "story_synopsis": "story synopsis (150-300 words based on the existing content)",
   "writing_style": "writing style description (40-120 words: diction, pacing, atmosphere)",
   "writing_pov": "narrative POV (e.g. third person limited, first person male lead)"
 }

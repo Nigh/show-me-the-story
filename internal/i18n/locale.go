@@ -43,6 +43,24 @@ func FromRequest(r *http.Request) string {
 // errorCatalog maps a stable error key to its zh/en messages.
 // Messages may contain %s for args.
 var errorCatalog = map[string]map[string]string{
+	"backup_failed":            {LangZH: "项目备份失败：%v", LangEN: "Project backup failed: %v"},
+	"restore_failed":           {LangZH: "项目恢复失败：%v", LangEN: "Project restore failed: %v"},
+	"chapter_load_failed":      {LangZH: "第 %d 章文件无法加载，项目未打开。请保留原文件并检查或从备份恢复：%s（%v）", LangEN: "Chapter %d could not be loaded; the project was not opened. Preserve the original file and check it or restore a backup: %s (%v)"},
+	"project_load_failed":      {LangZH: "项目加载或保存恢复失败，项目未打开：%s", LangEN: "Project loading or save recovery failed; the project was not opened: %s"},
+	"setting_has_dependents":   {LangZH: "其他关系或组织仍引用该设定，请先核对并处理依赖", LangEN: "Other relationships or organizations still reference this setting; review those dependencies first"},
+	"ending_invalid":           {LangZH: "结尾选项无效，自定义结尾必须填写要求", LangEN: "Invalid ending options; a custom ending requires instructions"},
+	"ending_continue_confirm":  {LangZH: "继续追加将取消原预定完结标记，请确认继续创作", LangEN: "Confirm continuing: this removes the previous planned final-chapter marker"},
+	"fact_impact_confirm":      {LangZH: "此修改影响关联事实，请核对后确认并提交当前正文版本", LangEN: "This edit affects linked facts; review and confirm with the current content revision"},
+	"content_version_conflict": {LangZH: "正文已变更，请刷新后重新核对", LangEN: "The chapter changed; refresh and review again"},
+	"knowledge_failed":         {LangZH: "事实或设定同步未完成，请重试", LangEN: "Fact or setting synchronization is incomplete; retry"},
+	"batch_synopsis_required":  {LangZH: "请填写本批大纲梗概", LangEN: "An outline synopsis is required for this batch"},
+	"batch_count_invalid":      {LangZH: "每批章节数必须为 1 到 36", LangEN: "Each batch must contain 1 to 36 chapters"},
+	"batch_mode_invalid":       {LangZH: "无效的批次生成模式", LangEN: "Invalid batch generation mode"},
+	"batch_book_completed":     {LangZH: "作品已完结，请先恢复连载", LangEN: "Resume the completed book before generating a batch"},
+	"batch_chapter_busy":       {LangZH: "请先处理写作中或待审核章节", LangEN: "Finish the chapter being written or reviewed first"},
+	"batch_replace_invalid":    {LangZH: "只能重新规划末尾且全部未写的完整批次", LangEN: "Only the last entirely unwritten batch can be replanned"},
+	"batch_response_invalid":   {LangZH: "模型返回的章节数量或编号不符合本批要求，请重试", LangEN: "The model returned incorrect chapter numbers or count; please retry"},
+
 	"missing_project_name": {
 		LangZH: "缺少项目名称",
 		LangEN: "Project name is required",
@@ -56,8 +74,8 @@ var errorCatalog = map[string]map[string]string{
 		LangEN: "Project already exists",
 	},
 	"project_incompatible": {
-		LangZH: "此项目由旧版或未知版本创建，v3 为保护数据不会打开它。请使用原版本程序继续操作。",
-		LangEN: "This project was created by an older or unknown version. v3 will not open it to protect your data; use its original version instead.",
+		LangZH: "这不是 v4 项目。请使用与项目版本匹配的旧版程序打开。",
+		LangEN: "This is not a v4 project. Open it with the matching older application version.",
 	},
 	"create_project_dir_failed": {
 		LangZH: "创建项目目录失败: %s",
@@ -311,6 +329,22 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "全书尚未完成（需所有章节已确认）",
 		LangEN: "Book is not yet complete (all chapters must be confirmed)",
 	},
+	"proofread_backup_required": {
+		LangZH: "进入完稿校订前请先导出未校订的全文和大纲",
+		LangEN: "Export the unproofread manuscript and outlines before final proofreading",
+	},
+	"proofread_resume_forbidden": {
+		LangZH: "该项目的正文已经进入完稿校订；请创建续写项目",
+		LangEN: "This manuscript has entered final proofreading; create a continuation project instead",
+	},
+	"proofread_undo_conflict": {
+		LangZH: "无法撤销校订：%s",
+		LangEN: "Cannot undo proofreading: %s",
+	},
+	"proofread_issue_not_found": {
+		LangZH: "校订问题不存在",
+		LangEN: "Proofreading issue not found",
+	},
 	"need_polish_skill": {
 		LangZH: "没有启用的润色技能，请先在技能管理页启用 polish 类技能",
 		LangEN: "No polish skill enabled; enable a polish-type skill on the Skills page first",
@@ -383,6 +417,11 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "技能不存在",
 		LangEN: "Skill not found",
 	},
+	"skill_install_failed":  {LangZH: "Skill 安装失败：%s", LangEN: "Failed to install skill: %s"},
+	"skill_delete_failed":   {LangZH: "Skill 删除失败：%s", LangEN: "Failed to delete skill: %s"},
+	"skill_cannot_enable":   {LangZH: "当前校验状态禁止启用 Skill：%s", LangEN: "Skill cannot be enabled in validation state: %s"},
+	"skill_not_optimizable": {LangZH: "该 Skill 当前不可进行 AI 优化", LangEN: "This skill cannot currently be AI-optimized"},
+	"invalid_request":       {LangZH: "无效请求：%s", LangEN: "Invalid request: %s"},
 	"settings_ai_generate_moved": {
 		LangZH: "此功能已移至 LLM 对话中，请通过聊天让 AI 帮你生成设定",
 		LangEN: "This action has moved into the LLM chat; ask the assistant to generate settings for you",

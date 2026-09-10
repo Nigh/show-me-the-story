@@ -47,6 +47,8 @@ type Relation struct {
 }
 
 type ProjectSettings struct {
+	StoryChanges  []SettingChange  `json:"story_changes,omitempty"`
+	StorySynced   map[int]string   `json:"story_synced,omitempty"`
 	Characters    []Character      `json:"characters"`
 	Worldview     []WorldviewEntry `json:"worldview"`
 	Organizations []Organization   `json:"organizations"`
@@ -93,6 +95,9 @@ func nextID(prefix string, existingIDs []string) string {
 
 func (ps *ProjectSettings) allIDs() []string {
 	var ids []string
+	for _, c := range ps.StoryChanges {
+		ids = append(ids, c.EntityID)
+	}
 	for _, c := range ps.Characters {
 		ids = append(ids, c.ID)
 	}

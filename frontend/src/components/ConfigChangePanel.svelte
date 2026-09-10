@@ -12,7 +12,6 @@
   import { t } from '../lib/i18n/index.js';
 
   const sourceKeys = {
-    outline_generation: 'configChange.source.outline_generation',
     outline_revision: 'configChange.source.outline_revision',
     reconcile: 'configChange.source.reconcile',
     agent: 'configChange.source.agent',
@@ -72,7 +71,7 @@
 </script>
 
 {#if $showConfigChangePanel && $pendingConfigChanges.length > 0}
-  <div class="card bg-base-200 border border-primary/30 shadow-sm">
+  <div class="card bg-base-200 border border-primary/30 ">
     <div class="card-body py-4 gap-3">
       <h3 class="font-semibold">{$t('configChange.title', { n: $pendingConfigChanges.length })}</h3>
       <p class="text-sm text-base-content/60">{$t('configChange.hint')}</p>

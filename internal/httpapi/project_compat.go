@@ -12,11 +12,10 @@ import (
 const (
 	projectCompatibilitySupported = "supported"
 	projectCompatibilityLegacy    = "legacy_incompatible"
+	projectCompatibilityV3        = "v3_incompatible"
 	projectCompatibilityUnknown   = "unknown_incompatible"
 )
 
-// projectCompatibilityError prevents project selection before any project file
-// is created or rewritten.
 type projectCompatibilityError struct {
 	compatibility string
 }
@@ -25,9 +24,8 @@ func (e *projectCompatibilityError) Error() string {
 	return "项目格式不兼容: " + e.compatibility
 }
 
-// detectProjectCompatibility only reads project files. Unmarked projects are
-// rejected unless their split v3 chapter layout can be verified, because v2
-// stores prose inline in progress.json and v3 would otherwise read it as empty.
+// detectProjectCompatibility only reads old project metadata to recommend the
+// matching application release. It never loads, migrates, or writes old data.
 func detectProjectCompatibility(projectDir string) (string, error) {
 	configData, err := os.ReadFile(filepath.Join(projectDir, "config.json"))
 	if err != nil {
@@ -43,10 +41,16 @@ func detectProjectCompatibility(projectDir string) (string, error) {
 		return projectCompatibilityUnknown, nil
 	}
 	if configProbe.ProjectFormatVersion != 0 {
-		if configProbe.ProjectFormatVersion == config.ProjectFormatVersion {
+		switch configProbe.ProjectFormatVersion {
+		case config.ProjectFormatVersion:
 			return projectCompatibilitySupported, nil
+		case 3:
+			return projectCompatibilityV3, nil
+		case 1, 2:
+			return projectCompatibilityLegacy, nil
+		default:
+			return projectCompatibilityUnknown, nil
 		}
-		return projectCompatibilityUnknown, nil
 	}
 
 	progressData, err := os.ReadFile(filepath.Join(projectDir, "progress.json"))
@@ -91,7 +95,18 @@ func detectProjectCompatibility(projectDir string) (string, error) {
 			return projectCompatibilityUnknown, nil
 		}
 	}
-	return projectCompatibilitySupported, nil
+	return projectCompatibilityV3, nil
+}
+
+func compatibilityVersions(kind string) (format, line, recommended string) {
+	switch kind {
+	case projectCompatibilityV3:
+		return "v3", "v3.0.x", "v3.0.3"
+	case projectCompatibilityLegacy:
+		return "v2", "v2.x", "v2.5.2"
+	default:
+		return "unknown", "", ""
+	}
 }
 
 func ensureProjectCompatible(projectDir string) error {
@@ -106,6 +121,6 @@ func ensureProjectCompatible(projectDir string) error {
 }
 
 func isProjectCompatibilityError(err error) bool {
-	var compatibilityErr *projectCompatibilityError
-	return errors.As(err, &compatibilityErr)
+	var target *projectCompatibilityError
+	return errors.As(err, &target)
 }

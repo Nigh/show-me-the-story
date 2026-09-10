@@ -1,6 +1,6 @@
 package story
 
-// v3 block model: chapter prose is exposed as an ordered list of editable
+// Chapter prose is exposed as an ordered list of editable
 // blocks (one per natural paragraph). In-memory ch.Content stays the single
 // source of truth for all AI flows; blocks are (re)derived from content at
 // save time with stable IDs, and block edits rebuild content from blocks.
@@ -185,6 +185,8 @@ func ReviseBlockAction(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 	if feedbackForAI == "" {
 		feedbackForAI = i18n.SystemPromptFor(lang, "segment_revision_default_feedback")
 	}
+	contextChapter := *ch
+	contextChapter.Outline += "\n" + feedbackForAI
 
 	userPrompt := config.RenderPrompt(cfg.Prompts.ChapterSegmentRevision, map[string]string{
 		"ChapterNum":       fmt.Sprintf("%d", ch.Num),
@@ -193,13 +195,13 @@ func ReviseBlockAction(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 		"HistorySummary":   buildHistorySummaryForLang(state, chapterIdx, lang),
 		"WritingStyle":     cfg.Story.WritingStyle,
 		"WritingPOV":       cfg.Story.WritingPOV,
-		"CharacterContext": buildCharacterContextForLang(settings, *ch, lang),
-		"WorldviewContext": buildWorldviewContextForLang(settings, ch.Outline, lang),
+		"CharacterContext": buildCharacterContextForLang(settings, contextChapter, lang),
+		"WorldviewContext": chapterWorldview(settings, contextChapter, lang),
 		"QuotedText":       original,
 		"SegmentOriginal":  original,
 		"UserFeedback":     feedbackForAI,
 	})
-	userPrompt = appendIfMissingPlaceholder(cfg.Prompts.ChapterSegmentRevision, userPrompt, "{{.WritingPOV}}", formatWritingPOVBlock(cfg.Story.WritingPOV, lang))
+	userPrompt += factProtection(state, ch.Num, lang)
 
 	systemPrompt := state.CorePrompt
 	if systemPrompt == "" {
@@ -217,6 +219,7 @@ func ReviseBlockAction(ctx context.Context, apiCfg *config.APIConfig, cfg *confi
 	}
 
 	ch.Blocks[bi].Text = newText
+	ch.KnowledgeTracked = true
 	rebuildContentFromBlocks(ch)
 	SyncChapterBlocks(ch)
 

@@ -15,15 +15,13 @@ type APIConfig struct {
 	Model               string `json:"model"`
 	MaxTokens           int    `json:"max_tokens,omitempty"` // 0 = 模型默认；新建默认 32768；Agent 调用建议 ≥ 8192
 	HTTPTimeoutSeconds  int    `json:"http_timeout_seconds"`
-	ContextBudgetTokens int    `json:"context_budget_tokens"` // 全书优化上下文预算，默认 900000
+	ContextBudgetTokens int    `json:"context_budget_tokens"` // 模型上下文预算，默认 300000
 }
 
 type Config struct {
-	// ProjectFormatVersion identifies the on-disk project layout. It is
-	// written when a v3 project is created so newer binaries never need to
-	// guess whether an unmarked project is safe to open.
 	ProjectFormatVersion int           `json:"project_format_version"`
-	Language             string        `json:"language"` // "zh" 或 "en"，影响 AI 提示词与生成内容；旧项目缺省视为 "zh"
+	CreatedWithVersion   string        `json:"created_with_version,omitempty"`
+	Language             string        `json:"language"` // "zh" 或 "en"，影响 AI 提示词与生成内容
 	Story                StoryConfig   `json:"story"`
 	Prompts              PromptsConfig `json:"prompts"`
 	SkillConfig          *SkillConfig  `json:"skill_config,omitempty"`
@@ -32,15 +30,12 @@ type Config struct {
 type StoryConfig struct {
 	Type                  string `json:"type"`
 	Title                 string `json:"title"`
-	ChapterCount          int    `json:"chapter_count"`
 	TargetWordsPerChapter int    `json:"target_words_per_chapter"`
 	WritingStyle          string `json:"writing_style"`
 	WritingPOV            string `json:"writing_pov"` // 叙述视角，如第一人称女主、第三人称限知等
-	StorySynopsis         string `json:"story_synopsis"`
 }
 
 type PromptsConfig struct {
-	OutlineGeneration             string `json:"outline_generation"`
 	ChapterWriting                string `json:"chapter_writing"`
 	ChapterRevision               string `json:"chapter_revision"`
 	ChapterSegmentRevision        string `json:"chapter_segment_revision"`
@@ -60,9 +55,7 @@ type PromptsConfig struct {
 	BookConsistencyCheck          string `json:"book_consistency_check"`
 	BookRoadmap                   string `json:"book_roadmap"`
 	MemoryUpdate                  string `json:"memory_update"`
-	ArcSkeleton                   string `json:"arc_skeleton"`
-	ArcChapterOutline             string `json:"arc_chapter_outline"`
-	ArcSummary                    string `json:"arc_summary"`
+	HistoryCompression            string `json:"history_compression,omitempty"`
 	ImportMetaAnalysis            string `json:"import_meta_analysis"`
 	ImportChapterAnalysis         string `json:"import_chapter_analysis"`
 }
@@ -78,7 +71,7 @@ const DefaultMaxTokens = 32768
 const DefaultHTTPTimeoutSeconds = 600
 
 // ProjectFormatVersion is the only on-disk project layout this binary writes.
-const ProjectFormatVersion = 3
+const ProjectFormatVersion = 4
 
 func DefaultAPIConfig() *APIConfig {
 	return &APIConfig{
@@ -98,7 +91,6 @@ func DefaultConfigForLang(lang string) *Config {
 		ProjectFormatVersion: ProjectFormatVersion,
 		Language:             lang,
 		Story: StoryConfig{
-			ChapterCount:          12,
 			TargetWordsPerChapter: 5000,
 		},
 		SkillConfig: &SkillConfig{
@@ -162,9 +154,6 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
 
-	if cfg.Story.ChapterCount <= 0 {
-		cfg.Story.ChapterCount = 12
-	}
 	if cfg.Story.TargetWordsPerChapter <= 0 {
 		cfg.Story.TargetWordsPerChapter = 5000
 	}
@@ -208,14 +197,10 @@ func SaveConfig(path string, cfg *Config) error {
 	return fsutil.WriteFileAtomic(path, data)
 }
 
-// applyDefaults fills empty fields with the language-specific defaults.
-// Existing non-empty fields are NEVER overwritten — this is what makes
-// old projects (with persisted Chinese prompts) keep working after upgrade.
+// ApplyDefaults fills empty fields with language-specific defaults without
+// overwriting customized prompts.
 func (p *PromptsConfig) ApplyDefaults(lang string) {
 	defaults := DefaultPromptsForLang(lang)
-	if p.OutlineGeneration == "" {
-		p.OutlineGeneration = defaults.OutlineGeneration
-	}
 	if p.ChapterWriting == "" {
 		p.ChapterWriting = defaults.ChapterWriting
 	}
@@ -273,14 +258,8 @@ func (p *PromptsConfig) ApplyDefaults(lang string) {
 	if p.MemoryUpdate == "" {
 		p.MemoryUpdate = defaults.MemoryUpdate
 	}
-	if p.ArcSkeleton == "" {
-		p.ArcSkeleton = defaults.ArcSkeleton
-	}
-	if p.ArcChapterOutline == "" {
-		p.ArcChapterOutline = defaults.ArcChapterOutline
-	}
-	if p.ArcSummary == "" {
-		p.ArcSummary = defaults.ArcSummary
+	if p.HistoryCompression == "" {
+		p.HistoryCompression = defaults.HistoryCompression
 	}
 	if p.ImportMetaAnalysis == "" {
 		p.ImportMetaAnalysis = defaults.ImportMetaAnalysis

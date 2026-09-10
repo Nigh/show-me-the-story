@@ -32,7 +32,7 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center" on:click={close}>
-    <div class="bg-base-200 rounded-xl shadow-2xl p-6 w-full max-w-2xl mx-4 border border-error/40" on:click|stopPropagation>
+    <div class="bg-base-200 rounded-xl p-6 w-full max-w-2xl mx-4 border border-error/40" on:click|stopPropagation>
       <h2 class="text-lg font-semibold text-error mb-2">{$t('storageError.title')}</h2>
       <div class="alert {$storageError.original_preserved ? 'alert-warning' : 'alert-error'} mb-4">
         <span>
@@ -63,7 +63,7 @@
       </details>
 
       <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost btn-sm" on:click={copyDiagnostics}>{$t('storageError.copy')}</button>
+        <button class="btn btn-outline btn-sm" on:click={copyDiagnostics}>{$t('storageError.copy')}</button>
         <button class="btn btn-primary btn-sm" on:click={close}>{$t('common.close')}</button>
       </div>
     </div>

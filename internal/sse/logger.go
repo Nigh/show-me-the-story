@@ -241,25 +241,6 @@ func (lb *LogBroadcaster) ConfigChangeProposal(changes any) {
 	lb.Emit("config_change_proposal", changes)
 }
 
-func (lb *LogBroadcaster) PostProcessReport(reportType, content string) {
-	lb.Emit("postprocess_report", map[string]string{
-		"type":    reportType,
-		"content": content,
-	})
-}
-
-func (lb *LogBroadcaster) PostProcessRoadmap(pp any) {
-	lb.Emit("postprocess_roadmap", pp)
-}
-
-func (lb *LogBroadcaster) PostProcessItemDone(item any) {
-	lb.Emit("postprocess_item_done", item)
-}
-
-func (lb *LogBroadcaster) PostProcessUpdate(pp any) {
-	lb.Emit("postprocess_update", pp)
-}
-
 func (lb *LogBroadcaster) PolishResult(chapterIdx int, text string) {
 	lb.Emit("polish_result", map[string]interface{}{
 		"chapter_idx": chapterIdx,

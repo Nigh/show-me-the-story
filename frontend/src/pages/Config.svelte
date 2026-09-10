@@ -37,7 +37,7 @@
   $: cfgTimeout = $apiConfig?.http_timeout_seconds || 600;
 
   let localApiCfg = { base_url: '', url_strict: false, model: '', api_key: '', http_timeout_seconds: 600, max_tokens: 32768, context_budget_tokens: 900000 };
-  let localStoryCfg = { type: '', title: '', chapter_count: 30, target_words_per_chapter: 2500, writing_style: '', writing_pov: '', story_synopsis: '' };
+  let localStoryCfg = { type: '', title: '', target_words_per_chapter: 2500, writing_style: '', writing_pov: '' };
   let testingApi = false;
 
   $: resolvedChatURL = resolveChatCompletionsURL(localApiCfg.base_url, !!localApiCfg.url_strict);
@@ -101,6 +101,7 @@
     ['geography', $t('config.wv.cat.geography')],
     ['faction', $t('config.wv.cat.faction')],
     ['rule', $t('config.wv.cat.rule')],
+    ['knowledge', $t('config.wv.cat.knowledge')],
     ['history', $t('config.wv.cat.history')],
     ['other', $t('config.wv.cat.other')],
   ];
@@ -143,14 +144,12 @@
     const prev = $config?.story || {};
     const story = {
       ...localStoryCfg,
-      chapter_count: Number(localStoryCfg.chapter_count) || 30,
       target_words_per_chapter: Number(localStoryCfg.target_words_per_chapter) || 2500,
     };
     const settingsChanged =
       story.type !== prev.type ||
       story.writing_style !== prev.writing_style ||
-      story.writing_pov !== prev.writing_pov ||
-      story.story_synopsis !== prev.story_synopsis;
+      story.writing_pov !== prev.writing_pov;
 
     try {
       const saved = await api('PUT', '/api/config', { ...($config || {}), story });
@@ -449,8 +448,8 @@
 <div class="space-y-3">
   <ConfigChangePanel />
   <!-- API + Story Config: side by side -->
-  <div class="grid grid-cols-2 gap-3">
-    <div class="card bg-base-200 shadow-sm">
+  <div class="grid grid-cols-1 @3xl:grid-cols-2 gap-4">
+    <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <h3 class="card-title text-base">{$t('config.api.title')}</h3>
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
@@ -459,7 +458,7 @@
             <input type="text" class="input input-sm w-full" bind:value={localApiCfg.base_url} placeholder="https://api.openai.com/v1" disabled={$taskRunning || testingApi} />
             <label class="label cursor-pointer justify-start gap-2 py-1 px-0 min-h-0">
               <input type="checkbox" class="toggle toggle-xs" bind:checked={localApiCfg.url_strict} disabled={$taskRunning || testingApi} />
-              <span class="label-text text-xs text-base-content/60">{$t('config.api.urlStrict')}</span>
+              <span class="text-xs text-base-content/60">{$t('config.api.urlStrict')}</span>
             </label>
             <p class="text-xs text-base-content/45 mb-1">{$t('config.api.urlStrictHint')}</p>
             {#if resolvedChatURL}
@@ -481,10 +480,6 @@
             <input type="number" class="input input-sm w-full" bind:value={localApiCfg.max_tokens} placeholder="{$t('config.api.maxTokens.placeholder')}" disabled={$taskRunning || testingApi} title={$t('config.api.maxTokens.tooltip')} />
           </div>
           <div class="col-span-2">
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.budget')}</span>
-            <input type="number" class="input input-sm w-full" bind:value={localApiCfg.context_budget_tokens} placeholder="900000" disabled={$taskRunning || testingApi} title={$t('config.api.budget.tooltip')} />
-          </div>
-          <div class="col-span-2">
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.api.key')}</span>
             <input type="password" class="input input-sm w-full" bind:value={localApiCfg.api_key} placeholder="sk-..." disabled={$taskRunning || testingApi} />
           </div>
@@ -499,7 +494,7 @@
           </div>
         {/if}
         <div class="flex justify-end gap-2">
-          <button class="btn btn-xs {$apiTestResult ? ($apiTestResult.ok ? 'btn-success btn-outline' : 'btn-error btn-outline') : 'btn-outline'}" on:click={testAPIConfig} disabled={$taskRunning || testingApi}>
+          <button class="btn btn-xs {$apiTestResult ? ($apiTestResult.ok ? 'btn-success btn-outline' : 'btn-error btn-outline') : 'btn-outline border-base-content/35 hover:border-primary hover:bg-primary hover:text-primary-content'}" on:click={testAPIConfig} disabled={$taskRunning || testingApi}>
             {#if testingApi}
               <span class="loading loading-spinner loading-xs"></span>{$t('config.api.testing')}
             {:else}
@@ -511,7 +506,7 @@
       </div>
     </div>
 
-    <div class="card bg-base-200 shadow-sm">
+    <div class="card bg-base-200">
       <div class="card-body p-4 gap-2">
         <h3 class="card-title text-base">{$t('config.story.title')}</h3>
         {#if hasAccepted}
@@ -529,10 +524,6 @@
             <input type="text" class="input input-sm w-full" bind:value={localStoryCfg.title} placeholder={$t('config.story.title.placeholder')} disabled={$taskRunning} />
           </div>
           <div>
-            <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.chapterCount')}</span>
-            <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.chapter_count} disabled={$taskRunning} />
-          </div>
-          <div>
             <span class="text-xs text-base-content/50 mb-0.5 block">{$t('config.story.targetWords')}</span>
             <input type="number" class="input input-sm w-full" bind:value={localStoryCfg.target_words_per_chapter} disabled={$taskRunning} />
           </div>
@@ -545,7 +536,7 @@
   </div>
 
   <!-- Writing Style & POV -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <h3 class="card-title text-base">{$t('config.style.title')}</h3>
       <div>
@@ -562,19 +553,8 @@
     </div>
   </div>
 
-  <!-- Story Synopsis -->
-  <div class="card bg-base-200 shadow-sm">
-    <div class="card-body p-4 gap-2">
-      <h3 class="card-title text-base">{$t('config.synopsis.title')}</h3>
-      <textarea class="textarea w-full h-40 text-base" bind:value={localStoryCfg.story_synopsis} placeholder={$t('config.synopsis.placeholder')} disabled={$taskRunning}></textarea>
-      <div class="flex justify-end">
-        <button class="btn btn-primary btn-xs" on:click={saveStoryConfig} disabled={$taskRunning}>{$t('common.save')}</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Characters -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -595,8 +575,8 @@
                   <div class="text-xs text-base-content/40 line-clamp-1">{c.personality || c.background || c.age || ''}</div>
                 </div>
                 <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openCharForm(c)} disabled={$taskRunning}>{$t('common.edit')}</button>
-                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteCharacter(c.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
+                  <button class="btn btn-outline btn-xs px-1" on:click={() => openCharForm(c)} disabled={$taskRunning}>{$t('common.edit')}</button>
+                  <button class="btn btn-error btn-outline btn-xs px-1" on:click={() => deleteCharacter(c.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
               </div>
             {/each}
@@ -659,7 +639,7 @@
   </div>
 
   <!-- Worldview -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -688,8 +668,8 @@
                   <div class="text-xs text-base-content/40 line-clamp-1">{w.description}</div>
                 </div>
                 <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openWvForm(w)} disabled={$taskRunning}>{$t('common.edit')}</button>
-                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteWorldview(w.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
+                  <button class="btn btn-outline btn-xs px-1" on:click={() => openWvForm(w)} disabled={$taskRunning}>{$t('common.edit')}</button>
+                  <button class="btn btn-error btn-outline btn-xs px-1" on:click={() => deleteWorldview(w.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
               </div>
             {/each}
@@ -709,6 +689,7 @@
                   <option value="geography">{$t('config.wv.cat.geography')}</option>
                   <option value="faction">{$t('config.wv.cat.faction')}</option>
                   <option value="rule">{$t('config.wv.cat.rule')}</option>
+                  <option value="knowledge">{$t('config.wv.cat.knowledge')}</option>
                   <option value="history">{$t('config.wv.cat.history')}</option>
                   <option value="other">{$t('config.wv.cat.other')}</option>
                 </select>
@@ -740,7 +721,7 @@
   </div>
 
   <!-- Organizations -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -764,8 +745,8 @@
                   {/if}
                 </div>
                 <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openOrgForm(o)} disabled={$taskRunning}>{$t('common.edit')}</button>
-                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteOrganization(o.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
+                  <button class="btn btn-outline btn-xs px-1" on:click={() => openOrgForm(o)} disabled={$taskRunning}>{$t('common.edit')}</button>
+                  <button class="btn btn-error btn-outline btn-xs px-1" on:click={() => deleteOrganization(o.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
               </div>
             {/each}
@@ -816,7 +797,7 @@
   </div>
 
   <!-- Relations -->
-  <div class="card bg-base-200 shadow-sm">
+  <div class="card bg-base-200">
     <div class="card-body p-4 gap-2">
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -838,8 +819,8 @@
                   <span class="font-medium">{entityIcons[r.target_type] || ''} {nameById[r.target_id] || r.target_id}</span>
                 </div>
                 <div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button class="btn btn-ghost btn-xs px-1" on:click={() => openRelForm(r)} disabled={$taskRunning}>{$t('common.edit')}</button>
-                  <button class="btn btn-ghost btn-xs px-1 text-error" on:click={() => deleteRelation(r.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
+                  <button class="btn btn-outline btn-xs px-1" on:click={() => openRelForm(r)} disabled={$taskRunning}>{$t('common.edit')}</button>
+                  <button class="btn btn-error btn-outline btn-xs px-1" on:click={() => deleteRelation(r.id)} disabled={$taskRunning}>{$t('common.delete')}</button>
                 </div>
               </div>
             {/each}
