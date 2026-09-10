@@ -13,9 +13,14 @@ func testSkillMarkdown(body string) []byte {
 	return []byte("---\nid: test-skill\nname: Test Skill\ndescription: test\ncategory: writing\nlang: en\napplies_to: [chapter.generate]\n---\n\n" + body)
 }
 
+func testSkillFiles(body string) map[string][]byte {
+	manifest := []byte(`{"schema_version":1,"id":"test-skill","name":"Test Skill","description":"test","category":"writing","languages":["en"],"applies_to":["chapter.generate"],"entrypoint":"SKILL.md"}`)
+	return map[string][]byte{"skill.json": manifest, "SKILL.md": testSkillMarkdown(body)}
+}
+
 func TestInstallSkillAndInvalidateValidationOnContentChange(t *testing.T) {
 	dir := t.TempDir()
-	first, err := InstallSkillFiles(dir, map[string][]byte{"SKILL.md": testSkillMarkdown("first")}, false)
+	first, err := InstallSkillFiles(dir, testSkillFiles("first"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,12 +34,23 @@ func TestInstallSkillAndInvalidateValidationOnContentChange(t *testing.T) {
 	if len(loaded) != 1 || loaded[0].Validation == nil || loaded[0].Validation.Status != "passed" {
 		t.Fatalf("validation not loaded: %+v", loaded)
 	}
-	second, err := InstallSkillFiles(dir, map[string][]byte{"SKILL.md": testSkillMarkdown("changed")}, true)
+	second, err := InstallSkillFiles(dir, testSkillFiles("changed"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if second.ContentHash == first.ContentHash || second.Validation != nil {
 		t.Fatalf("changed content must invalidate validation: %+v", second)
+	}
+}
+
+func TestSkillPackageRequiresVersionedManifest(t *testing.T) {
+	if _, err := InstallSkillFiles(t.TempDir(), map[string][]byte{"SKILL.md": testSkillMarkdown("body")}, false); err == nil {
+		t.Fatal("expected missing skill.json rejection")
+	}
+	files := testSkillFiles("body")
+	files["skill.json"] = []byte(`{"id":"test-skill","name":"Test Skill","entrypoint":"SKILL.md","applies_to":["chapter.generate"]}`)
+	if _, err := InstallSkillFiles(t.TempDir(), files, false); err == nil {
+		t.Fatal("expected missing schema_version rejection")
 	}
 }
 
