@@ -31,6 +31,8 @@ func StartWebServer(apiCfg *config.APIConfig, apiCfgPath string, logger *sse.Log
 
 	// Project management endpoints
 	mux.HandleFunc("GET /api/projects", h.GetProjects)
+	mux.HandleFunc("GET /api/projects/{name}/backup", h.GetProjectBackup)
+	mux.HandleFunc("POST /api/projects/restore", h.PostProjectRestore)
 	mux.HandleFunc("POST /api/projects", h.PostProject)
 	mux.HandleFunc("POST /api/projects/continue", h.PostContinuationProject)
 	mux.HandleFunc("GET /api/projects/current", h.GetProjectCurrent)
@@ -175,7 +177,7 @@ func StartWebServer(apiCfg *config.APIConfig, apiCfgPath string, logger *sse.Log
 		fileServer.ServeHTTP(w, r)
 	})
 
-	handler := recoveryMiddleware(corsMiddleware(loggingMiddleware(mux)))
+	handler := recoveryMiddleware(corsMiddleware(loggingMiddleware(projectWriteMiddleware(mux))))
 
 	srv := &http.Server{
 		Addr:         port,
@@ -210,7 +212,7 @@ func (h *Handlers) GetProjects(w http.ResponseWriter, r *http.Request) {
 
 	projects := make([]map[string]string, 0)
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".restore-") {
 			continue
 		}
 		name := entry.Name()
@@ -295,11 +297,9 @@ func (h *Handlers) PostProject(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(req.Name)
 	lang := i18n.NormalizeLanguage(req.Language)
 
-	for _, c := range name {
-		if c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' {
-			h.writeErrorReq(w, r, http.StatusBadRequest, "project_name_invalid_chars")
-			return
-		}
+	if !validProjectName(name) {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "project_name_invalid_chars")
+		return
 	}
 
 	projectDir := filepath.Join(h.storysDir(), name)
@@ -375,8 +375,8 @@ func (h *Handlers) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := r.PathValue("name")
-	if name == "" {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "missing_project_name")
+	if !validProjectName(name) {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "project_name_invalid_chars")
 		return
 	}
 

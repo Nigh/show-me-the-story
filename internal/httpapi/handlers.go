@@ -91,6 +91,9 @@ func (h *Handlers) projectDir() string {
 
 // switchProject loads all project-specific data for the given project name.
 func (h *Handlers) switchProject(name string) error {
+	if !validProjectName(name) {
+		return fmt.Errorf("invalid project name")
+	}
 	h.projectMu.Lock()
 	defer h.projectMu.Unlock()
 

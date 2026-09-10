@@ -7,7 +7,8 @@ import { TOKEN_POLL_INTERVAL_MS } from './tokenPoll.js';
 let eventSource = null;
 let reconnectTimer = null;
 let tokenPollTimer = null;
-let taskCount = 0;
+let taskEventVersion = 0;
+let statusRequest = 0;
 
 // —— 流式输出节流缓冲 + 尾部窗口 ——
 const FLUSH_INTERVAL = 150;
@@ -54,9 +55,7 @@ function refreshProgress(immediate = false) {
 
 function refreshTokenUsage() {
   if (!get(taskRunning)) return;
-  api('GET', '/api/status').then(s => {
-    if (s?.token_usage) taskTokenUsage.set(s.token_usage);
-  }).catch(() => {});
+  syncTaskFromStatus();
 }
 
 function startTokenPoll() {
@@ -91,21 +90,36 @@ function clearChatBuf() {
 }
 
 async function syncTaskFromStatus() {
+  const version = taskEventVersion;
+  const request = ++statusRequest;
   try {
     const s = await api('GET', '/api/status');
+    // A newer event or request makes this snapshot obsolete.
+    if (version !== taskEventVersion || request !== statusRequest) return;
     if (s?.is_task_running) {
-      // Refresh drops SSE task_start history; seed from backend active_work.
-      const n = Math.max(1, Number(s.active_work) || 1);
-      if (taskCount < n) taskCount = n;
       taskRunning.set(true);
+      if (s.token_usage) taskTokenUsage.set(s.token_usage);
       if (s.current_task) {
         currentTaskName.set(translate(`task.${s.current_task}`) || s.current_task);
       }
-      startTokenPoll();
-    } else if (taskCount <= 0) {
+      if (!tokenPollTimer) tokenPollTimer = setInterval(refreshTokenUsage, TOKEN_POLL_INTERVAL_MS);
+    } else {
+      const wasRunning = get(taskRunning);
       taskRunning.set(false);
       currentTaskName.set(null);
+      taskTokenUsage.set(null);
+      resetContentStream(-1);
+      clearChatBuf();
       stopTokenPoll();
+      if (wasRunning) {
+        refreshProgress(true);
+        api('GET', '/api/settings').then(settings.set).catch(() => {});
+        api('GET', '/api/chat/sessions').then(chatSessions.set).catch(() => {});
+        const session = get(currentChatSession);
+        if (session) api('GET', '/api/chat/sessions/' + session.id).then(s => {
+          if (get(currentChatSession)?.id === session.id) currentChatSession.set(s);
+        }).catch(() => {});
+      }
     }
   } catch (_) { /* ignore */ }
 }
@@ -139,7 +153,7 @@ export function connectSSE() {
 
   eventSource.addEventListener('task_start', e => {
     const d = JSON.parse(e.data);
-    taskCount++;
+    taskEventVersion++;
     taskRunning.set(true);
     resetContentStream(-1);
     clearChatBuf();
@@ -152,16 +166,8 @@ export function connectSSE() {
 
   eventSource.addEventListener('task_end', e => {
     const d = JSON.parse(e.data);
-    taskCount--;
-    if (taskCount <= 0) {
-      taskCount = 0;
-      taskRunning.set(false);
-      resetContentStream(-1);
-      clearChatBuf();
-      taskTokenUsage.set(null);
-      currentTaskName.set(null);
-      stopTokenPoll();
-    }
+    taskEventVersion++;
+    syncTaskFromStatus();
     refreshProgress(true);
 
     if (d.success) {
@@ -189,8 +195,7 @@ export function connectSSE() {
     }
 
     if (d.task === 'chat_message') {
-      // 异步工具（如 generate_outline）会启动子任务，taskCount 仍 > 0，
-      // 上方 taskCount<=0 分支不会 clearChatBuf；须在此取消 chat_chunk 延迟 flush，
+      // 异步工具可能仍有子任务；须在此取消 chat_chunk 延迟 flush，
       // 否则 reload 后的 messages 与 streaming_text 会各显示一遍相同 reply。
       clearChatBuf();
       let sessionId = null;

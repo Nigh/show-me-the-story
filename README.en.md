@@ -73,6 +73,8 @@ Check the project directory printed at startup. An invalid directory argument fa
 
 Projects live in `storys/<project>/`. Stop tasks and close the program before copying the entire data directory for backup or migration. This release only opens v4 projects. Use the version recommended by the project list for older formats; do not edit the format number manually.
 
+After tasks finish, use **Back up ZIP** in the project list to download a complete project. **Restore a project backup** restores it as a new project without overwriting the original. Global API configuration and user Skills are excluded; preserve them separately when migrating. See [backups and restoration](docs/guide.en.md#data).
+
 After an interrupted prose/progress save, reopening the project attempts to restore the last complete save. Damaged chapter files or failed recovery prevent the project from opening and display diagnostics. Preserve the entire project directory, including `progress.json.rollback` if present, then resolve file access problems or restore a backup. The rollback journal is not version history or a replacement for regular backups; do not run multiple writers against the same project.
 
 Files are stored locally, but AI operations send relevant prose, settings, and prompts to your configured model service, which may charge for usage. API keys are stored in `api.json`; inspect shared files and logs for sensitive information. Use the application in a trusted local environment, not directly exposed to the public internet.

@@ -14,7 +14,16 @@ import (
 )
 
 func validProjectName(name string) bool {
-	if strings.TrimSpace(name) == "" {
+	if name == "" || name == "." || name == ".." || name != strings.TrimSpace(name) || strings.HasPrefix(name, ".restore-") || strings.HasSuffix(name, ".") || !filepath.IsLocal(name) {
+		return false
+	}
+	for _, c := range name {
+		if c < 32 {
+			return false
+		}
+	}
+	base := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || (len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9') {
 		return false
 	}
 	return !strings.ContainsAny(name, `/\:*?"<>|`)

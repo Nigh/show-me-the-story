@@ -301,6 +301,16 @@ Editing an outline or confirming foreshadows starts a consistency-check task whe
 
 For a reliable backup: stop AI tasks → wait for saving → close the program → copy the entire data directory to a dated backup location. On another computer, point the program at the copied directory. When backing up one project alone, also preserve required user skills separately. Do not publish API keys with a shared work.
 
+Alternatively, use backup and restoration in the project list:
+
+1. Wait for AI work to finish, return to the project list, and click **Back up ZIP** for the project. Save the downloaded file.
+2. Under **Restore a project backup**, select the ZIP and enter an unused project name.
+3. Click **Restore as new project**, then open it from the list and check prose, settings, and proofreading state. The original project remains unchanged.
+
+ZIP includes project prose, progress, configuration, settings, conversations, import checkpoints, and proofreading state. It excludes the data directory's `api.json` and `skills/`. Project write requests are serialized during backup/restoration. Restoration validates archive paths, sizes, JSON, v4 format, and chapter integrity before publishing the new project; failures leave no partial project. Limits: ZIP 256 MiB, extracted total 512 MiB, each file 64 MiB, 20,000 entries. For larger projects, close the application and copy the directory. Text import is not a substitute for this full snapshot.
+
+If long-term summary generation fails, a warning identifies temporary local summaries, which are retried on next use along with affected parent summaries. Cancellation does not commit new summary checkpoints. Task status is reconciled with the server on reconnect and while running, so a missed completion event does not leave the interface permanently busy.
+
 This program only loads v4 projects. Older projects are labeled with the appropriate program version and are not migrated automatically. The format number is a storage protocol, not an upgrade switch.
 
 <a id="troubleshooting"></a>
