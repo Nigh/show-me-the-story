@@ -1,6 +1,6 @@
 # User guide
 
-[Back to README](../README.en.md) · [中文指南](guide.zh.md)
+[Back to README](../README.md) · [中文指南](guide.zh.md)
 
 This guide follows the writing process. For your first project, complete a small batch manually before enabling auto-confirm or combining several skills.
 
@@ -337,4 +337,4 @@ This program only loads v4 projects. Older projects are labeled with the appropr
 
 Logs describe substeps, not just generated prose. For a reproducible problem, record the operation, final error, model configuration with credentials removed, and steps to reproduce.
 
-[Back to README](../README.en.md)
+[Back to README](../README.md)

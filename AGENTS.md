@@ -1,4 +1,4 @@
-# AGENTS.md — AI 小说生成器项目指南
+# AGENTS.md — AI 小说写手项目指南
 
 > 修改代码、配置、前端、提示词或构建流程后，必须同步更新本文件；只记录长期有效的约束与当前架构，不记录单次修复历史或逐函数清单。
 
@@ -6,10 +6,10 @@
 
 - 单二进制 Go Web 应用；Go 后端只使用标准库，前端产物与内置 Skill 通过 `embed.FS` 嵌入。
 - Go `1.25.1`，模块 `showmethestory`；默认端口 `:48090`，可用 `PORT` 覆盖。
-- 前端：Vite 5、Svelte 4、Tailwind CSS 4、DaisyUI 5、`@xianii/design-system`。
+- 前端：Vite 5、Svelte 4、Tailwind CSS 4、DaisyUI 5、`@xianii/design-system`；Playwright 仅使用系统 Google Chrome 生成 README 截图。
 - 当前项目格式固定为 v4；项目默认保存在程序目录的 `storys/<项目名>/`。
 - 项目语言 `zh` / `en` 决定模型提示词、正文和内置 Skill；UI 语言由浏览器独立切换。
-- 用户入口为 `README.md` 与 `README.en.md`，详细流程维护于 `docs/guide.zh.md` 与 `docs/guide.en.md`，按创作顺序提供双语步骤与故障排查；许可证为 MIT。
+- 默认英文入口为 `README.md`，中文入口为 `README.zh.md`；语言导航保持独立的首行链接列表，便于继续增加语言。详细流程维护于 `docs/guide.zh.md` 与 `docs/guide.en.md`，按创作顺序提供双语步骤与故障排查；许可证为 MIT。
 
 ## 常用命令
 
@@ -18,6 +18,7 @@ task build                 # npm install + 前端构建 + Go 二进制
 task build:go              # 只构建 Go；要求 frontend/dist 已存在
 task dev                   # 构建并启动后端
 task dev:frontend          # Vite 开发服务器 :5173，代理 /api 到 :48090
+task screenshots           # 用固定离线样例重建 README 截图
 
 go build ./...
 go test ./...
@@ -143,6 +144,7 @@ main.go
 
 - 测试按领域文件组织；同一函数的输入变体优先表驱动，跨流程测试保留独立名称。不要仅为减少文件数合并无关测试，Go 已按 package 统一编译。
 - 测试 helper 先用标准库和现有 helper；只有多个测试共享且能明显减少重复时才新增 helper。
+- README 截图由 `frontend/scripts/screenshots.mjs` 使用系统 Google Chrome 与固定离线样例按 README 语言生成 WebP 到 `docs/screenshots/<语言>/`；工作流只在前端、截图文件或截图工作流变更的 PR 中运行，并允许手动触发。
 - 读取源码执行的前端回归脚本必须兼容 LF/CRLF，不依赖平台或 Git 换行配置。
 - 非平凡分支、解析、存储安全或兼容边界的改动必须留下最小回归测试；纯删除死代码无需新增测试。
 - 不新增单实现接口、工厂、无消费者配置、转发 wrapper 或“以后可能用”的兼容层。

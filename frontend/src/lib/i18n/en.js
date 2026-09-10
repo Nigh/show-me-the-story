@@ -111,7 +111,7 @@ export default {
   'nav.config': 'Config',
   'nav.outline': 'Outline',
   'nav.writing': 'Writing',
-  'nav.proofread': 'Final proofreading',
+  'nav.proofread': 'Proofread',
   'nav.foreshadows': 'Foreshadows',
   'nav.memory': 'Memory',
   'nav.relations': 'Relations',
