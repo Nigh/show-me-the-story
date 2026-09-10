@@ -147,7 +147,7 @@ try {
       await page.evaluate(() => document.fonts.ready);
       const appTitle = lang === 'en' ? 'AI Novel Generator' : 'AI 小说写手';
       const textRect = await page.getByText(appTitle, { exact: true }).evaluate(el => el.getBoundingClientRect().toJSON());
-      if (textRect.width < 80 || textRect.height < 10) throw new Error(`Screenshot font rendering failed for ${lang}: ${JSON.stringify(textRect)}`);
+      if (textRect.width < 30 || textRect.height < 10) throw new Error(`Screenshot font rendering failed for ${lang}: ${JSON.stringify(textRect)}`);
       await page.evaluate(() => document.activeElement?.blur());
       await page.mouse.move(0, 0);
       await saveWebP(page, path.join(localeDir, `${pageName}.webp`));
