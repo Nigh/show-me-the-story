@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-- 单二进制 Go Web 应用；Go 后端只使用标准库，前端产物与内置 Skill 通过 `embed.FS` 嵌入。
+- 单二进制 Go Web 应用，完整应用体积不到 5 MB；Go 后端只使用标准库，前端产物与内置 Skill 通过 `embed.FS` 嵌入。
 - Go `1.25.1`，模块 `showmethestory`；默认端口 `:48090`，可用 `PORT` 覆盖。
 - 前端：Vite 5、Svelte 4、Tailwind CSS 4、DaisyUI 5、`@xianii/design-system`；Playwright 仅使用系统 Google Chrome 生成 README 截图。
 - 当前项目格式固定为 v4；项目默认保存在程序目录的 `storys/<项目名>/`。

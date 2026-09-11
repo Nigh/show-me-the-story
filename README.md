@@ -10,6 +10,8 @@
 
 A local application for writing long fiction with AI. One executable and a browser interface connect to an OpenAI-compatible model service to manage settings, plan batches of chapters, draft and revise prose, and export your work.
 
+**The complete application ships as a single executable under 5 MB**—small enough to download, move, and keep anywhere.
+
 You decide the story’s rules and direction. Those rules may be realistic or entirely fictional.
 
 ![Writing workspace](docs/screenshots/en/writing.webp)
