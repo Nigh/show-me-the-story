@@ -133,3 +133,105 @@ func TestAgentEffectiveMaxTokens(t *testing.T) {
 		t.Fatal("应使用用户配置的 max_tokens")
 	}
 }
+
+func TestBuildAgentMessagesBoundsHistory(t *testing.T) {
+	ctx := &AgentContext{
+		APICfg: &config.APIConfig{ContextBudgetTokens: 30000, MaxTokens: 8192},
+		Config: &config.Config{Language: "en"},
+	}
+	oldResult := strings.Repeat("old-tool-result ", 5000)
+	history := []AgentStep{
+		{Role: "user", Content: "earlier request"},
+		{Role: "assistant", Content: "<think>private chain</think>visible reply"},
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: oldResult},
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: "recent tool result one"},
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: "recent tool result two"},
+		{Role: "user", Content: "current request"},
+	}
+
+	messages := buildAgentMessages(ctx, "system", "current request", history, "[Tool result]", nil)
+	prompt := strings.Join(func() []string {
+		parts := make([]string, len(messages))
+		for i, message := range messages {
+			parts[i] = message.Content
+		}
+		return parts
+	}(), "\n")
+
+	if strings.Contains(prompt, oldResult) {
+		t.Fatal("old tool result was retained")
+	}
+	if !strings.Contains(prompt, "Earlier tool result omitted") {
+		t.Fatal("old tool result was not replaced with an omission record")
+	}
+	if strings.Contains(prompt, "<think>") || !strings.Contains(prompt, "visible reply") {
+		t.Fatalf("assistant reasoning was not stripped: %q", prompt)
+	}
+	if got, budget := agentMessagesTokenEstimate(messages), agentPromptInputBudget(ctx.APICfg); got > budget {
+		t.Fatalf("prompt tokens=%d exceed budget=%d", got, budget)
+	}
+}
+
+func TestBuildAgentMessagesTruncatesLatestToolResult(t *testing.T) {
+	ctx := &AgentContext{
+		APICfg: &config.APIConfig{ContextBudgetTokens: 24000, MaxTokens: 8192},
+		Config: &config.Config{Language: "en"},
+	}
+	latestResult := strings.Repeat("latest-tool-result ", 50000)
+	history := []AgentStep{
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: latestResult},
+	}
+
+	messages := buildAgentMessages(ctx, "system", "current request", history, "[Tool result]", nil)
+	prompt := strings.Join(func() []string {
+		parts := make([]string, len(messages))
+		for i, message := range messages {
+			parts[i] = message.Content
+		}
+		return parts
+	}(), "\n")
+
+	if strings.Contains(prompt, latestResult) {
+		t.Fatal("latest oversized tool result was not truncated")
+	}
+	if !strings.Contains(prompt, "[Tool result truncated.") {
+		t.Fatal("truncated tool result lacks its marker")
+	}
+	if got, budget := agentMessagesTokenEstimate(messages), agentPromptInputBudget(ctx.APICfg); got > budget {
+		t.Fatalf("prompt tokens=%d exceed budget=%d", got, budget)
+	}
+}
+
+func TestBuildAgentMessagesBoundsRetryTail(t *testing.T) {
+	ctx := &AgentContext{
+		APICfg: &config.APIConfig{ContextBudgetTokens: 24000, MaxTokens: 8192},
+		Config: &config.Config{Language: "en"},
+	}
+	tail := []llm.Message{
+		{Role: "assistant", Content: strings.Repeat("broken tool call ", 50000)},
+		{Role: "user", Content: "retry the malformed tool call"},
+	}
+
+	messages := buildAgentMessages(ctx, "system", "current request", nil, "[Tool result]", tail)
+	prompt := strings.Join(func() []string {
+		parts := make([]string, len(messages))
+		for i, message := range messages {
+			parts[i] = message.Content
+		}
+		return parts
+	}(), "\n")
+
+	if !strings.Contains(prompt, "retry the malformed tool call") {
+		t.Fatal("retry feedback was dropped")
+	}
+	if !strings.Contains(prompt, "[Previous malformed response truncated.]") {
+		t.Fatal("malformed response lacks its truncation marker")
+	}
+	if got, budget := agentMessagesTokenEstimate(messages), agentPromptInputBudget(ctx.APICfg); got > budget {
+		t.Fatalf("prompt tokens=%d exceed budget=%d", got, budget)
+	}
+}

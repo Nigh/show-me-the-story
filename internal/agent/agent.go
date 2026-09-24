@@ -12,6 +12,7 @@ import (
 	"showmethestory/internal/sse"
 	"showmethestory/internal/story"
 	"strings"
+	"unicode/utf8"
 )
 
 type Tool struct {
@@ -57,49 +58,17 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 
 	systemPrompt := buildAgentSystemPrompt(ctx, toolDesc)
 
-	var messages []llm.Message
-	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
-
 	toolResultLabel := "[工具结果]"
 	if i18n.NormalizeLanguage(ctx.Config.Language) == i18n.LangEN {
 		toolResultLabel = "[Tool result]"
 	}
 
-	// 找到最后一个 user 步骤的索引（即当前轮用户消息），用于去重。
-	// handlers.go 在 agent loop 启动前就把当前用户消息追加到了 session.Messages，
-	// 所以 history 中最后一条 user 步骤与 userMessage 相同，需跳过避免重复。
-	lastUserIdx := -1
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Role == "user" {
-			lastUserIdx = i
-			break
-		}
-	}
-
-	for i, step := range history {
-		if step.Role == "user" {
-			if i == lastUserIdx {
-				continue
-			}
-			messages = append(messages, llm.Message{Role: "user", Content: step.Content})
-		} else if step.Role == "assistant" {
-			if step.ToolCall != nil {
-				tcJSON, _ := json.Marshal(step.ToolCall)
-				messages = append(messages, llm.Message{Role: "assistant", Content: fmt.Sprintf("<tool_call>\n%s\n</tool_call>", string(tcJSON))})
-			} else {
-				messages = append(messages, llm.Message{Role: "assistant", Content: step.Content})
-			}
-		} else if step.Role == "tool" {
-			messages = append(messages, llm.Message{Role: "user", Content: fmt.Sprintf("%s\n%s", toolResultLabel, step.ToolResult)})
-		}
-	}
-
-	messages = append(messages, llm.Message{Role: "user", Content: userMessage})
+	messages := buildAgentMessages(ctx, systemPrompt, userMessage, history, toolResultLabel, nil)
 
 	// ponytail: one parse-retry per loop; ceiling = still-broken after retry → hard error (no silent final reply).
 	parseRetryUsed := false
 
-	for step := 0; step < maxSteps; step++ {
+	for step := range maxSteps {
 		if goCtx.Err() != nil {
 			return "", history, agentErr(ctx, "agent.task_cancelled")
 		}
@@ -136,9 +105,11 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 				if ctx.Logger != nil {
 					ctx.Logger.WarnKey("log.agent_tool_call_parse_retry", finishReason, len(fullResp))
 				}
-				// Keep broken output in messages only (not history) so the model can diagnose; UI/session stay clean.
-				messages = append(messages, llm.Message{Role: "assistant", Content: fullResp})
-				messages = append(messages, llm.Message{Role: "user", Content: feedback})
+				// Keep broken output in the retry prompt only; UI/session stay clean.
+				messages = buildAgentMessages(ctx, systemPrompt, userMessage, history, toolResultLabel, []llm.Message{
+					{Role: "assistant", Content: fullResp},
+					{Role: "user", Content: feedback},
+				})
 				continue
 			}
 			if ctx.Logger != nil {
@@ -200,14 +171,209 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 			ctx.Logger.ToolCallEnd("", toolCall.Name, story.Truncate(result, 200), resultKey, resultArgs)
 		}
 
-		messages = append(messages, llm.Message{Role: "assistant", Content: fmt.Sprintf("<tool_call>\n%s\n</tool_call>", func() string {
-			tcJSON, _ := json.Marshal(toolCall)
-			return string(tcJSON)
-		}())})
-		messages = append(messages, llm.Message{Role: "user", Content: fmt.Sprintf("%s\n%s", toolResultLabel, result)})
+		messages = buildAgentMessages(ctx, systemPrompt, userMessage, history, toolResultLabel, nil)
 	}
 
 	return agentMsg(ctx, "agent.max_steps"), history, nil
+}
+
+const recentAgentToolResults = 2
+
+type agentMessageGroup struct {
+	messages   []llm.Message
+	toolResult int
+}
+
+// buildAgentMessages projects persisted Agent history into one bounded LLM prompt.
+// The session remains complete for the chat UI; omitted tool data can be read again.
+func buildAgentMessages(ctx *AgentContext, systemPrompt, userMessage string, history []AgentStep, toolResultLabel string, tail []llm.Message) []llm.Message {
+	budget := agentPromptInputBudget(ctx.APICfg)
+	tail = boundedAgentTail(systemPrompt, userMessage, tail, budget)
+	baseTokens := agentMessageTokenEstimate(llm.Message{Content: systemPrompt}) +
+		agentMessageTokenEstimate(llm.Message{Content: userMessage}) +
+		agentMessagesTokenEstimate(tail)
+	groups := agentHistoryMessageGroups(history, toolResultLabel, omittedAgentToolResult(ctx.Config.Language))
+	selected := make([]agentMessageGroup, 0, len(groups))
+
+	for i := len(groups) - 1; i >= 0; i-- {
+		group := groups[i]
+		if groupTokens := agentMessagesTokenEstimate(group.messages); baseTokens+groupTokens <= budget {
+			selected = append(selected, group)
+			baseTokens += groupTokens
+			continue
+		}
+		if group, ok := truncateAgentMessageGroup(group, budget-baseTokens); ok {
+			selected = append(selected, group)
+		}
+		break
+	}
+
+	messages := make([]llm.Message, 0, 2+len(tail)+len(history))
+	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
+	for i := len(selected) - 1; i >= 0; i-- {
+		messages = append(messages, selected[i].messages...)
+	}
+	messages = append(messages, llm.Message{Role: "user", Content: userMessage})
+	return append(messages, tail...)
+}
+
+func agentHistoryMessageGroups(history []AgentStep, toolResultLabel, omittedResult string) []agentMessageGroup {
+	fullResults := make(map[int]bool, recentAgentToolResults)
+	for i := len(history) - 1; i >= 0 && len(fullResults) < recentAgentToolResults; i-- {
+		if history[i].Role == "tool" {
+			fullResults[i] = true
+		}
+	}
+
+	lastUser := -1
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			lastUser = i
+			break
+		}
+	}
+
+	groups := make([]agentMessageGroup, 0, len(history))
+	pendingTool := -1
+	for i, step := range history {
+		switch step.Role {
+		case "user":
+			pendingTool = -1
+			if i != lastUser {
+				groups = append(groups, agentMessageGroup{messages: []llm.Message{{Role: "user", Content: step.Content}}, toolResult: -1})
+			}
+		case "assistant":
+			message := llm.Message{Role: "assistant", Content: stripAgentReasoning(step.Content)}
+			if step.ToolCall != nil {
+				tcJSON, _ := json.Marshal(step.ToolCall)
+				message.Content = fmt.Sprintf("<tool_call>\n%s\n</tool_call>", tcJSON)
+			}
+			groups = append(groups, agentMessageGroup{messages: []llm.Message{message}, toolResult: -1})
+			if step.ToolCall != nil {
+				pendingTool = len(groups) - 1
+			} else {
+				pendingTool = -1
+			}
+		case "tool":
+			result := step.ToolResult
+			if !fullResults[i] {
+				result = omittedResult
+			}
+			message := llm.Message{Role: "user", Content: fmt.Sprintf("%s\n%s", toolResultLabel, result)}
+			if pendingTool >= 0 {
+				groups[pendingTool].messages = append(groups[pendingTool].messages, message)
+				groups[pendingTool].toolResult = len(groups[pendingTool].messages) - 1
+			} else {
+				groups = append(groups, agentMessageGroup{messages: []llm.Message{message}, toolResult: 0})
+			}
+			pendingTool = -1
+		}
+	}
+	return groups
+}
+
+func agentPromptInputBudget(apiCfg *config.APIConfig) int {
+	if apiCfg == nil {
+		return 0
+	}
+	agentCfg := *apiCfg
+	agentCfg.MaxTokens = agentEffectiveMaxTokens(apiCfg)
+	return llm.PromptInputBudget(&agentCfg)
+}
+
+func boundedAgentTail(systemPrompt, userMessage string, tail []llm.Message, budget int) []llm.Message {
+	tail = append([]llm.Message(nil), tail...)
+	remaining := budget - agentMessageTokenEstimate(llm.Message{Content: systemPrompt}) - agentMessageTokenEstimate(llm.Message{Content: userMessage})
+	for len(tail) > 0 && agentMessagesTokenEstimate(tail) > remaining {
+		contentBudget := remaining - agentMessagesTokenEstimate(tail[1:])
+		if contentBudget <= 0 {
+			tail = tail[1:]
+			continue
+		}
+		tail[0].Content = truncateAgentContent(tail[0].Content, contentBudget, "\n[Previous malformed response truncated.]")
+		if tail[0].Content == "" {
+			tail = tail[1:]
+		}
+	}
+	return tail
+}
+
+func agentMessageTokenEstimate(message llm.Message) int {
+	return llm.EstimateTokensFromRunes(utf8.RuneCountInString(message.Content))
+}
+
+func agentMessagesTokenEstimate(messages []llm.Message) int {
+	total := 0
+	for _, message := range messages {
+		total += agentMessageTokenEstimate(message)
+	}
+	return total
+}
+
+func truncateAgentMessageGroup(group agentMessageGroup, budget int) (agentMessageGroup, bool) {
+	if group.toolResult < 0 || budget <= 0 {
+		return agentMessageGroup{}, false
+	}
+	fixedTokens := agentMessagesTokenEstimate(group.messages) - agentMessageTokenEstimate(group.messages[group.toolResult])
+	if fixedTokens >= budget {
+		return agentMessageGroup{}, false
+	}
+	result := truncateAgentToolResult(group.messages[group.toolResult].Content, budget-fixedTokens)
+	if result == "" {
+		return agentMessageGroup{}, false
+	}
+	group.messages = append([]llm.Message(nil), group.messages...)
+	group.messages[group.toolResult].Content = result
+	return group, true
+}
+
+func truncateAgentToolResult(content string, budget int) string {
+	return truncateAgentContent(content, budget, "\n[Tool result truncated. Read project data again only when details are required for a new operation.]")
+}
+
+func truncateAgentContent(content string, budget int, marker string) string {
+	if agentMessageTokenEstimate(llm.Message{Content: content}) <= budget {
+		return content
+	}
+	remaining := budget - agentMessageTokenEstimate(llm.Message{Content: marker})
+	if remaining <= 0 {
+		return ""
+	}
+	maxRunes := (remaining + 1) * 2 / 3
+	runes := 0
+	for i := range content {
+		if runes == maxRunes {
+			return content[:i] + marker
+		}
+		runes++
+	}
+	return content
+}
+
+func omittedAgentToolResult(language string) string {
+	if i18n.NormalizeLanguage(language) == i18n.LangEN {
+		return "[Earlier tool result omitted to control context. Read project data again only when details are required for a new operation.]"
+	}
+	return "[较早的工具结果已省略以控制上下文；仅在新操作需要详情时重新读取项目数据。]"
+}
+
+func stripAgentReasoning(content string) string {
+	for _, tag := range []string{"think", "thinking"} {
+		open, close := "<"+tag+">", "</"+tag+">"
+		for {
+			start := strings.Index(content, open)
+			if start == -1 {
+				break
+			}
+			end := strings.Index(content[start+len(open):], close)
+			if end == -1 {
+				content = content[:start]
+				break
+			}
+			content = content[:start] + content[start+len(open)+end+len(close):]
+		}
+	}
+	return strings.TrimSpace(content)
 }
 
 func callAgentAPI(ctx context.Context, apiCfg *config.APIConfig, messages []llm.Message, onChunk func(string)) (finishReason string, err error) {
