@@ -1131,20 +1131,38 @@ func getBuiltinTools() []Tool {
 
 				var results []string
 				q := strings.ToLower(params.Query)
+				matches := func(fields ...string) bool {
+					for _, field := range fields {
+						if strings.Contains(strings.ToLower(field), q) {
+							return true
+						}
+					}
+					return false
+				}
 
 				if ctx.Settings != nil {
 					for _, c := range ctx.Settings.Characters {
-						if strings.Contains(strings.ToLower(c.Name), q) || strings.Contains(strings.ToLower(c.Background), q) {
-							results = append(results, fmt.Sprintf("[角色] %s: %s", c.Name, story.Truncate(c.Background, 100)))
+						if matches(c.Name, c.Age, c.Appearance, c.Personality, c.Background, c.Motivation, c.Abilities, c.Notes) {
+							results = append(results, fmt.Sprintf("[角色] %s: %s", c.Name, story.Truncate(c.Background+" "+c.Notes, 100)))
 						}
 					}
 					for _, w := range ctx.Settings.Worldview {
-						if strings.Contains(strings.ToLower(w.Name), q) || strings.Contains(strings.ToLower(w.Description), q) {
-							results = append(results, fmt.Sprintf("[世界观] %s: %s", w.Name, story.Truncate(w.Description, 100)))
+						if matches(w.Name, w.Description, w.Tags) {
+							results = append(results, fmt.Sprintf("[世界观] %s: %s %s", w.Name, story.Truncate(w.Description, 100), w.Tags))
+						}
+					}
+					for _, o := range ctx.Settings.Organizations {
+						if matches(o.Name, o.Type, o.Description) {
+							results = append(results, fmt.Sprintf("[组织] %s: %s", o.Name, story.Truncate(o.Description, 100)))
 						}
 					}
 				}
 
+				for _, f := range ctx.State.Foreshadows {
+					if matches(f.Name, f.Description, f.Resolution) {
+						results = append(results, fmt.Sprintf("[伏笔] %s: %s", f.Name, story.Truncate(f.Description, 100)))
+					}
+				}
 				for _, ch := range ctx.State.Chapters {
 					if strings.Contains(strings.ToLower(ch.Title), q) || strings.Contains(strings.ToLower(ch.Outline), q) {
 						results = append(results, fmt.Sprintf("[章节] 第%d章《%s》: %s", ch.Num, ch.Title, story.Truncate(ch.Outline, 100)))
