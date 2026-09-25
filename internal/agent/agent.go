@@ -335,11 +335,10 @@ func truncateAgentContent(content string, budget int, marker string) string {
 	if agentMessageTokenEstimate(llm.Message{Content: content}) <= budget {
 		return content
 	}
-	remaining := budget - agentMessageTokenEstimate(llm.Message{Content: marker})
-	if remaining <= 0 {
+	maxRunes := (2*budget+1)/3 - utf8.RuneCountInString(marker)
+	if maxRunes <= 0 {
 		return ""
 	}
-	maxRunes := (remaining + 1) * 2 / 3
 	runes := 0
 	for i := range content {
 		if runes == maxRunes {
