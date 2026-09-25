@@ -31,7 +31,11 @@ func TestProjectBackupRestoreRoundtrip(t *testing.T) {
 	if err := story.SaveProgress(filepath.Join(dir, "progress.json"), state); err != nil {
 		t.Fatal(err)
 	}
-	if err := story.SaveProjectSettings(filepath.Join(dir, "settings.json"), &story.ProjectSettings{}); err != nil {
+	if err := story.SaveProjectSettings(filepath.Join(dir, "settings.json"), &story.ProjectSettings{
+		Characters: []story.Character{{ID: "c_1", Name: "Mira", Notes: "Keeps a silver key"}},
+		Worldview: []story.WorldviewEntry{{ID: "w_1", Name: "North Gate", Description: "Silver arch"}},
+		Organizations: []story.Organization{{ID: "o_1", Name: "Glass Council"}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := story.SavePostProcess(filepath.Join(dir, "postprocess.json"), story.NewProofreadState()); err != nil {
@@ -103,6 +107,11 @@ func TestProjectBackupRestoreRoundtrip(t *testing.T) {
 	}
 	if h.state.Chapters[0].Content != "Original prose" {
 		t.Fatal("restored prose missing")
+	}
+	if len(h.settings.Characters) != 1 || h.settings.Characters[0].Notes != "Keeps a silver key" ||
+		len(h.settings.Worldview) != 1 || h.settings.Worldview[0].Description != "Silver arch" ||
+		len(h.settings.Organizations) != 1 || h.settings.Organizations[0].Name != "Glass Council" {
+		t.Fatalf("restored settings missing: %+v", h.settings)
 	}
 	res := httptest.NewRecorder()
 	h.PostProjectRestore(res, httptest.NewRequest("POST", "/api/projects/restore?name=copy", bytes.NewReader(backup.Body.Bytes())))

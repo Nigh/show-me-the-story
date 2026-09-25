@@ -121,6 +121,7 @@ main.go
 - 401/403/404 为致命错误；可重试错误沿用现有指数退避。Agent 已收到流片段后失败时不得再拼接同步回退结果。
 - 每个模型请求以 `ContextBudgetTokens - MaxTokens - max(4096, 5% 上下文窗口)` 作为保守估算的输入上限；模型端点能报告更小的真实窗口时自动向下收紧配置，最终预检超限属于不可重试错误。
 - Agent 聊天会话保留完整 UI 记录；模型上下文则按实际输入预算投影，剥离明确的 reasoning 标签，并将较早工具结果替换为可重新读取的短记录；截断内容连同标记必须符合模型请求的 token 预检预算。
+- Agent 的 `search_project` 按关键词检索已加载项目的角色、世界观、组织、伏笔和章纲；字段匹配不能漏掉已持久化条目的正文信息。备份恢复后需选择新项目，助理才使用新项目的设定。
 - 提示词占位符是 `config.RenderPrompt` 的 `{{.Key}}` 字符串替换，不是 `text/template`。
 - 新增 prompt 字段时同步更新 `PromptsConfig`、中英默认模板和 `ApplyDefaults`；新增注入块或 system prompt 必须同时提供中英文。
 - Skill 包必须包含 schema v1 的 `skill.json` 及其声明的 Markdown 入口（通常为 `SKILL.md`），仅接受安全校验后的 `.md/.txt/.json`；所有 Skill 默认禁用，并按项目语言、`applies_to` 和动作类别过滤。
