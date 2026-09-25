@@ -235,3 +235,12 @@ func TestBuildAgentMessagesBoundsRetryTail(t *testing.T) {
 		t.Fatalf("prompt tokens=%d exceed budget=%d", got, budget)
 	}
 }
+
+func TestTruncateAgentContentStaysWithinBudget(t *testing.T) {
+	for budget := 1; budget <= 30; budget++ {
+		got := truncateAgentContent(strings.Repeat("x", 100), budget, ".")
+		if tokens := llm.EstimateTokensFromRunes(len(got)); tokens > budget {
+			t.Fatalf("budget=%d: truncated content uses %d tokens: %q", budget, tokens, got)
+		}
+	}
+}
