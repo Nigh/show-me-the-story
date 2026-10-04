@@ -9,6 +9,7 @@ import (
 	"showmethestory/internal/llm"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestAgentPartialStreamDoesNotAppendFallback(t *testing.T) {
@@ -131,5 +132,194 @@ func TestAgentEffectiveMaxTokens(t *testing.T) {
 	}
 	if agentEffectiveMaxTokens(&config.APIConfig{MaxTokens: 16000}) != 16000 {
 		t.Fatal("应使用用户配置的 max_tokens")
+	}
+}
+
+func TestBuildAgentMessagesBoundsHistory(t *testing.T) {
+	ctx := &AgentContext{
+		APICfg: &config.APIConfig{ContextBudgetTokens: 30000, MaxTokens: 8192},
+		Config: &config.Config{Language: "en"},
+	}
+	oldResult := strings.Repeat("old-tool-result ", 5000)
+	history := []AgentStep{
+		{Role: "user", Content: "earlier request"},
+		{Role: "assistant", Content: "<think>private chain</think>visible reply"},
+		{Role: "user", Content: "current request"},
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: oldResult},
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: "recent tool result one"},
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: "recent tool result two"},
+	}
+
+	messages := buildAgentMessages(ctx, "system", "current request", history, "[Tool result]", nil)
+	prompt := strings.Join(func() []string {
+		parts := make([]string, len(messages))
+		for i, message := range messages {
+			parts[i] = message.Content
+		}
+		return parts
+	}(), "\n")
+
+	if strings.Contains(prompt, oldResult) {
+		t.Fatal("old tool result was retained")
+	}
+	if !strings.Contains(prompt, "Earlier tool result omitted") {
+		t.Fatal("old tool result was not replaced with an omission record")
+	}
+	if strings.Contains(prompt, "<think>") || !strings.Contains(prompt, "visible reply") {
+		t.Fatalf("assistant reasoning was not stripped: %q", prompt)
+	}
+	assertAgentPromptWithinBudget(t, ctx, messages)
+}
+
+func TestBuildAgentMessagesTruncatesLatestToolResult(t *testing.T) {
+	ctx := &AgentContext{
+		APICfg: &config.APIConfig{ContextBudgetTokens: 24000, MaxTokens: 8192},
+		Config: &config.Config{Language: "en"},
+	}
+	latestResult := strings.Repeat("latest-tool-result ", 50000)
+	history := []AgentStep{
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: latestResult},
+	}
+
+	messages := buildAgentMessages(ctx, "system", "current request", history, "[Tool result]", nil)
+	prompt := strings.Join(func() []string {
+		parts := make([]string, len(messages))
+		for i, message := range messages {
+			parts[i] = message.Content
+		}
+		return parts
+	}(), "\n")
+
+	if strings.Contains(prompt, latestResult) {
+		t.Fatal("latest oversized tool result was not truncated")
+	}
+	if !strings.Contains(prompt, "[Tool result truncated.") {
+		t.Fatal("truncated tool result lacks its marker")
+	}
+	assertAgentPromptWithinBudget(t, ctx, messages)
+}
+
+func TestBuildAgentMessagesBoundsRetryTail(t *testing.T) {
+	ctx := &AgentContext{
+		APICfg: &config.APIConfig{ContextBudgetTokens: 24000, MaxTokens: 8192},
+		Config: &config.Config{Language: "en"},
+	}
+	tail := []llm.Message{
+		{Role: "assistant", Content: strings.Repeat("broken tool call ", 50000)},
+		{Role: "user", Content: "retry the malformed tool call"},
+	}
+
+	messages := buildAgentMessages(ctx, "system", "current request", nil, "[Tool result]", tail)
+	prompt := strings.Join(func() []string {
+		parts := make([]string, len(messages))
+		for i, message := range messages {
+			parts[i] = message.Content
+		}
+		return parts
+	}(), "\n")
+
+	if !strings.Contains(prompt, "retry the malformed tool call") {
+		t.Fatal("retry feedback was dropped")
+	}
+	if !strings.Contains(prompt, "[Previous malformed response truncated.]") {
+		t.Fatal("malformed response lacks its truncation marker")
+	}
+	assertAgentPromptWithinBudget(t, ctx, messages)
+}
+
+func TestBuildAgentMessagesKeepsCurrentTurnOrder(t *testing.T) {
+	ctx := &AgentContext{
+		APICfg: &config.APIConfig{ContextBudgetTokens: 24000, MaxTokens: 8192},
+		Config: &config.Config{Language: "en"},
+	}
+	tests := []struct {
+		name    string
+		history []AgentStep
+		tail    []llm.Message
+		want    []string
+	}{
+		{
+			name:    "first request",
+			history: []AgentStep{{Role: "user", Content: "create Mira"}},
+			want:    []string{"system", "create Mira"},
+		},
+		{
+			name: "consecutive tools",
+			history: []AgentStep{
+				{Role: "user", Content: "older request"},
+				{Role: "assistant", Content: "older reply"},
+				{Role: "user", Content: "create Mira"},
+				{Role: "assistant", ToolCall: &ToolCall{Name: "create_character"}},
+				{Role: "tool", ToolResult: "Mira created"},
+				{Role: "assistant", ToolCall: &ToolCall{Name: "read_character"}},
+				{Role: "tool", ToolResult: "Mira exists"},
+			},
+			want: []string{"system", "older request", "older reply", "create Mira", "<tool_call>", "Mira created", "<tool_call>", "Mira exists"},
+		},
+		{
+			name: "parse retry",
+			history: []AgentStep{
+				{Role: "user", Content: "create Mira"},
+				{Role: "assistant", ToolCall: &ToolCall{Name: "create_character"}},
+				{Role: "tool", ToolResult: "Mira created"},
+			},
+			tail: []llm.Message{{Role: "assistant", Content: "malformed call"}, {Role: "user", Content: "retry feedback"}},
+			want: []string{"system", "create Mira", "<tool_call>", "Mira created", "malformed call", "retry feedback"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages := buildAgentMessages(ctx, "system", "create Mira", tt.history, "[Tool result]", tt.tail)
+			if len(messages) != len(tt.want) {
+				t.Fatalf("messages=%v; want %d messages", messages, len(tt.want))
+			}
+			for i, want := range tt.want {
+				if !strings.Contains(messages[i].Content, want) {
+					t.Fatalf("message %d = %q; want %q", i, messages[i].Content, want)
+				}
+			}
+			assertAgentPromptWithinBudget(t, ctx, messages)
+		})
+	}
+}
+
+func TestBuildAgentMessagesBoundsCurrentToolResultAtPreflight(t *testing.T) {
+	ctx := &AgentContext{
+		APICfg: &config.APIConfig{ContextBudgetTokens: 24000, MaxTokens: 8192},
+		Config: &config.Config{Language: "en"},
+	}
+	history := []AgentStep{
+		{Role: "user", Content: "u"},
+		{Role: "assistant", ToolCall: &ToolCall{Name: "read_chapter"}},
+		{Role: "tool", ToolResult: strings.Repeat("x", 50000)},
+	}
+	messages := buildAgentMessages(ctx, "s", "u", history, "[Tool result]", nil)
+	if len(messages) != 4 || messages[1].Content != "u" || !strings.Contains(messages[3].Content, "[Tool result truncated.") {
+		t.Fatalf("current request or truncated tool result missing: %v", messages)
+	}
+	assertAgentPromptWithinBudget(t, ctx, messages)
+}
+
+func assertAgentPromptWithinBudget(t *testing.T, ctx *AgentContext, messages []llm.Message) {
+	t.Helper()
+	runes := 0
+	for _, message := range messages {
+		runes += utf8.RuneCountInString(message.Content)
+	}
+	if got, budget := llm.EstimateTokensFromRunes(runes), agentPromptInputBudget(ctx.APICfg); got > budget {
+		t.Fatalf("LLM preflight tokens=%d exceed budget=%d", got, budget)
+	}
+}
+
+func TestTruncateAgentContentStaysWithinBudget(t *testing.T) {
+	for budget := 1; budget <= 30; budget++ {
+		got := truncateAgentContent(strings.Repeat("x", 100), budget, ".")
+		if tokens := llm.EstimateTokensFromRunes(len(got)); tokens > budget {
+			t.Fatalf("budget=%d: truncated content uses %d tokens: %q", budget, tokens, got)
+		}
 	}
 }
