@@ -189,35 +189,45 @@ type agentMessageGroup struct {
 func buildAgentMessages(ctx *AgentContext, systemPrompt, userMessage string, history []AgentStep, toolResultLabel string, tail []llm.Message) []llm.Message {
 	budget := agentPromptInputBudget(ctx.APICfg)
 	tail = boundedAgentTail(systemPrompt, userMessage, tail, budget)
-	baseTokens := agentMessageTokenEstimate(llm.Message{Content: systemPrompt}) +
-		agentMessageTokenEstimate(llm.Message{Content: userMessage}) +
-		agentMessagesTokenEstimate(tail)
-	groups := agentHistoryMessageGroups(history, toolResultLabel, omittedAgentToolResult(ctx.Config.Language))
-	selected := make([]agentMessageGroup, 0, len(groups))
+	baseRunes := utf8.RuneCountInString(systemPrompt) + utf8.RuneCountInString(userMessage) + agentMessagesRuneCount(tail)
+	maxRunes := (2*budget + 1) / 3
+	groups, currentUserGroup := agentHistoryMessageGroups(history, toolResultLabel, omittedAgentToolResult(ctx.Config.Language))
+	type selectedGroup struct {
+		index int
+		group agentMessageGroup
+	}
+	selected := make([]selectedGroup, 0, len(groups))
 
 	for i := len(groups) - 1; i >= 0; i-- {
 		group := groups[i]
-		if groupTokens := agentMessagesTokenEstimate(group.messages); baseTokens+groupTokens <= budget {
-			selected = append(selected, group)
-			baseTokens += groupTokens
+		if groupRunes := agentMessagesRuneCount(group.messages); baseRunes+groupRunes <= maxRunes {
+			selected = append(selected, selectedGroup{i, group})
+			baseRunes += groupRunes
 			continue
 		}
-		if group, ok := truncateAgentMessageGroup(group, budget-baseTokens); ok {
-			selected = append(selected, group)
+		if group, ok := truncateAgentMessageGroup(group, maxRunes-baseRunes); ok {
+			selected = append(selected, selectedGroup{i, group})
 		}
 		break
 	}
 
 	messages := make([]llm.Message, 0, 2+len(tail)+len(history))
 	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
+	addedCurrentUser := false
 	for i := len(selected) - 1; i >= 0; i-- {
-		messages = append(messages, selected[i].messages...)
+		if !addedCurrentUser && selected[i].index >= currentUserGroup {
+			messages = append(messages, llm.Message{Role: "user", Content: userMessage})
+			addedCurrentUser = true
+		}
+		messages = append(messages, selected[i].group.messages...)
 	}
-	messages = append(messages, llm.Message{Role: "user", Content: userMessage})
+	if !addedCurrentUser {
+		messages = append(messages, llm.Message{Role: "user", Content: userMessage})
+	}
 	return append(messages, tail...)
 }
 
-func agentHistoryMessageGroups(history []AgentStep, toolResultLabel, omittedResult string) []agentMessageGroup {
+func agentHistoryMessageGroups(history []AgentStep, toolResultLabel, omittedResult string) ([]agentMessageGroup, int) {
 	fullResults := make(map[int]bool, recentAgentToolResults)
 	for i := len(history) - 1; i >= 0 && len(fullResults) < recentAgentToolResults; i-- {
 		if history[i].Role == "tool" {
@@ -234,12 +244,15 @@ func agentHistoryMessageGroups(history []AgentStep, toolResultLabel, omittedResu
 	}
 
 	groups := make([]agentMessageGroup, 0, len(history))
+	currentUserGroup := -1
 	pendingTool := -1
 	for i, step := range history {
 		switch step.Role {
 		case "user":
 			pendingTool = -1
-			if i != lastUser {
+			if i == lastUser {
+				currentUserGroup = len(groups)
+			} else {
 				groups = append(groups, agentMessageGroup{messages: []llm.Message{{Role: "user", Content: step.Content}}, toolResult: -1})
 			}
 		case "assistant":
@@ -269,7 +282,10 @@ func agentHistoryMessageGroups(history []AgentStep, toolResultLabel, omittedResu
 			pendingTool = -1
 		}
 	}
-	return groups
+	if currentUserGroup < 0 {
+		currentUserGroup = len(groups)
+	}
+	return groups, currentUserGroup
 }
 
 func agentPromptInputBudget(apiCfg *config.APIConfig) int {
@@ -283,14 +299,14 @@ func agentPromptInputBudget(apiCfg *config.APIConfig) int {
 
 func boundedAgentTail(systemPrompt, userMessage string, tail []llm.Message, budget int) []llm.Message {
 	tail = append([]llm.Message(nil), tail...)
-	remaining := budget - agentMessageTokenEstimate(llm.Message{Content: systemPrompt}) - agentMessageTokenEstimate(llm.Message{Content: userMessage})
-	for len(tail) > 0 && agentMessagesTokenEstimate(tail) > remaining {
-		contentBudget := remaining - agentMessagesTokenEstimate(tail[1:])
-		if contentBudget <= 0 {
+	remainingRunes := (2*budget+1)/3 - utf8.RuneCountInString(systemPrompt) - utf8.RuneCountInString(userMessage)
+	for len(tail) > 0 && agentMessagesRuneCount(tail) > remainingRunes {
+		contentRunes := remainingRunes - agentMessagesRuneCount(tail[1:])
+		if contentRunes <= 0 {
 			tail = tail[1:]
 			continue
 		}
-		tail[0].Content = truncateAgentContent(tail[0].Content, contentBudget, "\n[Previous malformed response truncated.]")
+		tail[0].Content = truncateAgentContent(tail[0].Content, llm.EstimateTokensFromRunes(contentRunes), "\n[Previous malformed response truncated.]")
 		if tail[0].Content == "" {
 			tail = tail[1:]
 		}
@@ -302,23 +318,23 @@ func agentMessageTokenEstimate(message llm.Message) int {
 	return llm.EstimateTokensFromRunes(utf8.RuneCountInString(message.Content))
 }
 
-func agentMessagesTokenEstimate(messages []llm.Message) int {
+func agentMessagesRuneCount(messages []llm.Message) int {
 	total := 0
 	for _, message := range messages {
-		total += agentMessageTokenEstimate(message)
+		total += utf8.RuneCountInString(message.Content)
 	}
 	return total
 }
 
-func truncateAgentMessageGroup(group agentMessageGroup, budget int) (agentMessageGroup, bool) {
-	if group.toolResult < 0 || budget <= 0 {
+func truncateAgentMessageGroup(group agentMessageGroup, availableRunes int) (agentMessageGroup, bool) {
+	if group.toolResult < 0 || availableRunes <= 0 {
 		return agentMessageGroup{}, false
 	}
-	fixedTokens := agentMessagesTokenEstimate(group.messages) - agentMessageTokenEstimate(group.messages[group.toolResult])
-	if fixedTokens >= budget {
+	fixedRunes := agentMessagesRuneCount(group.messages) - utf8.RuneCountInString(group.messages[group.toolResult].Content)
+	if fixedRunes >= availableRunes {
 		return agentMessageGroup{}, false
 	}
-	result := truncateAgentToolResult(group.messages[group.toolResult].Content, budget-fixedTokens)
+	result := truncateAgentToolResult(group.messages[group.toolResult].Content, llm.EstimateTokensFromRunes(availableRunes-fixedRunes))
 	if result == "" {
 		return agentMessageGroup{}, false
 	}
