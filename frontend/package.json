@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "check": "node src/lib/projectRestore.check.js && node src/lib/forceGraphLayout.check.js && node src/lib/sse.check.js && node src/lib/projectBackup.check.js",
+    "check": "node src/lib/projectRestore.check.js && node src/lib/forceGraphLayout.check.js && node src/lib/sse.check.js && node src/lib/projectBackup.check.js && node src/lib/i18n.check.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

@@ -276,6 +276,12 @@ export default {
   'log.save_session_failed': 'Failed to save chat session: {0}',
   'log.chat_cancelled': 'Assistant chat cancelled',
   'log.chat_failed': 'Assistant reply failed: {0}',
+  "log.agent_step_messages": "[Agent] Step {0}/{1}: {2} messages: {3}",
+  "log.agent_step_api_failed": "[Agent] Step {0}: API call failed: {1}",
+  "log.agent_step_response": "[Agent] Step {0}: API response {1} characters (finish_reason={2})",
+  "log.agent_step_final": "[Agent] Step {0}: No tool call detected; returning final reply. Preview: {1}",
+  "log.agent_step_tool": "[Agent] Step {0}: Tool call detected → {1}",
+  "log.agent_step_tool_done": "[Agent] Step {0}: Tool {1} completed. Result: {2}",
   'log.agent_output_truncated': 'Assistant output truncated at max_tokens={0} — tool call aborted',
   'log.agent_tool_call_parse_retry': 'Tool-call parse failed (finish_reason={0}, {1} chars) — asking model to diagnose and retry once',
   'log.agent_tool_call_parse_failed': 'Tool-call parse failed again after retry — aborted',
@@ -842,6 +848,7 @@ export default {
   'log.skill_optimization_failed': 'Skill AI optimization failed: {0}',
 
   // ---- Chat panel ----
+  'chat.session.defaultTitle': 'New chat',
   'chat.session.placeholder': 'No session selected',
   'chat.session.collapse': 'Collapse',
   'chat.session.menu': 'Sessions',

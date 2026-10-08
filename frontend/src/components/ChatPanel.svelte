@@ -252,7 +252,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform" class:rotate-180={showSessionList} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
     </button>
     <span class="text-sm text-base-content/65 truncate flex-1">
-      {$currentChatSession?.title || $t('chat.session.placeholder')}
+      {$currentChatSession && msgs.length === 0 ? $t('chat.session.defaultTitle') : $currentChatSession?.title || $t('chat.session.placeholder')}
     </span>
     {#if $taskRunning}
       <button class="btn btn-error btn-xs gap-1" on:click={stopTask}>{$t('chat.session.stop')}</button>

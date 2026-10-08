@@ -166,6 +166,10 @@
   }
 </script>
 
+<svelte:head>
+  <title>{$t('app.title')}</title>
+</svelte:head>
+
 <svelte:window on:keydown={handleShellKeydown} />
 
 <div class="app-shell flex flex-col bg-base-300 text-base-content overflow-hidden">
