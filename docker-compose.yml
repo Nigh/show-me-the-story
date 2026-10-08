@@ -1,0 +1,9 @@
+services:
+  smts:
+    # Container is currently not published, so we build in the stack.
+    build: .
+    ports:
+      - 48090:48090 # Host-Port : Container-Port
+    volumes:
+      # the storys directory is already in the .gitignore but you can use another directory if desired
+      - ./storys:/app/stories # Host-Directory : Container Directory
