@@ -457,16 +457,16 @@ var errorCatalog = map[string]map[string]string{
 // be language-aware so an English project doesn't get a Chinese system role.
 var systemPrompts = map[string]map[string]string{
 	"outline_editor_json": {
-		LangZH: "你是一位专业的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。",
-		LangEN: "You are a professional novel-planning editor. Output strict JSON exactly as requested — no extra prose, no markdown code fences.",
+		LangZH: "你是一位专业的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。JSON 字符串中的双引号、反斜杠和换行必须正确转义。",
+		LangEN: "You are a professional novel-planning editor. Output strict JSON exactly as requested — no extra prose, no markdown code fences. Correctly escape double quotes, backslashes, and newlines inside JSON strings.",
 	},
 	"outline_editor_locked_json": {
-		LangZH: "你是一位小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。已锁定的章节内容不可修改。",
-		LangEN: "You are a novel-planning editor. Output strict JSON exactly as requested — no extra prose, no markdown code fences. Locked chapters may not be modified.",
+		LangZH: "你是一位小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。JSON 字符串中的双引号、反斜杠和换行必须正确转义。已锁定的章节内容不可修改。",
+		LangEN: "You are a novel-planning editor. Output strict JSON exactly as requested — no extra prose, no markdown code fences. Correctly escape double quotes, backslashes, and newlines inside JSON strings. Locked chapters may not be modified.",
 	},
 	"outline_editor_brief_json": {
-		LangZH: "你是一位严谨的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字。",
-		LangEN: "You are a strict novel-planning editor. Output strict JSON exactly as requested — no extra prose.",
+		LangZH: "你是一位严谨的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字。JSON 字符串中的双引号、反斜杠和换行必须正确转义。",
+		LangEN: "You are a strict novel-planning editor. Output strict JSON exactly as requested — no extra prose. Correctly escape double quotes, backslashes, and newlines inside JSON strings.",
 	},
 	"summary_analyst": {
 		LangZH: "你是一位精准的小说叙事状态分析师。",
