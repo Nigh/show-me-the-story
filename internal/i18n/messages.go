@@ -243,6 +243,30 @@ var messageCatalog = map[string]map[string]string{
 		LangZH: "助理回复失败: %v",
 		LangEN: "Assistant reply failed: %v",
 	},
+	"log.agent_step_messages": {
+		LangZH: "[Agent] 步骤 %d/%d: 消息 %d 条: %v",
+		LangEN: "[Agent] Step %d/%d: %d messages: %v",
+	},
+	"log.agent_step_api_failed": {
+		LangZH: "[Agent] 步骤 %d: API 调用失败: %v",
+		LangEN: "[Agent] Step %d: API call failed: %v",
+	},
+	"log.agent_step_response": {
+		LangZH: "[Agent] 步骤 %d: API 响应 %d 字符 (finish_reason=%s)",
+		LangEN: "[Agent] Step %d: API response %d characters (finish_reason=%s)",
+	},
+	"log.agent_step_final": {
+		LangZH: "[Agent] 步骤 %d: 未检测到工具调用，作为最终回复返回。内容预览: %s",
+		LangEN: "[Agent] Step %d: No tool call detected; returning final reply. Preview: %s",
+	},
+	"log.agent_step_tool": {
+		LangZH: "[Agent] 步骤 %d: 检测到工具调用 → %s",
+		LangEN: "[Agent] Step %d: Tool call detected → %s",
+	},
+	"log.agent_step_tool_done": {
+		LangZH: "[Agent] 步骤 %d: 工具 %s 执行完成，结果: %s",
+		LangEN: "[Agent] Step %d: Tool %s completed. Result: %s",
+	},
 	"log.agent_output_truncated": {
 		LangZH: "助理输出因 max_tokens=%d 被截断，工具调用已中止",
 		LangEN: "Assistant output truncated at max_tokens=%d — tool call aborted",

@@ -27,6 +27,8 @@ Extract a release, start the executable, and open `http://localhost:48090`. Clos
 
 The project name identifies its directory; the novel title identifies the work. They can differ. Choose Chinese or English when creating the project. Project language determines prompts, prose, and applicable skills and should not be changed after creation. You can switch the interface language independently.
 
+The browser title and empty chat title follow the interface language. Chat titles after the first message keep the user’s text. Known limitation ([#139](https://github.com/Nigh/show-me-the-story/issues/139)): switching language does not retranslate cached logs, task names, retry labels, or immediate tool results; logs and immediate tool results keep using the language captured when the SSE connection opened. Reloading opens a new connection using the interface language at startup.
+
 Data defaults to the working directory at launch. To use a fixed location, pass an existing directory and verify the startup log. If the port is occupied, set `PORT`, for example in PowerShell:
 
 ```powershell

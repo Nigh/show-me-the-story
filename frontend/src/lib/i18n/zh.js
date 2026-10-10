@@ -280,6 +280,12 @@ export default {
   'log.save_session_failed': '保存会话失败: {0}',
   'log.chat_cancelled': '助理对话已取消',
   'log.chat_failed': '助理回复失败: {0}',
+  "log.agent_step_messages": "[Agent] 步骤 {0}/{1}: 消息 {2} 条: {3}",
+  "log.agent_step_api_failed": "[Agent] 步骤 {0}: API 调用失败: {1}",
+  "log.agent_step_response": "[Agent] 步骤 {0}: API 响应 {1} 字符 (finish_reason={2})",
+  "log.agent_step_final": "[Agent] 步骤 {0}: 未检测到工具调用，作为最终回复返回。内容预览: {1}",
+  "log.agent_step_tool": "[Agent] 步骤 {0}: 检测到工具调用 → {1}",
+  "log.agent_step_tool_done": "[Agent] 步骤 {0}: 工具 {1} 执行完成，结果: {2}",
   'log.agent_output_truncated': '助理输出因 max_tokens={0} 被截断，工具调用已中止',
   'log.agent_tool_call_parse_retry': '工具调用解析失败（finish_reason={0}，{1} 字符），已要求模型诊断并重试一次',
   'log.agent_tool_call_parse_failed': '工具调用解析失败且重试后仍无效，已中止',
@@ -846,6 +852,7 @@ export default {
   'log.skill_optimization_failed': 'Skill AI 优化失败：{0}',
 
   // ---- Chat panel ----
+  'chat.session.defaultTitle': '新会话',
   'chat.session.placeholder': '未选择会话',
   'chat.session.collapse': '收起',
   'chat.session.menu': '会话列表',

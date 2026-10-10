@@ -48,7 +48,7 @@ The [first-story walkthrough](docs/guide.en.md#first-story) explains the input, 
 
 ## Features
 
-- Multiple projects; Chinese and English writing with independently switchable UI language.
+- Multiple projects; Chinese and English writing with independently switchable UI language. Browser and empty chat titles follow the UI language; cached status translations have [known limitations](docs/guide.en.md#setup).
 - Batch outlines, long-term direction, ending intent, and planning reviews.
 - Characters, worldview, organizations, relationship graphs, and story knowledge.
 - Chapter drafting, review, paragraph editing, targeted revision, and optional auto-confirm.

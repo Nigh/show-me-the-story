@@ -78,7 +78,7 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 			for _, m := range messages {
 				roleSeq = append(roleSeq, fmt.Sprintf("%s(%d)", m.Role, len([]rune(m.Content))))
 			}
-			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d/%d: 消息 %d 条: %v", step+1, maxSteps, len(messages), roleSeq))
+			ctx.Logger.InfoKey("log.agent_step_messages", step+1, maxSteps, len(messages), roleSeq)
 		}
 
 		fullResp := ""
@@ -87,13 +87,13 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 		})
 		if err != nil {
 			if ctx.Logger != nil {
-				ctx.Logger.Error(fmt.Sprintf("[Agent] 步骤 %d: API 调用失败: %v", step+1, err))
+				ctx.Logger.ErrorKey("log.agent_step_api_failed", step+1, err)
 			}
 			return "", history, agentErr(ctx, "agent.api_failed", err)
 		}
 
 		if ctx.Logger != nil {
-			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: API 响应 %d 字符 (finish_reason=%s)", step+1, len(fullResp), finishReason))
+			ctx.Logger.InfoKey("log.agent_step_response", step+1, len(fullResp), finishReason)
 		}
 
 		toolCall := parseToolCall(fullResp)
@@ -131,14 +131,14 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 				if len([]rune(preview)) > 200 {
 					preview = string([]rune(preview)[:200]) + "..."
 				}
-				ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 未检测到工具调用，作为最终回复返回。内容预览: %s", step+1, preview))
+				ctx.Logger.InfoKey("log.agent_step_final", step+1, preview)
 			}
 			history = append(history, AgentStep{Role: "assistant", Content: fullResp})
 			return fullResp, history, nil
 		}
 
 		if ctx.Logger != nil {
-			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 检测到工具调用 → %s", step+1, toolCall.Name))
+			ctx.Logger.InfoKey("log.agent_step_tool", step+1, toolCall.Name)
 		}
 
 		// 保存到历史时，剥离 <tool_call> 标签，只保留工具调用结构。
@@ -157,7 +157,7 @@ func RunAgentLoop(goCtx context.Context, ctx *AgentContext, userMessage string, 
 			if len([]rune(resultPreview)) > 100 {
 				resultPreview = string([]rune(resultPreview)[:100]) + "..."
 			}
-			ctx.Logger.Info(fmt.Sprintf("[Agent] 步骤 %d: 工具 %s 执行完成，结果: %s", step+1, toolCall.Name, resultPreview))
+			ctx.Logger.InfoKey("log.agent_step_tool_done", step+1, toolCall.Name, resultPreview)
 		}
 
 		history = append(history, AgentStep{
@@ -1488,7 +1488,7 @@ func getBuiltinTools() []Tool {
 					ctx.StartAsync("settings_reconciliation", func(goCtx context.Context) error {
 						err := story.ReconcileSettingsAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, newSettings, ctx.Settings, ctx.ProgressPath, ctx.CfgPath, ctx.Logger)
 						if err != nil {
-							ctx.Logger.Error(fmt.Sprintf("设定协调失败: %v", err))
+							ctx.Logger.ErrorKey("log.settings_reconcile_failed", err)
 						}
 						return err
 					})
@@ -1563,7 +1563,7 @@ func getBuiltinTools() []Tool {
 				ctx.StartAsync("outline_revision", func(goCtx context.Context) error {
 					err := story.ReviseOutlineAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.Settings, ctx.ProgressPath, ctx.CfgPath, feedback, ctx.Logger)
 					if err != nil {
-						ctx.Logger.Error(fmt.Sprintf("大纲修订失败: %v", err))
+						ctx.Logger.ErrorKey("log.outline_revise_failed", err)
 					}
 					return err
 				})
@@ -1634,7 +1634,7 @@ func getBuiltinTools() []Tool {
 				ctx.StartAsync("chapter_generation", func(goCtx context.Context) error {
 					err := story.GenerateChapterAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, ctx.Settings, ctx.Skills, ctx.Logger)
 					if err != nil {
-						ctx.Logger.Error(fmt.Sprintf("章节创作失败: %v", err))
+						ctx.Logger.ErrorKey("log.chapter_write_failed", err)
 					}
 					return err
 				})
@@ -1748,7 +1748,7 @@ func getBuiltinTools() []Tool {
 						err = story.ReviseSpecificChapterAction(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.ProgressPath, chNum, feedback, ctx.Settings, ctx.Logger)
 					}
 					if err != nil {
-						ctx.Logger.Error(fmt.Sprintf("章节修订失败: %v", err))
+						ctx.Logger.ErrorKey("log.chapter_revise_failed", err)
 					}
 					return err
 				})
@@ -2044,10 +2044,10 @@ func getBuiltinTools() []Tool {
 				ctx.StartAsync("foreshadow_suggest", func(goCtx context.Context) error {
 					suggestions, err := story.SuggestForeshadows(goCtx, ctx.APICfg, ctx.Config, ctx.State, ctx.Logger)
 					if err != nil {
-						ctx.Logger.Error(fmt.Sprintf("伏笔建议生成失败: %v", err))
+						ctx.Logger.ErrorKey("log.foreshadow_suggest_failed", err)
 						return err
 					}
-					ctx.Logger.Success(fmt.Sprintf("伏笔建议生成完成，共 %d 条", len(suggestions)))
+					ctx.Logger.SuccessKey("log.foreshadow_suggest_done", len(suggestions))
 					ctx.Logger.ForeshadowSuggestions(suggestions)
 					return nil
 				})
@@ -2235,7 +2235,7 @@ func getBuiltinTools() []Tool {
 				}
 				// 原地清空，保证 Handlers 持有的同一指针也被重置
 				*ctx.State = story.Progress{Phase: "outline"}
-				ctx.Logger.Success("进度已重置。")
+				ctx.Logger.SuccessKey("agent.progress_reset")
 				return agentMsg(ctx, "agent.progress_reset"), nil
 			},
 		},
