@@ -124,6 +124,7 @@ main.go
 - Agent 的 `search_project` 按关键词检索已加载项目的角色、世界观、组织、伏笔和章纲；字段匹配不能漏掉已持久化条目的正文信息。备份恢复后需选择新项目，助理才使用新项目的设定。
 - 提示词占位符是 `config.RenderPrompt` 的 `{{.Key}}` 字符串替换，不是 `text/template`。
 - 新增 prompt 字段时同步更新 `PromptsConfig`、中英默认模板和 `ApplyDefaults`；新增注入块或 system prompt 必须同时提供中英文。
+- 大纲生成与调整的中英系统提示词明确要求正确转义 JSON 字符串中的双引号、反斜杠和换行，不依赖用户自定义模板提供该约束。
 - Skill 包必须包含 schema v1 的 `skill.json` 及其声明的 Markdown 入口（通常为 `SKILL.md`），仅接受安全校验后的 `.md/.txt/.json`；所有 Skill 默认禁用，并按项目语言、`applies_to` 和动作类别过滤。
 - 内置 Skill 位于 `internal/story/embeds/skills/`，修改后需要重新编译。
 
