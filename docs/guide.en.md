@@ -50,6 +50,8 @@ Enter and save these fields in Configuration:
 | Context budget | The actual model window; a larger number does not increase the model’s capacity |
 | Timeout | Allow enough time for long chapter generation |
 
+The context budget is the total model window, not the output limit. The app reserves Maximum output tokens and a safety margin (at least 4,096 tokens) from that window before accepting prompt text. For example, a 32,768-token window with 8,192 output tokens leaves at most 20,480 prompt tokens after the minimum margin. Set the context budget to the model server's real window, and set Maximum output tokens separately to a value that server supports.
+
 A bare domain normally receives `/v1/chat/completions`; an existing path generally receives `/chat/completions`. A complete endpoint can be used directly. Connection testing uses a short request. Passing it does not verify long-output limits, context capacity, or a suitable timeout. Save the configuration after testing.
 
 API configuration is shared across projects. Changing it affects future calls in every project. Drafting, checks, summaries, revisions, planning, and assistant operations can incur charges. Generating one chapter usually involves several requests.
