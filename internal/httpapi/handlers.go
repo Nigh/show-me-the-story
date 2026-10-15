@@ -368,6 +368,27 @@ func (h *Handlers) PutAPIConfig(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, h.apiCfg)
 }
 
+func (h *Handlers) PostAPIModels(w http.ResponseWriter, r *http.Request) {
+	if h.rejectIfTaskRunning(w, r) {
+		return
+	}
+	var cfg config.APIConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err)
+		return
+	}
+	if strings.TrimSpace(cfg.BaseURL) == "" {
+		h.writeErrorReq(w, r, http.StatusBadRequest, "api_models_failed", "API base URL is required")
+		return
+	}
+	models, err := llm.FetchModels(r.Context(), &cfg)
+	if err != nil {
+		h.writeErrorReq(w, r, http.StatusBadGateway, "api_models_failed", err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, models)
+}
+
 func (h *Handlers) PostAPITest(w http.ResponseWriter, r *http.Request) {
 	if h.rejectIfTaskRunning(w, r) {
 		return
