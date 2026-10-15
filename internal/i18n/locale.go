@@ -458,16 +458,16 @@ var errorCatalog = map[string]map[string]string{
 // be language-aware so an English project doesn't get a Chinese system role.
 var systemPrompts = map[string]map[string]string{
 	"outline_editor_json": {
-		LangZH: "你是一位专业的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。JSON 字符串中的双引号、反斜杠和换行必须正确转义。",
-		LangEN: "You are a professional novel-planning editor. Output strict JSON exactly as requested — no extra prose, no markdown code fences. Correctly escape double quotes, backslashes, and newlines inside JSON strings.",
+		LangZH: "你是一位专业的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。JSON 字符串中的双引号、反斜杠和换行必须正确转义。章节 title 字段只写章名，不含章号、「第 N 章」或「Chapter N」前缀，也不加包裹章名的引号。",
+		LangEN: "You are a professional novel-planning editor. Output strict JSON exactly as requested — no extra prose, no markdown code fences. Correctly escape double quotes, backslashes, and newlines inside JSON strings. Chapter title fields must contain only the chapter name, without chapter numbers, a \"Chapter N\" or \"第 N 章\" prefix, or surrounding quotation marks.",
 	},
 	"outline_editor_locked_json": {
-		LangZH: "你是一位小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。JSON 字符串中的双引号、反斜杠和换行必须正确转义。已锁定的章节内容不可修改。",
-		LangEN: "You are a novel-planning editor. Output strict JSON exactly as requested — no extra prose, no markdown code fences. Correctly escape double quotes, backslashes, and newlines inside JSON strings. Locked chapters may not be modified.",
+		LangZH: "你是一位小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字或markdown代码块标记。JSON 字符串中的双引号、反斜杠和换行必须正确转义。章节 title 字段只写章名，不含章号、「第 N 章」或「Chapter N」前缀，也不加包裹章名的引号。已锁定的章节内容不可修改。",
+		LangEN: "You are a novel-planning editor. Output strict JSON exactly as requested — no extra prose, no markdown code fences. Correctly escape double quotes, backslashes, and newlines inside JSON strings. Chapter title fields must contain only the chapter name, without chapter numbers, a \"Chapter N\" or \"第 N 章\" prefix, or surrounding quotation marks. Locked chapters may not be modified.",
 	},
 	"outline_editor_brief_json": {
-		LangZH: "你是一位严谨的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字。JSON 字符串中的双引号、反斜杠和换行必须正确转义。",
-		LangEN: "You are a strict novel-planning editor. Output strict JSON exactly as requested — no extra prose. Correctly escape double quotes, backslashes, and newlines inside JSON strings.",
+		LangZH: "你是一位严谨的小说策划编辑。请严格按照要求的JSON格式输出，不要添加任何额外文字。JSON 字符串中的双引号、反斜杠和换行必须正确转义。章节 title 字段只写章名，不含章号、「第 N 章」或「Chapter N」前缀，也不加包裹章名的引号。",
+		LangEN: "You are a strict novel-planning editor. Output strict JSON exactly as requested — no extra prose. Correctly escape double quotes, backslashes, and newlines inside JSON strings. Chapter title fields must contain only the chapter name, without chapter numbers, a \"Chapter N\" or \"第 N 章\" prefix, or surrounding quotation marks.",
 	},
 	"summary_analyst": {
 		LangZH: "你是一位精准的小说叙事状态分析师。",
