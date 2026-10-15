@@ -1,5 +1,8 @@
 // English UI strings. Mirror of zh.js. Missing keys fall back to zh.
 export default {
+  "writing.restart.button": "Restart chapter",
+  "writing.restart.confirm": "Clear chapter {num} prose and summary and return it to pending? The outline is kept. Facts sourced only from this chapter will be removed; other sources and author settings are kept. Derived setting changes may need review. This cannot be undone; make a project backup first.",
+  "writing.restart.done": "Chapter {num} reset; ready to generate again",
  "task.knowledge_sync": "Syncing facts and settings",
  "task.planning_review": "Planning review",
  "task.proofread_analyze": "Proofreading analysis",

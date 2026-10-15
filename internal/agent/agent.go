@@ -1650,6 +1650,9 @@ func getBuiltinTools() []Tool {
 					return "", agentErr(ctx, "phase_not_writing")
 				}
 				if err := story.ConfirmChapterAction(ctx.State, ctx.ProgressPath); err != nil {
+					if err == story.ErrEmptyChapter {
+						return "", agentErr(ctx, "chapter_confirm_empty")
+					}
 					return "", err
 				}
 				ch := ctx.State.Chapters[ctx.State.CurrentChapterIndex-1]
@@ -1778,7 +1781,7 @@ func getBuiltinTools() []Tool {
 				if msg := requireConfirm(ctx, args, fmt.Sprintf("清除第 %d 章正文（写作前沿）", targetNum)); msg != "" {
 					return msg, nil
 				}
-				num, err := story.DeleteFrontierChapter(ctx.State, ctx.ProjectDir)
+				num, err := story.DeleteFrontierChapter(ctx.State, ctx.ProgressPath)
 				if err != nil {
 					switch err {
 					case story.ErrWritingChapterCannotDelete:
@@ -1786,11 +1789,8 @@ func getBuiltinTools() []Tool {
 					case story.ErrDeleteFrontierUnavailable:
 						return "", agentErr(ctx, "delete_frontier_unavailable")
 					default:
-						return "", agentErr(ctx, "no_chapters_to_delete")
+						return "", fmt.Errorf("%s: %w", agentMsg(ctx, "save_progress_failed", err), err)
 					}
-				}
-				if err := story.SaveProgress(ctx.ProgressPath, ctx.State); err != nil {
-					return "", agentErr(ctx, "save_progress_failed", err)
 				}
 				ctx.Logger.SuccessKey("log.chapter_deleted", num)
 				return agentMsg(ctx, "agent.chapter_deleted", num), nil

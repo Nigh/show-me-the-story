@@ -349,6 +349,7 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "没有启用的润色技能，请先在技能管理页启用 polish 类技能",
 		LangEN: "No polish skill enabled; enable a polish-type skill on the Skills page first",
 	},
+	"chapter_confirm_empty": {LangZH: "章节正文为空，请重新生成后再确认", LangEN: "Chapter prose is empty; regenerate before accepting"},
 	"chapter_content_empty": {
 		LangZH: "章节内容为空，无法润色",
 		LangEN: "Chapter content is empty; cannot polish",
