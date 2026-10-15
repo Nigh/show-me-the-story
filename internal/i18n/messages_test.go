@@ -28,3 +28,20 @@ func TestAgentStepMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestOutlineTitlePromptConstraints(t *testing.T) {
+	for _, key := range []string{"outline_editor_json", "outline_editor_locked_json", "outline_editor_brief_json"} {
+		for _, lang := range []string{LangZH, LangEN} {
+			prompt := SystemPromptFor(lang, key)
+			required := []string{"title", "章号", "引号"}
+			if lang == LangEN {
+				required = []string{"title", "without chapter numbers", "surrounding quotation marks"}
+			}
+			for _, part := range required {
+				if !strings.Contains(prompt, part) {
+					t.Errorf("%s/%s missing %q", key, lang, part)
+				}
+			}
+		}
+	}
+}
