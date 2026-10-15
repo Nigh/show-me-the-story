@@ -1,6 +1,12 @@
 // Chinese UI strings. Add a key here whenever a hardcoded Chinese phrase
 // is replaced with $t('...') in a Svelte component.
 export default {
+  "config.api.modelsLoad": "获取模型",
+  "config.api.modelsLoading": "获取中…",
+  "config.api.modelsHint": "从下拉建议中选择，或直接输入任意模型名称。连接测试成功后也会获取模型列表。",
+  "config.api.modelWindow": "服务端报告的上下文窗口：{n} tokens（输入与输出总量）。",
+  "config.api.modelWindowUnknown": "未获取到此模型的上下文窗口，请向模型服务商确认。",
+  "config.api.modelsEmpty": "端点返回的模型列表为空，请手动输入模型名称。",
   "writing.restart.button": "从头重写",
   "writing.restart.confirm": "清空第 {num} 章正文和摘要并恢复待写状态？章纲保留。仅来自本章的事实会删除，其他来源和作者设定保留；派生设定变化可能需要重新核对。此操作不可撤销，建议先备份项目。",
   "writing.restart.done": "第 {num} 章已重置，可以重新生成",

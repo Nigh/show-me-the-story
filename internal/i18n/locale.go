@@ -253,6 +253,7 @@ var errorCatalog = map[string]map[string]string{
 		LangZH: "序列化API配置失败: %s",
 		LangEN: "Failed to serialise API config: %s",
 	},
+	"api_models_failed": {LangZH: "获取模型列表失败，可继续手动输入模型名称：%s", LangEN: "Could not load models; you can still enter a model name manually: %s"},
 	"api_test_timeout": {
 		LangZH: "连接超时（15秒）",
 		LangEN: "Connection timed out (15s)",

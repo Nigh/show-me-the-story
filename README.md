@@ -23,6 +23,8 @@ You decide the story’s rules and direction. Those rules may be realistic or en
 1. Download a release for your system, extract it into a directory you intend to keep, and launch it.
 2. Open `http://localhost:48090` and create a Chinese or English project.
 3. In Configuration, enter the API address, model identifier, and API key. Test the connection and save. Use the exact model identifier supplied by your provider.
+
+The API model field accepts both dropdown suggestions and custom names. Use **Load models**, or test the connection successfully, to retrieve models from the configured endpoint; unavailable model lists do not prevent manual entry.
 4. Save the genre, target chapter length, style, and point of view. Add essential characters and worldview entries.
 5. In Outline, enter a synopsis and chapter count (1–36) for the first batch. Generate and review it. If the page offers Confirm outline, confirm before writing.
 6. In Writing, generate one chapter, read and revise it, then accept it before continuing.

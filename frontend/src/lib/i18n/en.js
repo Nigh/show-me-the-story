@@ -1,5 +1,11 @@
 // English UI strings. Mirror of zh.js. Missing keys fall back to zh.
 export default {
+  "config.api.modelsLoad": "Load models",
+  "config.api.modelsLoading": "Loading…",
+  "config.api.modelsHint": "Choose a suggested model or type any model name. Models are also loaded after a successful connection test.",
+  "config.api.modelWindow": "Provider-reported context window: {n} tokens (total input and output).",
+  "config.api.modelWindowUnknown": "Context window not reported for this model; check your provider.",
+  "config.api.modelsEmpty": "The endpoint returned no models. Enter a model name manually.",
   "writing.restart.button": "Restart chapter",
   "writing.restart.confirm": "Clear chapter {num} prose and summary and return it to pending? The outline is kept. Facts sourced only from this chapter will be removed; other sources and author settings are kept. Derived setting changes may need review. This cannot be undone; make a project backup first.",
   "writing.restart.done": "Chapter {num} reset; ready to generate again",

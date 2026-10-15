@@ -39,6 +39,26 @@
   let localApiCfg = { base_url: '', url_strict: false, model: '', api_key: '', http_timeout_seconds: 600, max_tokens: 32768, context_budget_tokens: 900000 };
   let localStoryCfg = { type: '', title: '', target_words_per_chapter: 2500, writing_style: '', writing_pov: '' };
   let testingApi = false;
+  let loadingModels = false, models = [], modelsError = '', modelsEndpoint = '';
+  const modelEndpointSig = c => JSON.stringify([c.base_url, !!c.url_strict, c.api_key]);
+  $: if (modelsEndpoint && modelsEndpoint !== modelEndpointSig(localApiCfg)) {
+    models = []; modelsError = ''; modelsEndpoint = '';
+  }
+  $: selectedModel = models.find(m => m.id === localApiCfg.model);
+
+  async function loadModels() {
+    if (loadingModels) return;
+    loadingModels = true;
+    modelsError = '';
+    const sig = modelEndpointSig(localApiCfg);
+    modelsEndpoint = sig;
+    try {
+      const result = await api('POST', '/api/config/api/models', {...localApiCfg});
+      if (sig === modelEndpointSig(localApiCfg)) models = result;
+    } catch (e) {
+      if (sig === modelEndpointSig(localApiCfg)) { models = []; modelsError = e.message; }
+    } finally { loadingModels = false; }
+  }
 
   $: resolvedChatURL = resolveChatCompletionsURL(localApiCfg.base_url, !!localApiCfg.url_strict);
 
@@ -131,6 +151,7 @@
       const res = await api('POST', '/api/config/api/test', localApiCfg);
       apiTestResult.set({ ok: true, model: res.model, sig });
       addToast($t('config.api.testOk', { model: res.model }), 'success');
+      await loadModels();
     } catch (e) {
       apiTestResult.set({ ok: false, error: e.message, sig });
       addToast(e.message, 'error');
@@ -468,8 +489,16 @@
             {/if}
           </div>
           <div>
-            <span class="text-xs text-base-content/65 mb-0.5 block">{$t('config.api.model')}</span>
-            <input type="text" class="input input-sm w-full" bind:value={localApiCfg.model} placeholder="gpt-4" disabled={$taskRunning || testingApi} />
+            <label for="api-model" class="text-xs text-base-content/65 mb-0.5 block">{$t('config.api.model')}</label>
+            <div class="flex gap-2">
+              <input id="api-model" type="text" list="api-model-options" class="input input-sm w-full min-w-0" bind:value={localApiCfg.model} placeholder="gpt-4" disabled={$taskRunning || testingApi} aria-describedby="api-model-hint" />
+              <datalist id="api-model-options">{#each models as model (model.id)}<option value={model.id}></option>{/each}</datalist>
+              <button class="btn btn-outline btn-sm shrink-0" disabled={$taskRunning || testingApi || loadingModels || !localApiCfg.base_url.trim()} on:click={loadModels}>{$t(loadingModels ? 'config.api.modelsLoading' : 'config.api.modelsLoad')}</button>
+            </div>
+            <p id="api-model-hint" class="text-xs text-base-content/65 mt-1">{$t('config.api.modelsHint')}</p>
+            <p class="text-xs text-base-content/65" aria-live="polite">{selectedModel?.context_window > 0 ? $t('config.api.modelWindow', { n: selectedModel.context_window.toLocaleString() }) : $t('config.api.modelWindowUnknown')}</p>
+            {#if modelsError}<p class="text-sm text-error" role="status">{modelsError}</p>
+            {:else if modelsEndpoint && !loadingModels && !models.length}<p class="text-xs text-base-content/65" role="status">{$t('config.api.modelsEmpty')}</p>{/if}
           </div>
           <div>
             <span class="text-xs text-base-content/65 mb-0.5 block">{$t('config.api.timeout')}</span>
