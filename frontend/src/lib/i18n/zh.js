@@ -1,6 +1,9 @@
 // Chinese UI strings. Add a key here whenever a hardcoded Chinese phrase
 // is replaced with $t('...') in a Svelte component.
 export default {
+  "writing.restart.button": "从头重写",
+  "writing.restart.confirm": "清空第 {num} 章正文和摘要并恢复待写状态？章纲保留。仅来自本章的事实会删除，其他来源和作者设定保留；派生设定变化可能需要重新核对。此操作不可撤销，建议先备份项目。",
+  "writing.restart.done": "第 {num} 章已重置，可以重新生成",
  "task.knowledge_sync": "同步事实与设定",
  "task.planning_review": "规划复盘",
  "task.proofread_analyze": "完稿分析",

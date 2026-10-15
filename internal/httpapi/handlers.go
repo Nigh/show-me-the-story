@@ -17,6 +17,7 @@ import (
 	"showmethestory/internal/prose"
 	"showmethestory/internal/sse"
 	"showmethestory/internal/story"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -942,6 +943,10 @@ func (h *Handlers) PostChapterGenerate(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			if err := story.ConfirmChapterAction(h.state, h.progressPath); err != nil {
+				if errors.Is(err, story.ErrEmptyChapter) {
+					h.writeErrorReq(w, r, http.StatusBadRequest, "chapter_confirm_empty")
+					return
+				}
 				h.logger.WarnKey("log.chapter_autoconfirm_failed", err)
 				break
 			}
@@ -1071,7 +1076,11 @@ func (h *Handlers) PostChapterConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := story.ConfirmChapterAction(h.state, h.progressPath); err != nil {
-		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err.Error())
+		if errors.Is(err, story.ErrEmptyChapter) {
+			h.writeErrorReq(w, r, http.StatusBadRequest, "chapter_confirm_empty")
+			return
+		}
+		h.writeErrorReq(w, r, http.StatusBadRequest, "invalid_json", err)
 		return
 	}
 
@@ -1285,7 +1294,30 @@ func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	num, err := story.DeleteFrontierChapter(h.state, h.projectDir())
+	idx, err := story.ResolveDeleteChapterTarget(h.state)
+	if err != nil {
+		h.writeErrorReq(w, r, http.StatusConflict, "delete_frontier_unavailable")
+		return
+	}
+	num, err := strconv.Atoi(r.URL.Query().Get("num"))
+	before := h.state.Chapters[idx]
+	expectedRev := ""
+	if before.Content != "" {
+		expectedRev = story.ChapterRevision(before)
+	}
+	if err != nil || before.Num != num || r.Header.Get("X-Content-Rev") != expectedRev {
+		h.writeErrorReq(w, r, http.StatusConflict, "content_version_conflict")
+		return
+	}
+	after := before
+	after.Blocks = nil
+	opts := story.FactEditOptions{ContentRev: r.Header.Get("X-Content-Rev"), ConfirmFactImpact: r.Header.Get("X-Confirm-Fact-Impact") == "true"}
+	if err := story.ValidateFactEdit(h.state, before, after, opts, i18n.FromRequest(r)); err != nil {
+		h.writeErrorReq(w, r, http.StatusConflict, "invalid_json", err)
+		return
+	}
+
+	num, err = story.DeleteFrontierChapter(h.state, h.progressPath)
 	if err != nil {
 		switch err {
 		case story.ErrNoChaptersToDelete:
@@ -1297,11 +1329,6 @@ func (h *Handlers) DeleteChapter(w http.ResponseWriter, r *http.Request) {
 		default:
 			h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		}
-		return
-	}
-
-	if err := story.SaveProgress(h.progressPath, h.state); err != nil {
-		h.writeErrorReq(w, r, http.StatusInternalServerError, "save_progress_failed", err)
 		return
 	}
 

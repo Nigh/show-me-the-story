@@ -493,6 +493,8 @@ func ReviseSpecificChapterAction(ctx context.Context, apiCfg *config.APIConfig, 
 	return nil
 }
 
+var ErrEmptyChapter = fmt.Errorf("chapter prose is empty; regenerate before accepting")
+
 func ConfirmChapterAction(state *Progress, progressPath string) error {
 	original := state
 	next := *state
@@ -511,6 +513,10 @@ func ConfirmChapterAction(state *Progress, progressPath string) error {
 	ch := &state.Chapters[chapterIdx]
 	if ch.Status != StatusReview {
 		return fmt.Errorf("当前章节不在审核状态，无法确认")
+	}
+
+	if strings.TrimSpace(ch.Content) == "" {
+		return ErrEmptyChapter
 	}
 
 	ch.Status = StatusAccepted
