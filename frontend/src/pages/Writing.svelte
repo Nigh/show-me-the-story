@@ -112,6 +112,9 @@
   }
 
   $: ch = $selectedChapter >= 0 && $selectedChapter < chapters.length ? chapters[$selectedChapter] : null;
+  $: restartIdx = chapters[currentIdx]?.status === 'review' ? currentIdx
+    : currentIdx === chapters.length || chapters[currentIdx]?.status === 'pending' ? currentIdx - 1 : -1;
+  $: restartable = ch && !ch.inherited && $selectedChapter === restartIdx && ['review', 'accepted'].includes(ch.status);
   $: isCurrent = ch && currentIdx === $selectedChapter;
   $: isStreamingThis = $streamingChapterIdx === $selectedChapter && $streamingContent;
 
@@ -375,6 +378,22 @@
       await api('POST', '/api/chapter/generate');
       addToast($t('writing.toasts.generateStarted', { num: ch?.num }), 'info');
     } catch (e) { addToast(e.message, 'error'); }
+  }
+
+  function restartChapter() {
+    const num = ch.num;
+    const rev = loadedRev;
+    confirmAction($t('writing.restart.confirm', { num }), async () => {
+      try {
+        progress.set(await api('DELETE', '/api/chapter?num=' + num, null, {'X-Content-Rev': rev, 'X-Confirm-Fact-Impact': 'true'}));
+        if (ch?.num === num) {
+          chapterContent = ''; chapterBlocks = []; loadedRev = null;
+          facts = []; activeFact = null; returnRef = null;
+          cancelBlockOps(); showRevise = false;
+        }
+        addToast($t('writing.restart.done', { num }), 'success');
+      } catch (e) { addToast(e.message, 'error'); }
+    });
   }
 
   async function doConfirm() {
@@ -736,7 +755,10 @@
                   <button class="btn btn-primary btn-sm" on:click={doGenerate} disabled={$taskRunning}>{$t('writing.btn.generate')}</button>
                 {/if}
                 {#if ch.status === 'review' && isCurrent}
-                  <button class="btn btn-success btn-sm" on:click={doConfirm} disabled={$taskRunning}>{$t('writing.btn.confirm')}</button>
+                  <button class="btn btn-success btn-sm" on:click={doConfirm} disabled={$taskRunning || !chapterContent.trim()}>{$t('writing.btn.confirm')}</button>
+                {/if}
+                {#if restartable}
+                  <button class="btn btn-error btn-outline btn-sm" on:click={restartChapter} disabled={$taskRunning || loadedNum !== ch.num}>{$t('writing.restart.button')}</button>
                 {/if}
                 {#if hasContent && ch.status !== 'writing'}
                   <button class="btn btn-outline btn-sm" on:click={() => showRevise = !showRevise} disabled={$taskRunning}>{$t('writing.btn.revise')}</button>

@@ -352,6 +352,7 @@ func ProgressView(p *Progress) *Progress {
 			}
 			ch.ContentRev = fmt.Sprintf("%x", HashContent(ch.Content))
 		} else {
+			ch.ContentRev = ""
 			ch.WordCount = 0
 		}
 		ch.Content = ""

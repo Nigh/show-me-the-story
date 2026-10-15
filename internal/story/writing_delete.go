@@ -3,6 +3,7 @@ package story
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"showmethestory/internal/fsutil"
 	"showmethestory/internal/i18n"
 	"strings"
@@ -65,29 +66,20 @@ func chapterHasDeletableContent(ch *ChapterState) bool {
 }
 
 func purgeMemoryForChapter(state *Progress, chapterNum int) {
-	filtered := state.MemoryEntries[:0]
+	filtered := make([]MemoryEntry, 0, len(state.MemoryEntries))
 	for _, m := range state.MemoryEntries {
-		keep := m.Inherited
+		refs := make([]MemoryReference, 0, len(m.References))
 		for _, ref := range m.References {
 			if ref.Chapter != chapterNum {
-				keep = true
-				break
+				refs = append(refs, ref)
 			}
 		}
-		if keep {
+		m.References = refs
+		if m.Inherited || len(refs) > 0 {
 			filtered = append(filtered, m)
 		}
 	}
 	state.MemoryEntries = filtered
-}
-
-func clearChapterContentAt(state *Progress, projectDir string, idx int) {
-	ch := &state.Chapters[idx]
-	fsutil.Delete(ChapterMarkdownPath(projectDir, ch.Num))
-	ch.Content = ""
-	ch.Summary = ""
-	ch.Status = StatusPending
-	purgeMemoryForChapter(state, ch.Num)
 }
 
 func adjustCurrentChapterIndexAfterDelete(state *Progress, deletedIdx int) {
@@ -99,15 +91,29 @@ func adjustCurrentChapterIndexAfterDelete(state *Progress, deletedIdx int) {
 }
 
 // DeleteFrontierChapter clears prose at the writing frontier (see ResolveDeleteChapterTarget).
-func DeleteFrontierChapter(state *Progress, projectDir string) (int, error) {
+func DeleteFrontierChapter(state *Progress, progressPath string) (int, error) {
 	idx, err := ResolveDeleteChapterTarget(state)
 	if err != nil {
 		return 0, err
 	}
-	num := state.Chapters[idx].Num
-	clearChapterContentAt(state, projectDir, idx)
-	adjustCurrentChapterIndexAfterDelete(state, idx)
-	return num, nil
+	next := *state
+	next.Chapters = append([]ChapterState(nil), state.Chapters...)
+	ch := &next.Chapters[idx]
+	ch.Content, ch.Summary, ch.MemoryRevision, ch.ContentRev = "", "", "", ""
+	ch.Blocks = nil
+	ch.WordCount = 0
+	ch.Status = StatusPending
+	ch.KnowledgeTracked = true
+	purgeMemoryForChapter(&next, ch.Num)
+	next.PendingWritingConflict = nil
+	adjustCurrentChapterIndexAfterDelete(&next, idx)
+	if err := SaveProgress(progressPath, &next); err != nil {
+		return 0, err
+	}
+	*state = next
+	// Markdown is a derived export; only remove it after the prose transaction commits.
+	_ = fsutil.Delete(ChapterMarkdownPath(filepath.Dir(progressPath), ch.Num))
+	return ch.Num, nil
 }
 
 func FormatWritingFrontierInfo(state *Progress, lang string) string {

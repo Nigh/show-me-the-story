@@ -29,6 +29,8 @@ The API model field accepts both dropdown suggestions and custom names. Use **Lo
 5. In Outline, enter a synopsis and chapter count (1–36) for the first batch. Generate and review it. If the page offers Confirm outline, confirm before writing.
 6. In Writing, generate one chapter, read and revise it, then accept it before continuing.
 
+In Writing, **Restart chapter** clears the writing-frontier chapter’s prose and summary while keeping its outline. Confirm the scope and back up first; chapter-only facts are removed, while author settings remain.
+
 Start with a small batch and auto-confirm disabled to check the voice, characters, and model behavior.
 
 The [first-story walkthrough](docs/guide.en.md#first-story) explains the input, expected result, and next step for each stage.

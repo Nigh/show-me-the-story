@@ -186,3 +186,49 @@ func TestKnowledgeQueryReturnsEvidenceAndPending(t *testing.T) {
 		t.Fatal(res.Body.String())
 	}
 }
+
+func TestRestartChapterHTTPGuards(t *testing.T) {
+	for _, tc := range []struct {
+		name, num, rev, content string
+		confirmed, running      bool
+		status                  int
+	}{
+		{"stale", "1", "old", "Alice has a scar.", true, false, 409},
+		{"wrong chapter", "2", "current", "Alice has a scar.", true, false, 409},
+		{"unconfirmed facts", "1", "current", "Alice has a scar.", false, false, 409},
+		{"busy", "1", "current", "Alice has a scar.", true, true, 409},
+		{"restart", "1", "current", "Alice has a scar.", true, false, 200},
+		{"empty review", "1", "", "", true, false, 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := factHandlers(t)
+			h.state.Phase = "writing"
+			h.state.Chapters[0].Content = tc.content
+			story.SyncChapterBlocks(&h.state.Chapters[0])
+			h.taskRunning = tc.running
+			rev := tc.rev
+			if rev == "current" {
+				rev = story.ChapterRevision(h.state.Chapters[0])
+			}
+			r := httptest.NewRequest("DELETE", "/api/chapter?num="+tc.num, nil)
+			r.Header.Set("X-Content-Rev", rev)
+			if tc.confirmed {
+				r.Header.Set("X-Confirm-Fact-Impact", "true")
+			}
+			res := httptest.NewRecorder()
+			// Disable follow-up model calls; this test verifies the synchronous reset only.
+			h.cfg = nil
+			h.DeleteChapter(res, r)
+			if res.Code != tc.status {
+				t.Fatal(res.Code, res.Body.String())
+			}
+			if tc.status == 200 {
+				if h.state.Chapters[0].Status != story.StatusPending || h.state.Chapters[0].Content != "" {
+					t.Fatal("not reset")
+				}
+			} else if h.state.Chapters[0].Content != tc.content {
+				t.Fatal("rejected request changed chapter")
+			}
+		})
+	}
+}
