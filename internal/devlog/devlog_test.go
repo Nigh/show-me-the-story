@@ -158,7 +158,7 @@ func TestBothLogsRotateWithinThreeFiles(t *testing.T) {
 	for _, writer := range []*rotatingFile{&app, &payload} {
 		for i := range 3 {
 			mu.Lock()
-			err := writer.file.Truncate(maxFileBytes)
+			err := os.Truncate(writer.path, maxFileBytes)
 			writer.size = maxFileBytes
 			mu.Unlock()
 			if err != nil {
