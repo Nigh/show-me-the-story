@@ -7,4 +7,9 @@ frontend/node_modules
 frontend/dist
 showmethestory
 dev.log
+dev.log.*
+app.log
+app.log.*
+diagnostics.log
+diagnostics.log.*
 graphify-out/

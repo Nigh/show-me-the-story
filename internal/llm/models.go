@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"showmethestory/internal/config"
+	"showmethestory/internal/devlog"
 )
 
 type ModelInfo struct {
@@ -19,13 +20,17 @@ type ModelInfo struct {
 }
 
 // FetchModels uses the same base URL and credentials as chat; model metadata is optional.
-func FetchModels(ctx context.Context, cfg *config.APIConfig) ([]ModelInfo, error) {
+func FetchModels(ctx context.Context, cfg *config.APIConfig) (models []ModelInfo, err error) {
 	if cfg == nil || strings.TrimSpace(cfg.BaseURL) == "" {
 		return nil, fmt.Errorf("API base URL is required")
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", resolveAPIBase(cfg.BaseURL, cfg.URLStrict)+"/models", nil)
+	endpoint := resolveAPIBase(cfg.BaseURL, cfg.URLStrict) + "/models"
+	devlog.RegisterSecret(cfg.APIKey)
+	diagnostic := beginRequest(ctx, "GET", endpoint, cfg.Model, false, "operation", "model_list")
+	defer func() { diagnostic.finish(err) }()
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, safeFailure("invalid model endpoint", err)
 	}
 	if cfg.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
@@ -33,16 +38,17 @@ func FetchModels(ctx context.Context, cfg *config.APIConfig) ([]ModelInfo, error
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, safeFailure("model list request", err)
 	}
 	defer resp.Body.Close()
+	diagnostic.status = resp.StatusCode
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("model list HTTP status %d", resp.StatusCode)
+		return nil, readAPIStatusError(resp.StatusCode, resp.Body)
 	}
 	const maxBytes = 4 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
-		return nil, err
+		return nil, safeFailure("read model list", err)
 	}
 	if len(body) > maxBytes {
 		return nil, fmt.Errorf("model list exceeds 4 MiB")
@@ -55,12 +61,12 @@ func FetchModels(ctx context.Context, cfg *config.APIConfig) ([]ModelInfo, error
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, err
+		return nil, safeFailure("invalid model list JSON", err)
 	}
 	if result.Data == nil {
 		return nil, fmt.Errorf("model list is missing data array")
 	}
-	models := make([]ModelInfo, 0, len(result.Data))
+	models = make([]ModelInfo, 0, len(result.Data))
 	seen := map[string]bool{}
 	for _, item := range result.Data {
 		id := strings.TrimSpace(item.ID)

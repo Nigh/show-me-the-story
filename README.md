@@ -89,6 +89,8 @@ After an interrupted prose/progress save, reopening the project attempts to rest
 
 Files are stored locally, but AI operations send relevant prose, settings, and prompts to your configured model service, which may charge for usage. API keys are stored in `api.json`; inspect shared files and logs for sensitive information. Use the application in a trusted local environment, not directly exposed to the public internet.
 
+Release builds also write local diagnostics to `app.log` in the data directory shown at startup. Logs rotate at 5 MiB, retaining at most three files. Default logs contain task/request identifiers and error metadata, not prose or prompts. Inspect logs before sharing; see [diagnostic logging](docs/guide.en.md#diagnostics) for optional sensitive capture.
+
 If Windows reports an unknown publisher, verify the download source. After deciding to trust the executable, use More info → Run anyway.
 
 ## Development

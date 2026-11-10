@@ -295,9 +295,24 @@ func entityHasDependents(s *ProjectSettings, id string) bool {
 	}
 	return false
 }
-func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDelta, visible ...map[string]bool) error {
+func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDelta, visible ...map[string]bool) (resultErr error) {
+	detail := &knowledgeValidationError{chapter: ch.Num, rev: ChapterRevision(ch), index: -1}
+	defer func() {
+		if resultErr != nil {
+			detail.reason = resultErr.Error()
+			resultErr = detail
+		}
+	}()
 	aliases := map[string]string{}
-	for _, d := range deltas {
+	for index, d := range deltas {
+		id, _ := d.Entity["id"].(string)
+		detail.index, detail.block = index, d.BlockID
+		detail.kind, detail.id = safeSettingKind(d.Kind), safeSettingID(id)
+		detail.inCurrentKind = id != "" && entityAt(s, d.Kind, id) != nil
+		detail.inContext = false
+		if len(visible) > 0 {
+			_, detail.inContext = visible[0][id]
+		}
 		discardUnknownEntityFields(d.Kind, d.Entity)
 		for _, k := range []string{"source_id", "target_id"} {
 			if id, ok := d.Entity[k].(string); ok && aliases[id] != "" {
@@ -315,7 +330,7 @@ func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDel
 		if bi < 0 {
 			return fmt.Errorf("invalid setting evidence")
 		}
-		id, _ := d.Entity["id"].(string)
+		id, _ = d.Entity["id"].(string)
 		alias := ""
 		if strings.HasPrefix(id, "$") {
 			alias = id
@@ -402,12 +417,48 @@ func applySettingDeltas(s *ProjectSettings, ch ChapterState, deltas []settingDel
 		s.StoryChanges = append(s.StoryChanges, c)
 		if !conflict {
 			if err := putEntity(s, d.Kind, id, after); err != nil {
-				return err
+				return fmt.Errorf("invalid setting entity encoding")
 			}
 		}
 	}
 	return nil
 }
+
+func safeSettingKind(kind string) string {
+	switch kind {
+	case "characters", "worldview", "organizations", "relations":
+		return kind
+	default:
+		return "invalid"
+	}
+}
+
+func safeSettingID(id string) string {
+	if id == "" {
+		return "empty"
+	}
+	// Local aliases may contain names. Only log server-shaped numeric IDs.
+	if strings.HasPrefix(id, "$") {
+		return "$alias"
+	}
+	if len(id) < 3 || len(id) > 64 || !strings.ContainsRune("cwor", rune(id[0])) || id[1] != '_' {
+		return "invalid"
+	}
+	for _, digit := range id[2:] {
+		if digit < '0' || digit > '9' {
+			return "invalid"
+		}
+	}
+	return id
+}
+
+func settingRetryPrompt(lang string, err error) string {
+	if i18n.NormalizeLanguage(lang) == i18n.LangEN {
+		return "\nThe previous response failed validation: " + err.Error() + ". Return the complete corrected JSON with a changes array. Reuse only supplied existing IDs in their supplied kind; never invent a server ID. For new entities omit id, use an empty id, or use a local $ID. List new entities before references to them. Use supplied block IDs. Do not guess identities.\n"
+	}
+	return "\n上次输出校验失败：" + err.Error() + "。请返回含 changes 数组的完整修正后 JSON。已有 ID 只能按所提供的分类复用，禁止编造正式 ID。新实体省略 id、使用空 id 或局部 $ID，先输出新实体再引用。使用所提供的真实段落 ID，不得猜测身份。\n"
+}
+
 func ResolveSettingChange(s *ProjectSettings, state *Progress, id int, accept bool, path string) error {
 	next := cloneSettings(s)
 	for i := range next.StoryChanges {
@@ -448,13 +499,21 @@ func ResolveSettingChange(s *ProjectSettings, state *Progress, id int, accept bo
 	}
 	return fmt.Errorf("unknown pending setting change")
 }
-func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, path string, logger *sse.LogBroadcaster) error {
+func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *config.Config, state *Progress, settings *ProjectSettings, path string, logger *sse.LogBroadcaster) (resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if settings == nil {
 		return nil
 	}
+	activeChapter := ChapterState{}
+	stage, currentAttempt := "invalidate_sources", 0
+	defer func() {
+		if resultErr != nil {
+			knowledgeSyncEvent(ctx, "error", "knowledge_sync_failed", "settings", stage, activeChapter, currentAttempt, resultErr)
+			resultErr = fmt.Errorf("%w: phase=settings stage=%s chapter=%d rev=%s attempt=%d", resultErr, stage, activeChapter.Num, ChapterRevision(activeChapter), currentAttempt)
+		}
+	}()
 	settingsPath := filepath.Join(filepath.Dir(path), "settings.json")
 	next := cloneSettings(settings)
 	invalidateSettingSources(next, state)
@@ -467,6 +526,7 @@ func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *confi
 	}
 	for i := range state.Chapters {
 		ch := state.Chapters[i]
+		activeChapter, stage, currentAttempt = ch, "facts", 0
 		if !ch.KnowledgeTracked || ch.Content == "" || (ch.Status != StatusReview && ch.Status != StatusAccepted) {
 			continue
 		}
@@ -480,6 +540,7 @@ func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *confi
 		if ch.Status != StatusAccepted || settings.StorySynced[ch.Num] == ChapterRevision(ch) {
 			continue
 		}
+		activeChapter, stage, currentAttempt = ch, "config", 0
 		if err := llm.ValidateConfig(api); err != nil {
 			return err
 		}
@@ -489,6 +550,7 @@ func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *confi
 		prompt := settingUpdatePrompt(cfg.Language) + knowledgeSelectionNotice(cfg.Language) + "\n" + string(entities) + "\n" + string(blocks)
 		var syncErr error
 		for attempt := 0; attempt < 2; attempt++ {
+			stage, currentAttempt = "request", attempt+1
 			raw := llm.CallAPIWithRetryLog(ctx, api, i18n.SystemPromptFor(cfg.Language, "memory_manager"), prompt, logger)
 			if err := ctx.Err(); err != nil {
 				return err
@@ -496,23 +558,28 @@ func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *confi
 			var result struct {
 				Changes *[]settingDelta `json:"changes"`
 			}
+			stage = "validate"
 			if err := json.Unmarshal([]byte(cleanJSONResponse(raw)), &result); err != nil {
-				syncErr = err
-				continue
+				syncErr = &knowledgeValidationError{reason: "invalid setting JSON", chapter: ch.Num, rev: ChapterRevision(ch), index: -1}
+			} else if result.Changes == nil {
+				syncErr = &knowledgeValidationError{reason: "missing changes array", chapter: ch.Num, rev: ChapterRevision(ch), index: -1}
+			} else {
+				next = cloneSettings(settings)
+				syncErr = applySettingDeltas(next, ch, *result.Changes, visible)
 			}
-			if result.Changes == nil {
-				syncErr = fmt.Errorf("%s", i18n.T(cfg.Language, "knowledge_failed"))
-				continue
-			}
-			next = cloneSettings(settings)
-			syncErr = applySettingDeltas(next, ch, *result.Changes, visible)
 			if syncErr == nil {
 				break
 			}
+			knowledgeSyncEvent(ctx, "warn", "knowledge_validation_failed", "settings", stage, ch, currentAttempt, syncErr)
+			prompt += settingRetryPrompt(cfg.Language, syncErr)
 		}
 		if syncErr != nil {
 			return syncErr
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		stage = "save"
 		if next.StorySynced == nil {
 			next.StorySynced = map[int]string{}
 		}
@@ -522,6 +589,7 @@ func SyncPendingKnowledge(ctx context.Context, api *config.APIConfig, cfg *confi
 		}
 		*settings = *next
 		logger.SettingsUpdated()
+		knowledgeSyncEvent(ctx, "info", "knowledge_sync_succeeded", "settings", "complete", ch, currentAttempt, nil)
 	}
 	return nil
 }

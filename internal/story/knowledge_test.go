@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"showmethestory/internal/config"
+	"showmethestory/internal/devlog"
 	"showmethestory/internal/sse"
 	"strings"
 	"testing"
@@ -16,6 +17,34 @@ func factChapter(num int, text string) ChapterState {
 	ch := ChapterState{Num: num, Content: text, Status: StatusAccepted, KnowledgeTracked: true}
 	SyncChapterBlocks(&ch)
 	return ch
+}
+
+func TestKnowledgeFailureLogTaskID(t *testing.T) {
+	dir := t.TempDir()
+	devlog.Init(dir, "test")
+	defer devlog.Close()
+	ch := factChapter(2, "PRIVATE_CHAPTER_BODY")
+	ctx := devlog.WithTask(context.Background(), "knowledge-task-42")
+	validationErr := applyChapterMemoryResult(&Progress{}, ch, nil, `{"new_memories":[{"id":99,"content":"PRIVATE_FACT","category":"event","block_ids":[1]}]}`)
+	knowledgeSyncEvent(ctx, "warn", "knowledge_validation_failed", "facts", "validate", ch, 1, validationErr)
+	data, err := os.ReadFile(filepath.Join(dir, "app.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		var entry map[string]any
+		if json.Unmarshal([]byte(line), &entry) != nil || entry["event"] != "knowledge_validation_failed" {
+			continue
+		}
+		if entry["task_id"] != "knowledge-task-42" || entry["chapter"] != float64(2) || entry["attempt"] != float64(1) {
+			t.Fatalf("failure log lost task association: %s", line)
+		}
+		if strings.Contains(line, "PRIVATE") {
+			t.Fatal("failure log leaks content")
+		}
+		return
+	}
+	t.Fatal("missing validation failure log")
 }
 
 func TestMemoryIdentityRetry(t *testing.T) {
@@ -73,6 +102,123 @@ func TestMemoryIdentityRetry(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestSettingIdentityDiagnostics(t *testing.T) {
+	ch := factChapter(4, "PRIVATE_CHAPTER_BODY")
+	for _, tc := range []struct {
+		kind, id string
+		visible  bool
+	}{
+		{"characters", "c_99", false},
+		{"organizations", "c_1", true},
+		{"organizations", "c_2", true},
+		{"characters", "PRIVATE_ENTITY_NAME", false},
+	} {
+		settings := &ProjectSettings{Characters: []Character{{ID: "c_1", Name: "PRIVATE_ENTITY_NAME"}}}
+		err := applySettingDeltas(settings, ch, []settingDelta{{Kind: tc.kind, Entity: map[string]any{"id": tc.id, "name": "PRIVATE_ENTITY_NAME"}, BlockID: 1}}, map[string]bool{"c_1": true, "c_2": false})
+		if err == nil || !strings.HasPrefix(err.Error(), "unknown entity identity:") {
+			t.Fatalf("identity rejection lost prefix: %v", err)
+		}
+		for _, want := range []string{"chapter=4", "rev=" + ChapterRevision(ch), "stage=validate", "block=1", "change_index=0", "in_current_kind=false"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("missing %q in %v", want, err)
+			}
+		}
+		detail, ok := err.(*knowledgeValidationError)
+		if !ok || detail.inContext != tc.visible {
+			t.Fatalf("wrong context membership: %v", err)
+		}
+		for _, secret := range []string{"PRIVATE_CHAPTER_BODY", "PRIVATE_ENTITY_NAME", "PRIVATE_KIND"} {
+			if strings.Contains(err.Error(), secret) {
+				t.Fatalf("diagnostic leaks %s", secret)
+			}
+		}
+	}
+}
+
+func TestSettingIdentityRetry(t *testing.T) {
+	for _, lang := range []string{"zh", "en"} {
+		for _, kind := range []string{"characters", "organizations"} {
+			for _, outcome := range []string{"recover", "fail", "cancel"} {
+				t.Run(lang+"/"+kind+"/"+outcome, func(t *testing.T) {
+					ch := factChapter(3, "Alice arrives.")
+					ch.MemoryRevision = ChapterRevision(ch)
+					state := &Progress{Chapters: []ChapterState{ch}}
+					settings := &ProjectSettings{Characters: []Character{{ID: "c_1", Name: "Alice"}}}
+					before := cloneSettings(settings)
+					path := filepath.Join(t.TempDir(), "progress.json")
+					settingsPath := filepath.Join(filepath.Dir(path), "settings.json")
+					if err := SaveProjectSettings(settingsPath, settings); err != nil {
+						t.Fatal(err)
+					}
+					ctx, cancel := context.WithCancel(context.Background())
+					defer cancel()
+					calls := 0
+					api := batchAPI(t, func(prompt string) string {
+						calls++
+						if calls == 2 {
+							feedback := "The previous response failed validation:"
+							if lang == "zh" {
+								feedback = "上次输出校验失败："
+							}
+							parts := strings.Split(prompt, feedback)
+							if len(parts) != 2 || !strings.Contains(parts[1], "unknown entity identity:") || !strings.Contains(parts[1], "change_index=1") || strings.Contains(parts[1], "PRIVATE_NAME") {
+								t.Error("retry lacks safe and accurate correction feedback")
+							}
+							if !reflect.DeepEqual(settings, before) {
+								t.Error("failed attempt committed settings")
+							}
+							if outcome == "cancel" {
+								cancel()
+							}
+							if outcome != "fail" {
+								return `{"changes":[{"kind":"characters","entity":{"name":"Bob"},"block_id":1}]}`
+							}
+						}
+						id := "c_99"
+						if kind == "organizations" {
+							id = "c_1"
+						}
+						return `{"changes":[{"kind":"characters","entity":{"name":"PRIVATE_NAME"},"block_id":1},{"kind":"` + kind + `","entity":{"id":"` + id + `","name":"PRIVATE_NAME"},"block_id":1}]}`
+					})
+					err := SyncPendingKnowledge(ctx, api, config.DefaultConfigForLang(lang), state, settings, path, sse.NewLogBroadcaster())
+					if calls != 2 || (err == nil) != (outcome == "recover") {
+						t.Fatalf("calls=%d outcome=%s err=%v", calls, outcome, err)
+					}
+					loaded, loadErr := LoadProjectSettings(settingsPath)
+					if loadErr != nil {
+						t.Fatal(loadErr)
+					}
+					if outcome == "recover" {
+						if len(settings.Characters) != 2 || settings.Characters[1].ID != "c_2" || settings.Characters[1].Name != "Bob" || loaded.StorySynced[ch.Num] != ChapterRevision(ch) {
+							t.Fatal("corrected settings did not commit cleanly")
+						}
+					} else if !reflect.DeepEqual(settings, before) || !reflect.DeepEqual(loaded, before) {
+						t.Fatal("failed or canceled retry committed settings")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestFactValidationDiagnostics(t *testing.T) {
+	ch := factChapter(5, "PRIVATE_CHAPTER_BODY")
+	next := &Progress{MemoryEntries: []MemoryEntry{{ID: 7, Content: "PRIVATE_FACT", Category: "character"}}}
+	err := applyChapterMemoryResult(next, ch, map[int]bool{7: true}, `{"new_memories":[{"id":7,"content":"PRIVATE_CHANGED_FACT","category":"event","block_ids":[1]}]}`)
+	for _, want := range []string{"chapter=5", "rev=" + ChapterRevision(ch), "block=1", "change_index=0", "entity_id=7", "in_context=true", "in_current_kind=false"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("missing %q in %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "PRIVATE") {
+		t.Fatalf("fact diagnostic leaks content: %v", err)
+	}
+	err = applyChapterMemoryResult(&Progress{}, ch, nil, `{"new_memories":"PRIVATE_RAW_RESPONSE"}`)
+	if err == nil || strings.Contains(err.Error(), "PRIVATE") {
+		t.Fatalf("JSON diagnostic leaks content: %v", err)
 	}
 }
 func TestEndingControls(t *testing.T) {

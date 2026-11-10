@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,6 +58,7 @@ type Handlers struct {
 	forceKnowledgeSync bool
 	skipKnowledgeSync  bool
 	autoConfirm        bool // 自动确认模式：章节生成完成后自动确认并继续生成下一章
+	taskSequence       uint64
 
 	lastChatMessage   string             // 缓存最后发送的聊天消息，用于重试
 	lastReconcileBody config.StoryConfig // 缓存最后的设定协调请求
@@ -167,6 +169,18 @@ func (h *Handlers) ensureProject(w http.ResponseWriter, r *http.Request) bool {
 
 // writeErrorReq writes a JSON error response, picking message language from the request.
 func (h *Handlers) writeErrorReq(w http.ResponseWriter, r *http.Request, code int, key string, args ...any) {
+	attrs := []any{"method", r.Method, "route", r.Pattern, "status_code", code, "error_key", key}
+	for _, arg := range args {
+		if err, ok := arg.(error); ok {
+			attrs = append(attrs, devlog.ErrorAttrs(err)...)
+			if saveErr, ok := fsutil.AsSaveError(err); ok {
+				attrs = append(attrs, "file", filepath.Base(saveErr.Path), "stage", saveErr.Stage,
+					"original_preserved", saveErr.OriginalPreserved, "backup_file", filepath.Base(saveErr.BackupPath),
+					"restore_failed", saveErr.RestoreErr != nil)
+			}
+		}
+	}
+	devlog.Event("warn", "http_request_failed", attrs...)
 	lang := i18n.FromRequest(r)
 	response := map[string]interface{}{"error": i18n.T(lang, key, args...)}
 	for _, arg := range args {
@@ -198,7 +212,7 @@ func (h *Handlers) tryStartTask() bool {
 	h.taskMu.Lock()
 	defer h.taskMu.Unlock()
 	if h.taskRunning || h.activeWork > 0 {
-		devlog.Log("tryStartTask rejected running=%v activeWork=%d", h.taskRunning, h.activeWork)
+		devlog.Event("info", "task_reservation_rejected", "task_id", devlog.TaskID(h.taskCtx), "running", h.taskRunning, "active_work", h.activeWork)
 		return false
 	}
 	h.taskRunning = true
@@ -207,10 +221,17 @@ func (h *Handlers) tryStartTask() bool {
 	h.skipKnowledgeSync = false
 	h.activeWork = 1
 	ctx, cancel := context.WithCancel(context.Background())
+	h.taskSequence++
+	taskID := strconv.FormatUint(h.taskSequence, 10)
+	ctx = devlog.WithTask(ctx, taskID)
+	h.projectMu.RLock()
+	projectID := fmt.Sprintf("%x", sha256.Sum256([]byte(h.projectName)))
+	h.projectMu.RUnlock()
+	h.logger.SetDiagnosticContext(taskID, projectID[:16])
 	ctx, h.taskTokens = llm.WithTaskTokens(ctx, h.logger)
 	h.taskCtx = ctx
 	h.taskCancel = cancel
-	devlog.Log("tryStartTask ok activeWork=1")
+	devlog.Event("info", "task_reserved", "task_id", taskID, "project_id", projectID[:16])
 	return true
 }
 
@@ -239,8 +260,9 @@ func (h *Handlers) endTask() {
 		}
 	}
 	aw, running := h.activeWork, h.taskRunning
+	taskID := devlog.TaskID(h.taskCtx)
 	h.taskMu.Unlock()
-	devlog.Log("endTask activeWork=%d running=%v cancelled=%v", aw, running, cancelled)
+	devlog.Event("info", "task_released", "task_id", taskID, "active_work", aw, "running", running, "context_cancel_called", cancelled)
 }
 
 // startChildWork 增加活跃工作计数（用于 Agent 子任务），不创建新 context
@@ -248,11 +270,11 @@ func (h *Handlers) startChildWork() bool {
 	h.taskMu.Lock()
 	defer h.taskMu.Unlock()
 	if !h.taskRunning {
-		devlog.Log("startChildWork rejected taskRunning=false")
+		devlog.Event("info", "child_work_rejected", "task_id", devlog.TaskID(h.taskCtx), "running", false)
 		return false
 	}
 	h.activeWork++
-	devlog.Log("startChildWork ok activeWork=%d", h.activeWork)
+	devlog.Event("info", "child_work_started", "task_id", devlog.TaskID(h.taskCtx), "active_work", h.activeWork)
 	return true
 }
 
@@ -331,7 +353,7 @@ func (h *Handlers) PostTaskStop(w http.ResponseWriter, r *http.Request) {
 	if h.taskCancel != nil {
 		h.taskCancel()
 	}
-	devlog.Log("task_stop requested activeWork=%d current=%s", h.activeWork, h.logger.CurrentTask())
+	devlog.Event("info", "task_stop_requested", "task_id", devlog.TaskID(h.taskCtx), "active_work", h.activeWork, "task", h.logger.CurrentTask())
 	h.taskMu.Unlock()
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "stopping"})
 }

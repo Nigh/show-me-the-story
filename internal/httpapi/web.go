@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"showmethestory/internal/config"
+	"showmethestory/internal/devlog"
 	"showmethestory/internal/i18n"
 	"showmethestory/internal/sse"
 	"showmethestory/internal/story"
@@ -434,6 +435,8 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
+				devlog.Event("error", "http_panic", "method", r.Method, "route", r.Pattern,
+					"panic_type", fmt.Sprintf("%T", err), "stack", string(debug.Stack()))
 				log.Printf("[PANIC] %s %s: %v\n%s", r.Method, r.URL.Path, err, debug.Stack())
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
