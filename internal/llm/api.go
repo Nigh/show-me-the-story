@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"showmethestory/internal/config"
+	"showmethestory/internal/devlog"
 	"showmethestory/internal/sse"
 	"strings"
 	"time"
@@ -136,8 +137,14 @@ func FetchModelContextWindow(apiCfg *config.APIConfig) int {
 	}
 	modelsURL := resolveAPIBase(apiCfg.BaseURL, apiCfg.URLStrict) + "/models/" + apiCfg.Model
 
-	req, err := http.NewRequest("GET", modelsURL, nil)
+	ctx := context.Background()
+	devlog.RegisterSecret(apiCfg.APIKey)
+	diagnostic := beginRequest(ctx, "GET", modelsURL, apiCfg.Model, false, "operation", "model_context")
+	var requestErr error
+	defer func() { diagnostic.finish(requestErr) }()
+	req, err := http.NewRequestWithContext(ctx, "GET", modelsURL, nil)
 	if err != nil {
+		requestErr = safeFailure("invalid model endpoint", err)
 		return 0
 	}
 	if apiCfg.APIKey != "" {
@@ -147,14 +154,18 @@ func FetchModelContextWindow(apiCfg *config.APIConfig) int {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		requestErr = safeFailure("model context request", err)
 		return 0
 	}
 	defer resp.Body.Close()
+	diagnostic.status = resp.StatusCode
 	if resp.StatusCode != 200 {
+		requestErr = readAPIStatusError(resp.StatusCode, resp.Body)
 		return 0
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		requestErr = safeFailure("read model context", err)
 		return 0
 	}
 
@@ -162,6 +173,7 @@ func FetchModelContextWindow(apiCfg *config.APIConfig) int {
 		ContextWindow int `json:"context_window"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil || result.ContextWindow <= 0 {
+		requestErr = errors.New("invalid model context response")
 		return 0
 	}
 	return result.ContextWindow
@@ -187,6 +199,16 @@ func IsFatalAPIError(err error) bool {
 	}
 	var budget *contextBudgetError
 	if errors.As(err, &budget) {
+		return true
+	}
+	var status *apiStatusError
+	if errors.As(err, &status) {
+		return status.status == 401 || status.status == 403 || status.status == 404
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	if kind := safeErrorKind(err); kind == "connection refused" || kind == "no such host" {
 		return true
 	}
 	msg := err.Error()
@@ -266,11 +288,16 @@ func CallAPIMessages(ctx context.Context, apiCfg *config.APIConfig, messages []M
 }
 
 // CallAPIMessagesSync 同步 HTTP 调用（仅作流式失败时的回退）。
-func CallAPIMessagesSync(ctx context.Context, apiCfg *config.APIConfig, messages []Message) (CompletionResult, error) {
+func CallAPIMessagesSync(ctx context.Context, apiCfg *config.APIConfig, messages []Message) (result CompletionResult, err error) {
 	if err := validateContextBudget(apiCfg, messages); err != nil {
 		return CompletionResult{}, err
 	}
 	fullURL := normalizeURL(apiCfg)
+	devlog.RegisterSecret(apiCfg.APIKey)
+	diagnostic := beginRequest(ctx, "POST", fullURL, apiCfg.Model, false,
+		"operation", "chat", "input_budget", PromptInputBudget(apiCfg),
+		"input_messages", len(messages), "max_tokens", apiCfg.MaxTokens)
+	defer func() { diagnostic.complete(result, err) }()
 	tracker := TaskTokensFromContext(ctx)
 	tracker.beginCall(messages)
 
@@ -282,12 +309,12 @@ func CallAPIMessagesSync(ctx context.Context, apiCfg *config.APIConfig, messages
 
 	bts, err := json.Marshal(reqBody)
 	if err != nil {
-		return CompletionResult{}, err
+		return CompletionResult{}, safeFailure("encode API request", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(bts))
 	if err != nil {
-		return CompletionResult{}, err
+		return CompletionResult{}, safeFailure("invalid API endpoint", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -299,24 +326,25 @@ func CallAPIMessagesSync(ctx context.Context, apiCfg *config.APIConfig, messages
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return CompletionResult{}, err
+		return CompletionResult{}, safeFailure("API request", err)
 	}
 	defer resp.Body.Close()
+	diagnostic.status = resp.StatusCode
+	if resp.StatusCode != http.StatusOK {
+		return CompletionResult{}, readAPIStatusError(resp.StatusCode, resp.Body)
+	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return CompletionResult{}, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return CompletionResult{}, fmt.Errorf("API 响应错误，状态码: %d, 返回内容: %s", resp.StatusCode, string(bodyBytes))
+		return CompletionResult{}, safeFailure("read API response", err)
 	}
 
 	var chatResp ChatResponse
 	if err := json.Unmarshal(bodyBytes, &chatResp); err != nil {
-		return CompletionResult{}, err
+		return CompletionResult{}, safeFailure("invalid API JSON response", err)
 	}
 
+	diagnostic.usage = chatResp.Usage
 	if len(chatResp.Choices) > 0 {
 		content := chatResp.Choices[0].Message.Content
 		if tracker != nil {
@@ -409,11 +437,16 @@ func CallAPIStream(ctx context.Context, apiCfg *config.APIConfig, system, user s
 }
 
 // CallAPIStreamMessages 以完整的多轮消息数组调用 API（流式）。
-func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messages []Message, onChunk func(string)) (CompletionResult, error) {
+func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messages []Message, onChunk func(string)) (result CompletionResult, err error) {
 	if err := validateContextBudget(apiCfg, messages); err != nil {
 		return CompletionResult{}, err
 	}
 	fullURL := normalizeURL(apiCfg)
+	devlog.RegisterSecret(apiCfg.APIKey)
+	diagnostic := beginRequest(ctx, "POST", fullURL, apiCfg.Model, true,
+		"operation", "chat", "input_budget", PromptInputBudget(apiCfg),
+		"input_messages", len(messages), "max_tokens", apiCfg.MaxTokens)
+	defer func() { diagnostic.complete(result, err) }()
 	tracker := TaskTokensFromContext(ctx)
 	tracker.beginCall(messages)
 
@@ -427,12 +460,12 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messag
 
 	bts, err := json.Marshal(reqBody)
 	if err != nil {
-		return CompletionResult{}, err
+		return CompletionResult{}, safeFailure("encode API request", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(bts))
 	if err != nil {
-		return CompletionResult{}, err
+		return CompletionResult{}, safeFailure("invalid API endpoint", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -444,13 +477,13 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messag
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return CompletionResult{}, err
+		return CompletionResult{}, safeFailure("API request", err)
 	}
 	defer resp.Body.Close()
+	diagnostic.status = resp.StatusCode
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return CompletionResult{}, fmt.Errorf("API 响应错误，状态码: %d, 返回内容: %s", resp.StatusCode, string(bodyBytes))
+		return CompletionResult{}, readAPIStatusError(resp.StatusCode, resp.Body)
 	}
 
 	var fullContent strings.Builder
@@ -478,11 +511,12 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messag
 
 		var delta streamDelta
 		if err := json.Unmarshal([]byte(data), &delta); err != nil {
-			readErr = fmt.Errorf("invalid SSE JSON: %w", err)
+			readErr = safeFailure("invalid SSE JSON", err)
 			break
 		}
 		if delta.Usage != nil {
 			streamUsage = delta.Usage
+			diagnostic.usage = streamUsage
 		}
 		if len(delta.Choices) > 0 {
 			if delta.Choices[0].FinishReason != "" {
@@ -501,25 +535,25 @@ func CallAPIStreamMessages(ctx context.Context, apiCfg *config.APIConfig, messag
 		}
 	}
 
-	result := fullContent.String()
+	content := fullContent.String()
 	if tracker != nil {
 		if streamUsage != nil {
-			tracker.finishCall(streamUsage.PromptTokens, streamUsage.CompletionTokens, true, messages, result)
+			tracker.finishCall(streamUsage.PromptTokens, streamUsage.CompletionTokens, true, messages, content)
 		} else {
-			tracker.finishCall(0, 0, false, messages, result)
+			tracker.finishCall(0, 0, false, messages, content)
 		}
 	}
-	completion := CompletionResult{Content: result, FinishReason: finishReason}
+	completion := CompletionResult{Content: content, FinishReason: finishReason}
 	if ctx.Err() != nil {
 		return completion, ctx.Err()
 	}
 	if readErr != nil && readErr != io.EOF {
-		return completion, fmt.Errorf("stream interrupted after %d bytes: %w", len(result), readErr)
+		return completion, fmt.Errorf("stream interrupted after %d bytes: %w", len(content), safeFailure("read stream", readErr))
 	}
 	if !done && finishReason == "" {
-		return completion, fmt.Errorf("stream ended without finish_reason or [DONE] after %d bytes: %w", len(result), io.ErrUnexpectedEOF)
+		return completion, fmt.Errorf("stream ended without finish_reason or [DONE] after %d bytes: %w", len(content), io.ErrUnexpectedEOF)
 	}
-	if result == "" {
+	if content == "" {
 		return completion, fmt.Errorf("流式响应为空")
 	}
 	return completion, nil

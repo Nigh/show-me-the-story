@@ -339,4 +339,29 @@ This program only loads v4 projects. Older projects are labeled with the appropr
 
 Logs describe substeps, not just generated prose. For a reproducible problem, record the operation, final error, model configuration with credentials removed, and steps to reproduce.
 
+<a id="diagnostics"></a>
+### Local diagnostic logs
+
+Every build writes `app.log` to the data directory shown at startup. JSON-line entries identify the version, OS, startup session, tasks and requests, model request results, and knowledge-sync chapter, content revision, attempt and validation location. Project names use hashed identifiers. Default logs exclude prose, prompts, chat and raw model responses. Nonstandard entity IDs and temporary aliases are hidden to avoid logging names.
+
+`app.log`, `app.log.1` and `app.log.2` are each limited to 5 MiB and rotate automatically. Write or rotation failures produce a console stderr warning without stopping writing operations; logs may then be incomplete. Do not run multiple processes against the same data directory.
+
+When reporting a problem, include the application version, reproduction steps, failure time and final UI error, plus log files covering that time. `session` identifies a launch, `task_id` links an AI task, and `request_id` distinguishes model requests. Do not submit credentials or prose. Logs can still contain local paths, model names and service addresses; inspect them before sharing.
+
+Enable sensitive diagnostics temporarily only when ordinary logs are insufficient. Close the program first. In PowerShell:
+
+```powershell
+$env:STORY_DIAGNOSTICS = "1"
+.\show-me-the-story.exe
+```
+
+On Linux/macOS:
+
+```bash
+STORY_DIAGNOSTICS=1 ./show-me-the-story
+```
+
+Keep your usual data-directory argument if you use one. Reproduce once, close the program, run `Remove-Item Env:STORY_DIAGNOSTICS` in PowerShell, then launch normally. Sensitive output goes to a separate `diagnostics.log`, also retaining three files of up to 5 MiB each. Each model output is capped at 64 KiB and marked when truncated. It may contain prose, settings or user input repeated by the model. Credential redaction cannot remove every private detail; do not upload it publicly without review. Inspect anything you share, then delete sensitive logs and their rotated files when no longer needed.
+
+
 [Back to README](../README.md)

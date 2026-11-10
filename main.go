@@ -46,15 +46,30 @@ func main() {
 		progDir = cwd
 	}
 
+	devlog.Init(progDir, version)
+	defer devlog.Close()
+	if devlog.Enabled() {
+		fmt.Printf(" [系统] 本地诊断日志: %s（最多3份，每份5 MiB）\n", devlog.Path())
+	} else {
+		fmt.Fprintf(os.Stderr, " [警告] 无法写入本地诊断日志 %s，请检查 stderr 中的日志错误\n", devlog.Path())
+	}
+	if devlog.DiagnosticsEnabled() {
+		fmt.Printf(" [警告] 敏感诊断日志: %s；可能包含正文、提示词与聊天，分享前必须检查\n", devlog.DiagnosticsPath())
+	}
+
 	// Create storys directory
 	storysDir := filepath.Join(progDir, "storys")
-	os.MkdirAll(storysDir, 0755)
+	if err := os.MkdirAll(storysDir, 0755); err != nil {
+		devlog.Event("warn", "startup_directory_failed", append(devlog.ErrorAttrs(err), "stage", "storys_directory")...)
+	}
 
 	// Load API config (global, shared across projects; always in progDir)
 	apiCfgPath := filepath.Join(progDir, "api.json")
 	apiCfg, err := config.LoadAPIConfig(apiCfgPath)
 	if err != nil {
+		devlog.Event("error", "startup_failed", append(devlog.ErrorAttrs(err), "stage", "api_config")...)
 		fmt.Printf(" [错误] 加载API配置失败: %v\n", err)
+		devlog.Close()
 		os.Exit(1)
 	}
 	llm.EnsureContextBudget(apiCfg)
@@ -74,18 +89,16 @@ func main() {
 	logger := sse.NewLogBroadcaster()
 	defer logger.Close()
 
-	devlog.Init(progDir, version)
-
 	fmt.Printf(" [系统] 版本: %s\n", version)
 	fmt.Printf(" [系统] 程序目录: %s\n", progDir)
 	fmt.Printf(" [系统] 项目目录: %s\n", storysDir)
-	if devlog.Enabled() {
-		fmt.Printf(" [系统] 开发日志: %s\n", filepath.Join(progDir, "dev.log"))
-	}
 
 	staticFS, err := fs.Sub(staticFiles, "frontend/dist")
 	if err != nil {
-		log.Fatalf("嵌入静态文件失败: %v", err)
+		devlog.Event("error", "startup_failed", append(devlog.ErrorAttrs(err), "stage", "static_files")...)
+		log.Printf("嵌入静态文件失败: %v", err)
+		devlog.Close()
+		os.Exit(1)
 	}
 
 	httpapi.StartWebServer(apiCfg, apiCfgPath, logger, port, progDir, version, staticFS)

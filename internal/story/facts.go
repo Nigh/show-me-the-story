@@ -3,8 +3,10 @@ package story
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"showmethestory/internal/config"
+	"showmethestory/internal/devlog"
 	"showmethestory/internal/i18n"
 	"showmethestory/internal/llm"
 	"showmethestory/internal/sse"
@@ -106,7 +108,32 @@ func factProtection(state *Progress, num int, lang string) string {
 	return chapterEnding(state, num, lang) + s + string(data)
 }
 
-func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.Config, state *Progress, idx int, path string, logger *sse.LogBroadcaster) error {
+// knowledgeValidationError contains metadata only, never model text or entity names.
+type knowledgeValidationError struct {
+	reason                   string
+	chapter                  int
+	rev                      string
+	block, index             int
+	kind, id                 string
+	inContext, inCurrentKind bool
+}
+
+func (e *knowledgeValidationError) Error() string {
+	return fmt.Sprintf("%s: chapter=%d rev=%s stage=validate block=%d change_index=%d kind=%s entity_id=%s in_context=%t in_current_kind=%t", e.reason, e.chapter, e.rev, e.block, e.index, e.kind, e.id, e.inContext, e.inCurrentKind)
+}
+
+func knowledgeSyncEvent(ctx context.Context, level, event, phase, stage string, ch ChapterState, attempt int, err error) {
+	attrs := []any{"task_id", devlog.TaskID(ctx), "phase", phase, "stage", stage, "chapter", ch.Num, "rev", ChapterRevision(ch), "attempt", attempt}
+	var validation *knowledgeValidationError
+	if errors.As(err, &validation) {
+		attrs = append(attrs, "reason", validation.reason, "block", validation.block, "change_index", validation.index, "kind", validation.kind, "entity_id", validation.id, "in_context", validation.inContext, "in_current_kind", validation.inCurrentKind)
+	} else if err != nil {
+		attrs = append(attrs, "error_type", fmt.Sprintf("%T", err))
+	}
+	devlog.Event(level, event, attrs...)
+}
+
+func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.Config, state *Progress, idx int, path string, logger *sse.LogBroadcaster) (resultErr error) {
 	if idx < 0 || idx >= len(state.Chapters) {
 		return fmt.Errorf("chapter index out of range")
 	}
@@ -122,6 +149,13 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 	if ch.MemoryRevision == rev {
 		return nil
 	}
+	stage, currentAttempt := "config", 0
+	defer func() {
+		if resultErr != nil {
+			knowledgeSyncEvent(ctx, "error", "knowledge_sync_failed", "facts", stage, ch, currentAttempt, resultErr)
+			resultErr = fmt.Errorf("%w: phase=facts stage=%s chapter=%d rev=%s attempt=%d", resultErr, stage, ch.Num, rev, currentAttempt)
+		}
+	}()
 	if err := llm.ValidateConfig(api); err != nil {
 		return err
 	}
@@ -130,6 +164,7 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 	next.Chapters[idx] = ch
 	next.Chapters[idx].KnowledgeTracked = true
 	// Persist the retry marker before invoking the model.
+	stage = "save_pending"
 	if err := SaveProgress(path, &next); err != nil {
 		return err
 	}
@@ -151,38 +186,53 @@ func SyncChapterMemory(ctx context.Context, api *config.APIConfig, cfg *config.C
 	prompt += memoryLinkPrompt(cfg.Language) + "\n" + string(blocks)
 	var syncErr error
 	for attempt := 0; attempt < 2; attempt++ {
+		stage, currentAttempt = "request", attempt+1
 		raw := llm.CallAPIWithRetryLog(ctx, api, i18n.SystemPromptFor(cfg.Language, "memory_manager"), prompt, logger)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if raw == "" {
-			return fmt.Errorf("%s", i18n.T(cfg.Language, "knowledge_failed"))
+			return fmt.Errorf("empty fact response")
 		}
 		next = *state
 		if next.MemoryMaxTokens <= 0 {
 			next.MemoryMaxTokens = calcMemoryMaxTokens(len(state.Chapters), cfg.Story.TargetWordsPerChapter)
 		}
+		stage = "validate"
 		syncErr = applyChapterMemoryResult(&next, ch, visibleFacts, raw)
 		if syncErr == nil {
 			break
 		}
+		knowledgeSyncEvent(ctx, "warn", "knowledge_validation_failed", "facts", stage, ch, currentAttempt, syncErr)
 		prompt += memoryRetryPrompt(cfg.Language, syncErr)
 	}
 	if syncErr != nil {
 		return syncErr
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	stage = "save"
 	next.Chapters = append([]ChapterState(nil), state.Chapters...)
 	next.Chapters[idx].MemoryRevision = rev
 	if err := SaveProgress(path, &next); err != nil {
 		return err
 	}
 	*state = next
+	knowledgeSyncEvent(ctx, "info", "knowledge_sync_succeeded", "facts", "complete", ch, currentAttempt, nil)
 	return nil
 }
 
 // Validate a fresh copy for each attempt; no partial facts reach live state.
-func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[int]bool, raw string) error {
+func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[int]bool, raw string) (resultErr error) {
 	rev := ChapterRevision(ch)
+	detail := &knowledgeValidationError{chapter: ch.Num, rev: rev, index: -1, kind: "fact"}
+	defer func() {
+		if resultErr != nil {
+			detail.reason = resultErr.Error()
+			resultErr = detail
+		}
+	}()
 	var result struct {
 		NewMemories *[]struct {
 			ID       int    `json:"id"`
@@ -192,7 +242,7 @@ func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[
 		} `json:"new_memories"`
 	}
 	if err := json.Unmarshal([]byte(cleanJSONResponse(raw)), &result); err != nil {
-		return err
+		return fmt.Errorf("invalid fact JSON")
 	}
 	if result.NewMemories == nil {
 		return fmt.Errorf("missing new_memories array")
@@ -209,16 +259,29 @@ func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[
 	next.NextMemoryID = max(next.NextMemoryID, nextMemoryID(next.MemoryEntries))
 	seenFacts := map[int]bool{}
 	// Old references remain as historical evidence until their replacement is valid.
-	for _, nm := range *result.NewMemories {
+	for index, nm := range *result.NewMemories {
+		detail.index, detail.id = index, fmt.Sprint(nm.ID)
+		detail.block, detail.inContext, detail.inCurrentKind = 0, visibleFacts[nm.ID], false
+		detail.kind = "invalid"
+		switch nm.Category {
+		case "character", "location", "item", "event", "promise", "other":
+			detail.kind = nm.Category
+		}
+		if len(nm.BlockIDs) > 0 {
+			detail.block = nm.BlockIDs[0]
+		}
+		for _, m := range next.MemoryEntries {
+			if nm.ID > 0 && m.ID == nm.ID {
+				detail.inCurrentKind = m.Category == nm.Category
+			}
+		}
 		if nm.ID > 0 && !visibleFacts[nm.ID] {
 			return fmt.Errorf("invalid existing fact identity: id=%d was not supplied; use id=0 for new facts", nm.ID)
 		}
 		if nm.ID < 0 || strings.TrimSpace(nm.Content) == "" || len(nm.BlockIDs) == 0 {
 			return fmt.Errorf("invalid fact evidence")
 		}
-		switch nm.Category {
-		case "character", "location", "item", "event", "promise", "other":
-		default:
+		if detail.kind == "invalid" {
 			return fmt.Errorf("invalid fact category")
 		}
 		target := -1
@@ -238,6 +301,7 @@ func applyChapterMemoryResult(next *Progress, ch ChapterState, visibleFacts map[
 		refs := []MemoryReference{}
 		seen := map[int]bool{}
 		for _, id := range nm.BlockIDs {
+			detail.block = id
 			bi := FindBlockIdx(&ch, id)
 			if bi < 0 {
 				return fmt.Errorf("invalid fact block")

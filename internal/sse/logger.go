@@ -30,14 +30,31 @@ type LogBroadcaster struct {
 	clients map[chan SSEMessage]bool
 	closed  bool
 
-	taskMu sync.Mutex
-	tasks  []string // nested task names for GetStatus / UI hydrate after refresh
+	taskMu              sync.Mutex
+	tasks               []string // nested task names for GetStatus / UI hydrate after refresh
+	diagnosticTaskID    string
+	diagnosticProjectID string
 }
 
 func NewLogBroadcaster() *LogBroadcaster {
 	return &LogBroadcaster{
 		clients: make(map[chan SSEMessage]bool),
 	}
+}
+
+// SetDiagnosticContext binds file diagnostics to the reserved AI task.
+func (lb *LogBroadcaster) SetDiagnosticContext(taskID, projectID string) {
+	lb.taskMu.Lock()
+	lb.diagnosticTaskID, lb.diagnosticProjectID = taskID, projectID
+	lb.taskMu.Unlock()
+}
+
+func (lb *LogBroadcaster) diagnosticEvent(level, event string, attrs ...any) {
+	lb.taskMu.Lock()
+	taskID, projectID := lb.diagnosticTaskID, lb.diagnosticProjectID
+	lb.taskMu.Unlock()
+	attrs = append(attrs, "task_id", taskID, "project_id", projectID)
+	devlog.Event(level, event, attrs...)
 }
 
 func (lb *LogBroadcaster) Subscribe() chan SSEMessage {
@@ -87,12 +104,16 @@ func (lb *LogBroadcaster) logBilingual(level, msg, msgEN string) {
 }
 
 func (lb *LogBroadcaster) logKey(level, key string, args ...any) {
-	if level == "error" {
+	var attrs []any
+	if level == "error" || level == "warn" {
 		for _, arg := range args {
 			if err, ok := arg.(error); ok {
 				lb.StorageError(err)
+				attrs = append(attrs, devlog.ErrorAttrs(err)...)
 			}
 		}
+		// Error strings can include whole model responses, not just diagnostics.
+		lb.diagnosticEvent(level, key, attrs...)
 	}
 	lb.logEntry(LogEntry{
 		Level:   level,
@@ -111,6 +132,11 @@ func (lb *LogBroadcaster) StorageError(err error) {
 	if !ok {
 		return
 	}
+	attrs := append(devlog.ErrorAttrs(saveErr),
+		"file", filepath.Base(saveErr.Path), "stage", saveErr.Stage,
+		"original_preserved", saveErr.OriginalPreserved,
+		"backup_file", filepath.Base(saveErr.BackupPath), "restore_failed", saveErr.RestoreErr != nil)
+	lb.diagnosticEvent("error", "storage_error", attrs...)
 	lb.Emit("storage_error", map[string]interface{}{
 		"file":               filepath.Base(saveErr.Path),
 		"path":               saveErr.Path,
@@ -128,13 +154,9 @@ func (lb *LogBroadcaster) logEntry(entry LogEntry) {
 	} else if entry.MsgKey != "" {
 		fmt.Printf(" [%s] %s\n", entry.Level, entry.MsgKey)
 	}
-	// ponytail: file log only warn/error (+ keyed agent failures); skip info/step spam.
-	if entry.Level == "warn" || entry.Level == "error" {
-		msg := entry.Msg
-		if msg == "" {
-			msg = entry.MsgKey
-		}
-		devlog.Log("%s %s", entry.Level, msg)
+	if (entry.Level == "warn" || entry.Level == "error") && entry.MsgKey == "" {
+		// Free-form messages may include model output. Keep only occurrence metadata.
+		lb.diagnosticEvent(entry.Level, "unkeyed_message")
 	}
 }
 
@@ -182,7 +204,7 @@ func (lb *LogBroadcaster) TaskStart(task string) {
 	lb.taskMu.Lock()
 	lb.tasks = append(lb.tasks, task)
 	lb.taskMu.Unlock()
-	devlog.Log("task_start %s", task)
+	lb.diagnosticEvent("info", "task_start", "task", task)
 	lb.Emit("task_start", map[string]string{"task": task})
 }
 
@@ -195,7 +217,7 @@ func (lb *LogBroadcaster) TaskEnd(task string, success bool) {
 		}
 	}
 	lb.taskMu.Unlock()
-	devlog.Log("task_end %s success=%v", task, success)
+	lb.diagnosticEvent("info", "task_end", "task", task, "success", success)
 	lb.Emit("task_end", map[string]interface{}{"task": task, "success": success})
 }
 
